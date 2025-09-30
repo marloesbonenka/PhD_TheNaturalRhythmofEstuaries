@@ -31,6 +31,23 @@ def extract_his_data(dataset_trih, variable, station_names):
         for i in range(names_bytes.shape[0])
     ]
     
+    # Get the variable data
+    var_data = dataset_trih[variable][:]
+    
+    # Check dimensionality and handle accordingly
+    if var_data.ndim == 3:
+        # 3D array: (time, LSEDTOT, NTRUV)
+        # Extract the first sediment fraction (index 0 in middle dimension)
+        print(f"    Detected 3D variable '{variable}' with shape {var_data.shape}, extracting first sediment fraction")
+        var_data = var_data[:, 0, :]  # Now shape is (time, NTRUV)
+
+    elif var_data.ndim == 2:
+        # 2D array: (time, NTRUV) - already in correct format
+        print(f"    Detected 2D variable '{variable}' with shape {var_data.shape}")
+
+    else:
+        raise ValueError(f"Unexpected variable dimensions for '{variable}': {var_data.ndim}D array with shape {var_data.shape}")
+    
     results = {}
     for name in station_names:
         if name not in all_station_names:
@@ -38,7 +55,7 @@ def extract_his_data(dataset_trih, variable, station_names):
         
         idx = all_station_names.index(name)
         time = dataset_trih['time'][:]
-        var = dataset_trih[variable][:, idx]
+        var = var_data[:, idx]  # Now this works for both CTR and SBTR
         results[name] = (time, var)
     
     return results, all_station_names
@@ -87,7 +104,7 @@ def his_plot_discharge_timeseries(discharge_results, station_names, reference_da
 
         if save_figure:
             figname = os.path.join(save_dir, f'his_CTR_at_cross_section_{station}_t_{start_idx}_{end_idx}.pdf')
-            plt.savefig(figname, dpi=300, bbox_inches='tight', transparent=True)
+            plt.savefig(figname, dpi=300, bbox_inches='tight')
 
         plt.show()
 
@@ -139,7 +156,7 @@ def his_plot_timeseries(var_results, station_names, reference_date, variable, va
 
         if save_figure:
             figname = os.path.join(save_dir, f'his_{variable}_at_cross_section_{station}_t_{start_idx}_{end_idx}.pdf')
-            plt.savefig(figname, dpi=300, bbox_inches='tight', transparent=True)
+            plt.savefig(figname, dpi=300, bbox_inches='tight')
 
         plt.show()
 
@@ -263,7 +280,7 @@ def plot_detailed_multi_scenarios(all_results, control_values, scenario_template
         
         filename = f'detailed_{variable}_comparison_all_scenarios.pdf'
         save_path = os.path.join(save_dir, filename)
-        plt.savefig(save_path, dpi=300, bbox_inches='tight', facecolor='white', transparent=True)
+        plt.savefig(save_path, dpi=300, bbox_inches='tight', facecolor='white')
         print(f"Detailed figure saved to: {save_path}")
     
     plt.show()

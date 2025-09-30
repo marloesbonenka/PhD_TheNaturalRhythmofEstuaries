@@ -1,24 +1,21 @@
 #%% 
-"""Delft3D-4 Flow NetCDF Analysis: Morphological Estuary Analysis - Restructured.
-Last edit: August 2025
+"""Delft3D-4 Flow NetCDF Analysis: Morphological Estuary Analysis, for multiple scenarios in one plot.
+Last edit: June 2025
 Author: Marloes Bonenkamp
 """
+
 #%% IMPORTS AND SETUP
 import numpy as np
-import matplotlib as mpl
+import netCDF4 as nc
 import matplotlib.pyplot as plt
 import seaborn as sns
 import datetime
 import time
 import os
 import sys
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-from contextlib import contextmanager
-from typing import Dict, List, Tuple, Optional, Any
-import netCDF4 as nc
 
-#%% Add the current working directory (where FUNCTIONS is located)
-sys.path.append(r"c:\Users\marloesbonenka\Documents\Python\03_Model_postprocessing")
+# Add the current working directory (where FUNCTIONS is located)
+sys.path.append(r"c:\Users\marloesbonenka\surfdrive\Python\03_Model_postprocessing")
 
 from FUNCTIONS.FUNCS_postprocessing_general import *
 from FUNCTIONS.FUNCS_postprocessing_braiding_index import *

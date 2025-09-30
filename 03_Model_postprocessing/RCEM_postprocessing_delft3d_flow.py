@@ -6,17 +6,17 @@ Author: Marloes Bonenkamp
 
 #%% IMPORTS AND SETUP
 import numpy as np
-import netCDF4 as nc
 import matplotlib.pyplot as plt
 import seaborn as sns
 import datetime
 import time
 import os
 import sys
-from mpl_toolkits.axes_grid1 import make_axes_locatable
+import netCDF4 as nc
 
+#%%
 # Add the current working directory (where FUNCTIONS is located)
-sys.path.append(r"c:\Users\marloesbonenka\OneDrive - Delft University of Technology\Documents\Python\03_Model_postprocessing")
+sys.path.append(r"c:\Users\marloesbonenka\surfdrive\Python\03_Model_postprocessing")
 
 from FUNCTIONS.FUNCS_postprocessing_general import *
 from FUNCTIONS.FUNCS_postprocessing_braiding_index import *
@@ -39,7 +39,9 @@ model_location = os.path.join(r"U:\PhDNaturalRhythmEstuaries\Models", config)
 discharges = [500]  #[250, 500, 1000]
 
 # Which DISCHARGE SCENARIO do you want to post-process?
-discharge = discharges[0]
+number = 0
+
+discharge = discharges[number]
 runname = get_runname(discharge) # returns runname in f-string format
 
 
@@ -50,7 +52,6 @@ scenario_templates = [#'00_testvalidity_velocity_1boundary']
         '03_run{discharge}_flashy'
 ]
 
-number = 2
 scenario = scenario_templates[number].format(discharge=discharge)
 scenario_name = scenario_templates[number].format(discharge=discharge)
 
@@ -62,7 +63,7 @@ slice_end = 361
 amount_to_plot = 4
 
 # Do you want to save the figures?
-save_figure = True
+save_figure = False
 
 #%%  Model settings (based on .mdf file)
 
@@ -163,17 +164,29 @@ if run_single_discharge_analysis:
 
 #%%  CROSS-SECTION ANALYSIS FOR MULTIPLE SCENARIOS IN ONE (SUB)PLOT
 print("\n=== MULTI-SCENARIO-VARIABLE ANALYSIS ===")
-run_multi_variable_analysis = False
+run_multi_variable_analysis = True
 
 if run_multi_variable_analysis:
     # DEFINE WHICH VARIABLES TO ANALYZE
     analysis_configs = [
         {#! CTR is a transect/cross-section variable (NTRUV)
-            'variable': 'q1',   # Use consistent naming
+            'variable': 'Q',   # Use consistent naming
             'variable_label': 'Q [m³/s]',
             'netcdf_variable': 'CTR'
-          }  # Variable name in NetCDF file
-        #  },
+          #}  # Variable name in NetCDF file
+         },
+        {
+            'variable': 'Qs',
+            'variable_label': 'Qs [m³/s]',
+            'netcdf_variable': 'SBTR'
+        },
+
+        {
+            'variable': 'Qs-cumulative',
+            'variable_label': 'Qs [m³]',
+            'netcdf_variable': 'SBTRC'
+
+        }
         # { #! ZWL is a station variable (NOSTAT) <-- doesn't work for this approach.
         #     'variable': 'zwl',   # Water level
         #     'variable_label': 'Water Level [m]',
@@ -183,7 +196,7 @@ if run_multi_variable_analysis:
     
     # Time range settings
     time_start = 0
-    time_end = 360
+    time_end = 365*2
     
     # STATION_NAMES for your model 
     station_names = [f'river_km_{i}' for i in np.arange(0,27,4)] # [f'river_km_{i}' for i in range(27)] for all cross-sections
