@@ -70,11 +70,11 @@ def generate_all_files(grid_data, base_resolutions, output_dir, ESTUARYWIDTH_UPS
 print("Current working directory:", os.getcwd())
 
 # Configuration Settings
-path_loc = r"u:\PhDNaturalRhythmEstuaries\Models"
-model_name = "04_RiverDischargeVariability_domain45x15"
+path_loc = r"u:\PhDNaturalRhythmEstuaries\Models\Test_Models\FM_vs_FLOW"
+model_name = "FLOW"
 
 # Grid Configuration
-USE_VARIABLE_GRID = True  # Set to True for variable grid, False for uniform grid
+USE_VARIABLE_GRID = False  # Set to True for variable grid, False for uniform grid
 
 if USE_VARIABLE_GRID:
     # Variable Grid Configuration - Different resolutions for x and y directions
@@ -93,7 +93,7 @@ if USE_VARIABLE_GRID:
     BASE_RESOLUTIONS = [f"spatial_x{FINE_RES_X}_{MEDIUM_RES_X}_{COARSE_RES_X}_y{FINE_RES_Y}_{MEDIUM_RES_Y}_{COARSE_RES_Y}m"]
 else:
     # Uniform Grid Configuration
-    BASE_RESOLUTIONS = [25, 50, 100]  # Grid cell sizes in meters
+    BASE_RESOLUTIONS = [100]  # Grid cell sizes in meters
 
 DOMAIN_EXTENT = (45000, 15000)  # Domain size (x_length, y_length) in meters
 SEA_EXTENT = 20000             # Sea basin extent in x-direction
@@ -101,7 +101,7 @@ SLOPE_EXTENT = 5000            # Extent of the sloping part of the sea basin, se
 ESTUARYWIDTH_UPSTREAM = 500
 ESTUARYWIDTH_DOWNSTREAM = 3000
 SEABASIN_DEPTH = 15
-SAVE_FIGURES = 'no'            # Set to 'yes' to save figures, 'no' to just show them
+SAVE_FIGURES = 'yes'            # Set to 'yes' to save figures, 'no' to just show them
 INI_VALUE = 0.5
 
 # Create the output directory if it doesn't exist
@@ -151,7 +151,7 @@ else:
         grid_data[res] = {'x': data['x'], 
                             'y': data['y'], 
                             'dep_data': data['dep_data'],
-                            'X': data['X'],-
+                            'X': data['X'],
                             'Y': data['Y']}
         ini = generate_ini(data, INI_VALUE)
 

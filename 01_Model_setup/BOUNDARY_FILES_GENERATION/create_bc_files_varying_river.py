@@ -66,7 +66,7 @@ from FUNCTIONS.FUNCS_create_bc_files_varying_river import *
 from FUNCTIONS.FUNCS_validate_created_bc_files_varying_river import *
 
 #%% PLOTTING SETTINGS   
-defaultcolour = 'white'
+defaultcolour = 'black'
 defaultfont = 20
 
 mpl.rcParams['text.color'] = 'black'          # Default text color
