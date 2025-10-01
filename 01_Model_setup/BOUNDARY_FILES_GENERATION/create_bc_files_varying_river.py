@@ -52,7 +52,7 @@ import matplotlib as mpl
 
 #%%
 #Add the current working directory (where FUNCTIONS is located)
-sys.path.append(r"C:\Users\marloesbonenka\Documents\Python\01_Model_setup\BOUNDARY_FILES_GENERATION")
+sys.path.append(r"C:\Users\marloesbonenka\surfdrive\Python\01_Model_setup\BOUNDARY_FILES_GENERATION")
 
 #%%
 import importlib.util
