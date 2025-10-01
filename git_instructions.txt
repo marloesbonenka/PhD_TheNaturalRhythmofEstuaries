@@ -28,3 +28,6 @@ the next step to integrate your changes into the main branch is to merge your lo
 	
 If you are merging with a lot of conflicts and want to stop:
 git merge --abort
+
+If you fixed merging issues, don't forget to add the correct file to git before merging:
+git add <file_location_wrt_maingitfile>

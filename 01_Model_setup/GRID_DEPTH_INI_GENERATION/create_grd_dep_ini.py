@@ -12,7 +12,7 @@ import sys
 import numpy as np
 
 # Add the current working directory (where FUNCTIONS is located)
-sys.path.append(r"C:\Users\marloesbonenka\OneDrive - Delft University of Technology\Documents\Python\01_Model_setup\GRID_DEPTH_INI_GENERATION")
+sys.path.append(r"C:\Users\marloesbonenka\surfdrive\Python\01_Model_setup\GRID_DEPTH_INI_GENERATION")
 
 #%% Import functions
 
