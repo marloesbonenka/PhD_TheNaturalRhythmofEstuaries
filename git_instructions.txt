@@ -31,3 +31,31 @@ git merge --abort
 
 If you fixed merging issues, don't forget to add the correct file to git before merging:
 git add <file_location_wrt_maingitfile>
+
+Git Reconnection & Sync Guide
+Phase 1: Setup & Authorization
+- Open Folder: In VS Code, open the root folder of your project.
+- Verify Path: Ensure your terminal path matches your project folder.
+- Fix Ownership (Nextcloud Fix): If Git gives a "dubious ownership" error, run: git config --global --add safe.directory <your_folder_path>
+- Pause Sync: Crucial! Pause Nextcloud sync while performing Git operations to avoid "Invalid argument" errors.
+
+Phase 2: Re-linking the Repository
+- Initialize Git: git init
+- Add Remote: git remote add origin https://github.com/marloesbonenka/PhD_TheNaturalRhythmofEstuaries.git
+- Set Branch Name: Ensure your local branch is named main to match GitHub: git branch -M main
+
+Phase 3: Merging & Resolving Conflicts
+Because your local files and GitHub files now have "unrelated histories," a standard pull won't work.
+- Fetch & Force Merge: This pulls the online version but automatically resolves all conflicts by choosing your local version as the "truth." git pull origin main --allow-unrelated-histories -X ours
+- Stage All Changes: git add .
+- Commit: git commit -m "Reconnected and kept local versions of all files"
+
+Phase 4: Push to GitHub
+- Upload: git push -u origin main
+- Resume Sync: Turn Nextcloud back on.
+
+Troubleshooting Shortcuts
+- To see what is happening: git status
+- To check connection: git remote -v
+- If Push is rejected: If you are certain your local code is the correct version, you can force the update: git push origin main --force
+- If a single file is locked: (Nextcloud error) Try git add --all. If it fails, close VS Code and any open scripts, then try again in a standard Windows Command Prompt or PowerShell.
