@@ -1,0 +1,58 @@
+====================== omschrijving van het probleem ======================
+
+when I open my VScode via the anaconda prompt and navigate to the directory: 
+(base) C:\Users\marloesbonenka\Documents>code .
+it opens my instance of vs code correctly, and when i run a cell it manages to connect to python and a kernel in the interactive window. 
+In the terminal, it does show some error messages:
+(base) PS C:\Users\marloesbonenka\Documents> (& C:\Users\marloesbonenka\AppData\Local\anaconda3\Library\shell\condabin\conda-hook.ps1) ; (conda activate base)
+&: The term 'C:\Users\marloesbonenka\AppData\Local\anaconda3\Library\shell\condabin\conda-hook.ps1' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+usage: conda-script.py [-h] [-v] [--no-plugins] [-V] COMMAND ...
+conda-script.py: error: argument COMMAND: invalid choice: '' (choose from 'activate', 'clean', 'commands', 'compare', 'config', 'create', 'deactivate', 'env', 'export', 'info', 'init', 'install', 'list', 'notices', 'package', 'build', 'content-trust', 'convert', 'debug', 'develop', 'doctor', 'index', 'inspect', 'metapackage', 'render', 'repoquery', 'skeleton', 'server', 'pack', 'token', 'repo', 'remove', 'uninstall', 'rename', 'run', 'search', 'update', 'upgrade')
+Invoke-Expression: Cannot bind argument to parameter 'Command' because it is an empty string.
+(base) PS C:\Users\marloesbonenka\Documents> 
+Then, when I navigate one directory further and open a VS code instance: 
+(base) C:\Users\marloesbonenka\Documents>cd Python
+(base) C:\Users\marloesbonenka\Documents\Python>code .
+I can still connect to the kernel, but in the terminal the same message is shown. 
+also, I am unable to load the module 'netcdf4', which i was able to load when accessing vs code in the above method.
+when I launch vscode not from the anaconda prompt, but from anaconda navigator by clicking the 'launch' button, with the setting: all applications on base (root), which is my only environment, I am unable to activate the interactive window or even connect to python.
+what is going on? please help me find out the cause of and solve these problems.
+
+====================== mogelijke oplossingen ======================
+
+The errors and issues encountered likely arise from these main causes:
+
+1. The PowerShell error about 'conda-hook.ps1' not being recognized suggests there is a problem with conda initialization in PowerShell within VSCode. 
+This usually happens if conda has not been fully set up to work in PowerShell, or the execution policy restricts running scripts. 
+Running conda init powershell and restarting the terminal usually fixes this. 
+Additionally, the PowerShell execution policy might need to be set to allow script execution using Set-ExecutionPolicy RemoteSigned run as administrator.
+
+2. The problem where the 'netcdf4' module is not found when opening VSCode from inside the Python subdirectory, but works from the Documents directory, 
+suggests a possible environment or path inconsistency. 
+It might be that the Python interpreter or conda environment selected in VSCode is different or not activated correctly in the nested directory. 
+Ensuring that the correct conda environment is selected in the VSCode Python interpreter and kernel list often solves this. 
+Sometimes opening VSCode at the root directory with the full workspace helps VSCode locate the right environment and dependencies.
+
+3. Launching VSCode from the Anaconda Navigator (with the base environment selected) but being unable to connect to the kernel or interactive window also suggests an environment/kernel selection issue. 
+The Jupyter extension or Python extension in VSCode might not be properly selecting the conda environment or the ipykernel is missing or broken in that environment. 
+Installing or reinstalling ipykernel in the base environment via conda install ipykernel and then restarting VSCode can help.
+
+Summary of recommended steps to resolve the issues:
+
+- Open a PowerShell terminal as Administrator.
+- Run the command: conda init powershell
+- Still in admin PowerShell, run: Set-ExecutionPolicy RemoteSigned
+- Restart VSCode and/or the terminal.
+- In VSCode, open the folder at the root directory (like Documents) rather than a nested folder.
+- Use the VSCode Python extension to explicitly select the conda environment interpreter associated with your base environment.
+- Make sure the ipykernel package is installed in the base environment: conda install ipykernel
+- In VSCode’s Jupyter/Interactive window, select the correct kernel.
+- If netcdf4 cannot be found, reinstall it in the environment using conda install -c conda-forge netcdf4.
+
+These steps address the PowerShell initialization error, the environment consistency that impacts package availability, 
+sand the connection to the interactive Python kernel in VSCode launched from different starting points.
+
+======================
+
+profile.ps1 location still refers to onedrive, could that be part of the issue?

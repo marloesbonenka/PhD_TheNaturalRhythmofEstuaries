@@ -1,0 +1,33 @@
+If you want to connect VScode with Github, after making local edits without being connected to your git repository:
+
+1. In VScode, go to the folder that contains the scripts you want to upload to git
+2. Make sure you are logged into git (lower left of VScode shows an avatar > click it to login)
+3. Check if in the terminal, your path corresponds to the location of the scripts, so it should be the same as the folder path you navigated to in VScode
+4. Initialize a git repository 
+	git init
+5. Add the remote GitHub repository: git remote add origin <your_url>
+	in my case, <your_url>: https://github.com/marloesbonenka/PhD_TheNaturalRhythmofEstuaries.git
+6. Create a new branch and switch to it 
+	git checkout -b <branch_name> 
+	e.g. local-edits
+7. Stage and commit local files
+	git add .
+	git commit -m "Add local changes as a new branch"
+8. Push branch to origin
+	git push -u origin <branch_name>
+
+Now that you have pushed your local branch to the remote repository, 
+the next step to integrate your changes into the main branch is to merge your local branch into main.	
+
+1. Switch to the main branch
+	git checkout main
+2. Make sure the main branch is up to date with the remote
+	git pull origin main
+3. Merge main and local branch
+	git merge <branch_name>
+	
+If you are merging with a lot of conflicts and want to stop:
+git merge --abort
+
+If you fixed merging issues, don't forget to add the correct file to git before merging:
+git add <file_location_wrt_maingitfile>

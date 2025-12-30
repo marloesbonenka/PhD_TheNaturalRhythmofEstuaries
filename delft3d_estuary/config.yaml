@@ -1,0 +1,57 @@
+# config.yaml
+
+paths:
+  raw_data_dir: "U:/PhDNaturalRhythmEstuaries/Models"
+  base_processed_dir: "./processed_data"
+  results_dir: "./results"
+
+model:
+  config: "05_RiverDischargeVariability_domain45x15"
+  discharge_scenarios: [500]  # can add more, e.g. [250, 500, 1000]
+  scenario_templates:
+    - "01_baserun{discharge}"
+    - "02_run{discharge}_seasonal"
+    - "03_run{discharge}_flashy"
+
+time_settings:
+  slice_start: 1
+  slice_end: 360
+  amount_to_plot: 4
+  reference_date: 2024-01-01  # ISO format, load as datetime in code
+
+model_parameters:
+  Tstart: 3146400.0
+  Tstop_by_config:
+    "04_RiverDischargeVariability_domain45x15": 2890800.0
+    "05_RiverDischargeVariability_domain45x15": 3146400.0
+    default: 2662800.0
+  map_output_interval_by_config:
+    "04_RiverDischargeVariability_domain45x15": 1300
+    "05_RiverDischargeVariability_domain45x15": 1440
+    default: 30
+  his_output_interval_by_config:
+    "04_RiverDischargeVariability_domain45x15": 720
+    "05_RiverDischargeVariability_domain45x15": 720
+    default: 30
+
+estuary:
+  x_min: 20000
+  x_max: 45000
+  y_min: 5000
+  y_max: 10000
+  bed_threshold: 6
+
+analysis_flags:
+  run_spatial_plots: false
+  run_width_averaged_bedlevel: false
+  run_cumulative_width_averaged_bedlevel: false
+  run_braiding_analysis: false
+  run_hypsometric_analysis: false
+  run_multi_scenario_hypsometric: true
+  run_single_discharge_analysis: false
+  run_multi_variable_analysis: false
+  run_combined_width_averaged_bedlevel: true
+
+save_settings:
+  save_figure: true
+Notes:

@@ -1,0 +1,131 @@
+[build-system]
+requires = ["setuptools>=64.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dfm_tools"
+version = "0.44.1"
+maintainers = [{ name = "Jelmer Veenstra", email = "jelmer.veenstra@deltares.nl" }]
+description = "dfm_tools are pre- and post-processing tools for Delft3D FM"
+readme = "README.md"
+keywords = ["dfm_tools", "D-FlowFM", "D-HYDRO", "post-processing", "pre-processing", "mapfiles", "hisfiles", "modelbuilder"]
+license = "LGPL-3.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+dependencies = [
+	#scipy>=1.13.0 is the first version to support py310 (1.8.0 also) and including numpy v2 support
+	"scipy>=1.13.0",
+	#numpy>=1.25 is first not-EOL since dec 2024
+	"numpy>=1.25",
+	#matplotlib>=3.7.0 successfully creates contour colorbar on uniform values and has several other features
+	"matplotlib>=3.7.0",
+	#pandas>=2.1.2 Dataframe/Series containing [dict] is a list instead of a dict from here onwards: https://github.com/Deltares/dfm_tools/issues/1194
+	"pandas>=2.1.2",
+	#shapely>=2.0.0 fixes "AttributeError: module 'shapely' has no attribute 'GeometryType'"
+	"shapely>=2.0.0",
+	#geopandas>=1.1.0 resolves shapely.geos DeprecationWarning: https://github.com/geopandas/geopandas/pull/3453 
+	"geopandas>=1.1.0",
+	#pyogrio>=0.12.0 parses JSON fields as dicts/lists. pyogrio is a dependency for geopandas, was fiona before
+	"pyogrio>=0.12.0",
+	#contextily>=1.6.2 has fixed axis scaling: https://github.com/geopandas/contextily/issues/251
+	"contextily>=1.6.2",
+	#xarray>=2024.7.0 includes fix for numpy v2: https://github.com/pydata/xarray/issues/9179
+	"xarray>=2024.7.0",
+	#dask 2025.1.0 is required by xugrid: https://github.com/Deltares/xugrid/pull/350#issuecomment-2809652618
+	"dask>=2025.1.0",
+	#netcdf4>=1.6.4 fixes I/O failure for opendap: https://github.com/Unidata/netcdf4-python/issues/1246
+	"netcdf4>=1.6.4",
+	#bottleneck>=1.3.8 is the first version to support py310
+	"bottleneck>=1.3.8",
+	#xugrid>=0.14.1 fixed uda.ugrid.to_face method for additional dims
+	"xugrid>=0.14.1",
+	#cdsapi>=0.7.5 resolves many deprecationwarnings
+	"cdsapi>=0.7.5",
+	#pydap>=3.4.0 is the first with support for newer python versions
+	"pydap>=3.4.0",
+	#erddapy>=2.0.2 is the first version to support py310
+	"erddapy>=2.0.2",
+	#copernicusmarine>=2.0.0 has breaking changes compared to v1
+	"copernicusmarine>=2.0.0",
+	#rws-ddlpy>=0.9.3 added caching for ddlpy.locations() including dependency
+	"rws-ddlpy>=0.9.3",
+	#pooch>=1.1.0 has attribute retrieve
+	"pooch>=1.1.0",
+	#hydrolib-core>=0.9.9 removed obsolete keywords to avoid model crash with 2026.01
+	"hydrolib-core>=0.9.9",
+	#meshkernel>=8.2.1 supports illegalcells via the face-node-connectivity
+	"meshkernel>=8.2.1",
+]
+classifiers = [
+	"Development Status :: 4 - Beta",
+	"Intended Audience :: Science/Research",
+	"Operating System :: OS Independent",
+	"Topic :: Scientific/Engineering :: Information Analysis",
+	"Programming Language :: Python",
+	"Programming Language :: Python :: 3",
+	"Programming Language :: Python :: 3.10",
+	"Programming Language :: Python :: 3.11",
+	"Programming Language :: Python :: 3.12",
+	"Programming Language :: Python :: 3.13",
+]
+
+[project.urls]
+Home = "https://github.com/deltares/dfm_tools"
+Code = "https://github.com/deltares/dfm_tools"
+Issues = "https://github.com/deltares/dfm_tools/issues"
+
+[project.optional-dependencies]
+dev = [
+	"bump2version>=0.5.11",
+	"flake8",
+	"pytest",
+	"pytest-cov",
+	"pytest-timeout",
+	"twine",
+	"build",
+]
+docs = [
+	"sphinx>=1.8.1",
+	"sphinx_mdinclude",
+	"nbsphinx",
+	"pydata-sphinx-theme",
+	#"pandoc", # installed with choco on github
+]
+examples = [
+	"jupyter",
+	"notebook",
+]
+
+[tool.setuptools]
+packages = ["dfm_tools"]
+
+[tool.pytest.ini_options]
+console_output_style = "count"
+testpaths = ["tests"]
+addopts = "-v --tb=short --durations=0"
+markers = [
+	"unittest: mark a test as unittest. Used for testing single methods",
+	"systemtest: mark a test as systemtest. Used for testing at a higher level, verifying a given input returns the expected output",
+	"acceptance: mark a test as acceptance. Used for non-functional requirements and data that needs to be human-verified",
+	"requireslocaldata: mark a test that cannot run on Github",
+	"requiressecrets: mark a test that requires environment variables to be set (e.g. via Github secrets)",
+	"era5slow: mark a test that causes timeout errors to prevent failing github testbanks due to badly performing cds-beta",
+]
+filterwarnings = [
+	"error",
+	# to make error work
+	"ignore::pytest.PytestUnraisableExceptionWarning",
+	# filter expected warning from dfmt.get_dataset_atdepths()
+	"ignore:All-NaN slice encountered:RuntimeWarning",
+	# filter until fix of https://github.com/Deltares/HYDROLIB-core/issues/732
+	# note the use of single quote below to denote "raw" strings in TOML
+	'ignore:datetime.datetime.utcnow\(\) is deprecated:DeprecationWarning',
+	# for dfmt.open_dataset_delft3d4() and dfmt.open_dataset_curvilinear()
+	"ignore:A UGRID2D face requires at least three unique non-collinear vertices:UserWarning",
+	# temporarily ignore numpy incompatibility: https://github.com/Deltares/dfm_tools/issues/1243
+	# this warning broke github tests for python 3.11, 3.12 and 3.13
+	"ignore:numpy.ndarray size changed:RuntimeWarning",
+]
+
+[tool.flake8]
+exclude = "docs"
