@@ -32,7 +32,7 @@ var_depth = 'mesh2d_waterdepth'
 bed_threshold = 6
 
 #%% --- PLOT SETTINGS ---
-check_variables = False
+check_variables = True
 
 compare_braiding_index = True
 plot_braiding_index_individual = False
@@ -48,8 +48,7 @@ model_folders.sort(key=get_mf_number)
 # --- STORE FINAL YEAR RESULTS ---
 comparison_results = {}
 
-# --- COMPUTE RESULTS FOR EACH RUN ---
-# --- COMPUTE RESULTS FOR EACH RUN ---
+# --- COMPUTE MAP RESULTS FOR EACH RUN ---
 for i, folder in enumerate(model_folders):
     model_location = os.path.join(base_directory, config, folder)
     file_pattern = os.path.join(model_location, 'output', '*_map.nc')

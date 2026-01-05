@@ -3,7 +3,6 @@
 import os
 import matplotlib.pyplot as plt
 import dfm_tools as dfmt
-from matplotlib.colors import LinearSegmentedColormap
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import numpy as np
 import pandas as pd
@@ -70,6 +69,7 @@ for folder in model_folders:
     try:
         # Load the partitioned dataset
         ds = dfmt.open_partitioned_dataset(file_pattern)
+        var_name = 'mesh2d_mor_bl'
         
         if var_name not in ds:
             print(f"Skipping {folder}: Variable {var_name} not found.")
@@ -79,7 +79,7 @@ for folder in model_folders:
         # Find the correct timestep based on morphological time
         if 'time' in ds[var_name].dims:
             closest_idx, actual_time, actual_hydro_years, actual_morph_years, current_morfac = \
-                find_timestep_for_target_morphtime(ds, target_morph_years=morfyears)
+                find_timestep_for_target_morphtime(ds, morfyears, run_startdate)
             
             print(f"  MORFAC: {current_morfac:.1f}")
             print(f"  Hydrodynamic time elapsed: {actual_hydro_years:.2f} years")

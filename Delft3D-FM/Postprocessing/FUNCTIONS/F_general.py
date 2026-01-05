@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 import os
 import re
+from matplotlib.colors import LinearSegmentedColormap
+
 #%%
 # --- CHECK VARIABLES IN DELFT3D OUTPUT ---
 def check_available_variables_xarray(ds):
@@ -78,10 +80,9 @@ def create_terrain_colormap():
     return LinearSegmentedColormap.from_list("custom_terrain", colors)
 
 terrain_cmap = create_terrain_colormap()
-var_name = 'mesh2d_mor_bl'
 
 # --- MORPHOLOGICAL TIME SELECTION ---
-def find_timestep_for_target_morphtime(ds, target_morph_years=morfyears, start_date=run_startdate):
+def find_timestep_for_target_morphtime(ds, target_morph_years, start_date):
     """
     Find the timestep where morphological time reaches the target.
     Calculates: morph_time = hydro_time_elapsed * morfac
