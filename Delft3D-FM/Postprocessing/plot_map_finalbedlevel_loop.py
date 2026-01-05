@@ -8,7 +8,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import numpy as np
 
 # --- 1. SETTINGS & PATHS ---
-base_directory = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Test_MORFAC"
+base_directory = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Test_MORFAC\Tmorph_50years"
 
 # --- 2. CUSTOM COLORMAP ---
 def create_terrain_colormap():
@@ -30,6 +30,11 @@ print(f"Found {len(model_folders)} folders to process.")
 
 for folder in model_folders:
     model_location = os.path.join(base_directory, folder)
+    
+    # Create output_plots directory inside each model folder
+    output_plots_dir = os.path.join(model_location, 'output_plots')
+    os.makedirs(output_plots_dir, exist_ok=True)
+
     file_pattern = os.path.join(model_location, 'output', '*_map.nc')
     
     print(f"\nProcessing: {folder}")
@@ -84,7 +89,7 @@ for folder in model_folders:
 
         # Save in the specific model folder
         save_name = f"terrain_map_final_{folder}.png"
-        save_path = os.path.join(model_location, save_name)
+        save_path = os.path.join(output_plots_dir, save_name)
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.show()
         print(f"Successfully saved: {save_name}")
