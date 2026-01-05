@@ -17,8 +17,8 @@ from FUNCTIONS.F_braiding_index import *
 
 #%% --- CONFIGURATION ---
 base_directory = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15"
-config = 'Test_MORFAC/Tmorph_50years'
-target_year = 50 
+config = 'Test_MORFAC/Tmorph_400years'
+target_year = 400 
 
 start_date = np.datetime64('2025-01-01') 
 x_targets = np.arange(20000, 44001, 1000)
@@ -32,7 +32,7 @@ var_depth = 'mesh2d_waterdepth'
 bed_threshold = 6
 
 #%% --- PLOT SETTINGS ---
-check_variables = True
+check_variables = False
 
 compare_braiding_index = True
 plot_braiding_index_individual = False
