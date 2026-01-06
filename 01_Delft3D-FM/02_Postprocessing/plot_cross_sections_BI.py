@@ -10,7 +10,7 @@ import dfm_tools as dfmt
 import time
 
 #%% Add path for functions
-sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\Delft3D-FM\Postprocessing")
+sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
 
 from FUNCTIONS.F_general import *
 from FUNCTIONS.F_braiding_index import *
@@ -27,6 +27,8 @@ selected_cross_sections = ["ObservationCrossSection_Estuary_km20",
                            "ObservationCrossSection_Estuary_km26",
                            "ObservationCrossSection_Estuary_km32",
                            "ObservationCrossSection_Estuary_km38",
+                           "ObservationCrossSection_Estuary_km42",
+                           "ObservationCrossSection_Estuary_km43",
                            "ObservationCrossSection_Estuary_km44"]
 
 #%% --- SEARCH & SORT FOLDERS ---
@@ -101,7 +103,7 @@ for i, cs_name in enumerate(selected_cross_sections):
     
     # --- Loop through time to compute BI and slices ---
     bi_over_time = []
-    colors = plt.cm.hsv(np.linspace(0, 0.8, n_slices))
+    colors = plt.cm.plasma(np.linspace(0, 0.8, n_slices)) #hsv = jet-like
     color_idx = 0
     
     for t in range(n_times_map):
@@ -142,7 +144,7 @@ for i, cs_name in enumerate(selected_cross_sections):
     ax_bi.set_title(f"Braiding Index (Count of Channels > {int(safety_buffer*100)}cm below mean)")
     ax_bi.set_xlabel("Date")
     ax_bi.set_ylabel("No. of Channels")
-    ax_bi.set_ylim(0, max(bi_over_time) + 2 if bi_over_time else 5)
+    ax_bi.set_ylim(0,8)
     ax_bi.grid(True, alpha=0.2)
 
 plt.tight_layout()
