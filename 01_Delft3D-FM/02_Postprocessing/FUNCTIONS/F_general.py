@@ -74,8 +74,8 @@ def extract_computation_time(dia_file_path):
 def create_terrain_colormap():
     colors = [
         (0.00, "#000066"), (0.10, "#0000ff"), (0.30, "#00ffff"),
-        (0.40, "#00ffff"), (0.50, "#ffffcc"), (0.60, "#ffcc00"),
-        (0.75, "#cc6600"), (0.90, "#228B22"), (1.00, "#006400"),
+        (0.40, "#00ffff"), (0.50, "#fcfcfc"), (0.60, "#f3df91"),
+        (0.75, "#ffd000"), (0.90, "#228B22"), (1.00, "#006400"),
     ]
     return LinearSegmentedColormap.from_list("custom_terrain", colors)
 

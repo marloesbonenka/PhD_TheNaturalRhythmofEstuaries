@@ -19,8 +19,10 @@ from FUNCTIONS.F_braiding_index import *
 scenarios_morfac = True
 scenarios_discharge = False 
 scenarios_variability = False 
-apply_detrending = True
+apply_detrending = False
 reference_time_idx = 0
+
+var_name = 'mesh2d_mor_bl'
 
 # Special-case MF50 reference (same logic as in first script)
 special_base = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15"
@@ -29,11 +31,28 @@ use_mf50_reference = False       # will be set after base_directory is defined
 
 # For MORFAC: Get all subdirectories starting with 'MF'
 if scenarios_morfac: 
-    base_directory = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Test_MORFAC\Tmorph_50years"
-    model_folders = [f for f in os.listdir(base_directory) if f.startswith('MF') and os.path.isdir(os.path.join(base_directory, f))]
+    base_directory = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Test_MORFAC\Tmorph_400years"
+    all_folders = [f for f in os.listdir(base_directory) if f.startswith('MF') and os.path.isdir(os.path.join(base_directory, f))]
     run_startdate = '2025-01-01'
-    morfyears = 50
+    morfyears = 400
+
+    # --- COMPARISON SETTINGS ---
+    compare_against_baseline = True
+    baseline_prefix = 'MF100' 
+    comparison_vmin = -2.0  
+    comparison_vmax = 2.0
     
+    # Identify the baseline folder from the full list for pre-loading later
+    baseline_search = [f for f in all_folders if f.startswith(baseline_prefix)]
+    
+    # Logic to handle the folder list based on mode
+    if compare_against_baseline:
+        # Only process other folders for difference maps
+        model_folders = [f for f in all_folders if not f.startswith(baseline_prefix)]
+    else:
+        # Process everything for standard plots
+        model_folders = all_folders
+
 # For discharge: 
 if scenarios_discharge:
     base_directory = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Test_OneRiverBoundary"
@@ -41,18 +60,20 @@ if scenarios_discharge:
                  if os.path.isdir(os.path.join(base_directory, f)) 
                  and (f.startswith('01_'))] #or f.startswith('02_') or f.startswith('03_')
     run_startdate = '2001-01-01'
+    morfyears = 2000
 
     # For variability: 
 if scenarios_variability:
-    base_directory = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Test_OneRiverBoundary"
+    base_directory = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Test_FourRiverBoundaries"
     model_folders = [f for f in os.listdir(base_directory) 
                  if os.path.isdir(os.path.join(base_directory, f)) 
                  and (f.startswith('02_') or f.startswith('03_'))] #or f.startswith('02_') or f.startswith('03_')
     run_startdate = '2024-01-01'
+    morfyears = 2000
 
 print(f"Found {len(model_folders)} folders to process.")
 
-# Determine if MF50 global reference should be used (only for the MORFAC scenario)
+# Determine if reference t = 0 from a run with no restart (only for the MORFAC scenario)
 if scenarios_morfac:
     # Match logic of first script
     base_root = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15"
@@ -64,7 +85,7 @@ if scenarios_morfac:
 else:
     use_mf50_reference = False
 
-# --- OPTIONAL: GLOBAL REFERENCE FROM MF50 ---
+# --- For detrending: reference t=0 from a run with no restart ---
 reference_bed_MF50 = None
 if apply_detrending and use_mf50_reference:
     mf50_folder = [f for f in model_folders if get_mf_number(f) == 50]
@@ -84,178 +105,98 @@ if apply_detrending and use_mf50_reference:
         print("No unique MF50 folder found; falling back to per‑run reference.")
         use_mf50_reference = False
 
+# --- preload baseline scenario for comparison ---
+baseline_bed_data = None
+if scenarios_morfac and compare_against_baseline:
+    if baseline_search:
+        baseline_folder_name = baseline_search[0]
+        base_path = os.path.join(base_directory, baseline_folder_name, 'output', '*_map.nc')
+        print(f"\n--- Loading Baseline Scenario for Comparison: {baseline_folder_name} ---")
+        
+        with dfmt.open_partitioned_dataset(base_path) as ds_base:
+            # Match the target morph time used for all other plots
+            idx_b, _, _, _, _ = find_timestep_for_target_morphtime(ds_base, morfyears, run_startdate)
+            # We use .values.copy() to keep the data in memory after closing the file
+            baseline_bed_data = ds_base[var_name].isel(time=idx_b).values.copy()
+            print(f"Baseline loaded successfully from index {idx_b}.")
+    else:
+        print(f"Warning: Baseline prefix '{baseline_prefix}' not found in model_folders.")
+
 # --- LOOP THROUGH DIRECTORIES ---
 for folder in model_folders:
     model_location = os.path.join(base_directory, folder)
-    
-    # Create output_plots directory inside each model folder
     output_plots_dir = os.path.join(model_location, 'output_plots')
     os.makedirs(output_plots_dir, exist_ok=True)
 
     file_pattern = os.path.join(model_location, 'output', '*_map.nc')
-    
     print(f"\nProcessing: {folder}")
-    
-    # Extract computation time from .dia file
-    dia_file = os.path.join(model_location, 'output', 'FlowFM_0000.dia')
-    comp_days, comp_hours = extract_computation_time(dia_file)
-    
-    if comp_days is not None and comp_hours is not None:
-        print(f"  ** INFO   : total computation time (d)  : {comp_days:20.10f}")
-        print(f"  ** INFO   : total computation time (h)  : {comp_hours:20.10f}")
-    
+
     try:
-        # Load the partitioned dataset
+        # 1. load the dataset and data_to_plot first
         ds = dfmt.open_partitioned_dataset(file_pattern)
-        var_name = 'mesh2d_mor_bl'
         
         if var_name not in ds:
             print(f"Skipping {folder}: Variable {var_name} not found.")
             ds.close()
             continue
-        
-        # --- CHOOSE REFERENCE BED FOR DETRENDING ---
-        reference_bed = None
-        if apply_detrending:
-            if use_mf50_reference and (reference_bed_MF50 is not None):
-                # Use MF50 t=0 for all runs (same as first script)
-                print(f"Using MF50 reference bed (time index {reference_time_idx}) for detrending of {folder}...")
-                reference_bed = reference_bed_MF50
-            else:
-                # Per‑run reference at reference_time_idx
-                if 'time' in ds[var_name].dims:
-                    print(f"Storing per‑run reference bed (time index {reference_time_idx}) for {folder}...")
-                    reference_bed = ds[var_name].isel(time=reference_time_idx).values.copy()
-                else:
-                    # If no time dimension, skip detrending
-                    print(f"{folder}: no time dimension in {var_name}; detrending disabled for this run.")
-                    reference_bed = None
 
-        # Find the correct timestep based on morphological time
+        # Find time index and extract the bed level
         if 'time' in ds[var_name].dims:
             closest_idx, actual_time, actual_hydro_years, actual_morph_years, current_morfac = \
                 find_timestep_for_target_morphtime(ds, morfyears, run_startdate)
-
-            print(f"  MORFAC: {current_morfac:.1f}")
-            print(f"  Hydrodynamic time elapsed: {actual_hydro_years:.2f} years")
-            print(f"  Morphological time: {actual_morph_years:.2f} years")
-            print(f"  Hydrodynamic date: {actual_time}")
-            print(f"  Time index: {closest_idx}")
-
             data_to_plot = ds[var_name].isel(time=closest_idx)
-
-            # Apply detrending if possible
-            if apply_detrending and (reference_bed is not None):
-                print(f"Applying detrending at time index {closest_idx} for {folder}...")
-                data_to_plot = data_to_plot - reference_bed
-
-            timestamp_str = str(actual_time).split('.')[0].replace('T', ' ')
-            title_info = f"{timestamp_str} | MORFAC = {current_morfac:.0f} | Tmorph = {actual_morph_years:.1f} years"
+            title_info = f"Tmorph = {actual_morph_years:.1f} years"
         else:
             data_to_plot = ds[var_name]
-            if apply_detrending and (reference_bed is not None):
-                print(f"Applying detrending (static map) for {folder}...")
-                data_to_plot = data_to_plot - reference_bed
             title_info = "Static Map"
 
-        # --- PLOTTING ---
-        fig, ax = plt.subplots(figsize=(12, 8))
+        # 2. choose which plots to make
+        if not compare_against_baseline:
+            # --- standard bed level plots ---
+            fig, ax = plt.subplots(figsize=(12, 8))
+            pc = data_to_plot.ugrid.plot(
+                ax=ax, cmap=terrain_cmap, add_colorbar=False,
+                edgecolors='none', vmin=-15, vmax=15
+            )
+            ax.set_aspect('equal')
+            ax.set_title(f"Bed level: {folder} | {title_info}")
+            
+            divider = make_axes_locatable(ax)
+            cax = divider.append_axes("right", size="3%", pad=0.1)
+            plt.colorbar(pc, cax=cax).set_label('Bed Level [m]')
+            
+            save_name = f"terrain_map_final_{folder}.png"
+            plt.savefig(os.path.join(output_plots_dir, save_name), dpi=300, bbox_inches='tight')
+            plt.show()
+            plt.close(fig)
 
-        # For detrended maps the range may need adjusting; here keep original vmin/vmax
-        pc = data_to_plot.ugrid.plot(
-            ax=ax,
-            cmap=terrain_cmap,
-            add_colorbar=False,
-            edgecolors='none',
-            vmin=-15,
-            vmax=13
-        )
+        elif compare_against_baseline and baseline_bed_data is not None:
+            # --- difference maps ---
+            print(f"Generating difference map for {folder} vs {baseline_prefix}...")
+            
+            # subtraction of data vs basline
+            diff_values = data_to_plot - baseline_bed_data
 
-        ax.set_aspect('equal')
+            fig_diff, ax_diff = plt.subplots(figsize=(12, 8))
+            pc_diff = diff_values.ugrid.plot(
+                ax=ax_diff, cmap='RdBu_r', add_colorbar=False,
+                edgecolors='none', vmin=comparison_vmin, vmax=comparison_vmax
+            )
 
-        detrend_label = " (detrended)" if apply_detrending and (reference_bed is not None) else ""
-        ax.set_title(f"Bed level{detrend_label} on {title_info}", color='black')
+            ax_diff.set_aspect('equal')
+            ax_diff.set_title(f"Difference: {folder} - {baseline_prefix}\n(Red=Accretion, Blue=Erosion)")
 
-        # Add colorbar
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="3%", pad=0.1)
-        cbar = plt.colorbar(pc, cax=cax)
-        cbar.set_label('Bed Level [m]')
+            divider_diff = make_axes_locatable(ax_diff)
+            cax_diff = divider_diff.append_axes("right", size="3%", pad=0.1)
+            plt.colorbar(pc_diff, cax=cax_diff).set_label('Difference [m]')
 
-        plt.tight_layout()
+            save_name_diff = f"difference_map_{folder}_vs_{baseline_prefix}.png"
+            plt.savefig(os.path.join(output_plots_dir, save_name_diff), dpi=300, bbox_inches='tight')
+            plt.show()
+            plt.close(fig_diff)
 
-        # Save in the specific model folder
-        suffix = "_detrended" if apply_detrending and (reference_bed is not None) else ""
-        save_name = f"terrain_map_final{suffix}_{folder}.png"
-        save_path = os.path.join(output_plots_dir, save_name)
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.show()
-        print(f"Successfully saved: {save_name}")
-
-        # Close plot and dataset to save memory
-        plt.close(fig)
+        # 3. close the dataset at the end of the loop
         ds.close()
 
     except Exception as e:
         print(f"Error processing {folder}: {e}")
-
-print("\nBatch processing complete.")
-# %%
-#         # Find the correct timestep based on morphological time
-#         if 'time' in ds[var_name].dims:
-#             closest_idx, actual_time, actual_hydro_years, actual_morph_years, current_morfac = \
-#                 find_timestep_for_target_morphtime(ds, morfyears, run_startdate)
-            
-#             print(f"  MORFAC: {current_morfac:.1f}")
-#             print(f"  Hydrodynamic time elapsed: {actual_hydro_years:.2f} years")
-#             print(f"  Morphological time: {actual_morph_years:.2f} years")
-#             print(f"  Hydrodynamic date: {actual_time}")
-#             print(f"  Time index: {closest_idx}")
-            
-#             data_to_plot = ds[var_name].isel(time=closest_idx)
-            
-#             timestamp_str = str(actual_time).split('.')[0].replace('T', ' ')
-#             title_info = f"{timestamp_str} | MORFAC = {current_morfac:.0f} | Tmorph = {actual_morph_years:.1f} years"
-#         else:
-#             data_to_plot = ds[var_name]
-#             title_info = "Static Map"
-
-#         # --- PLOTTING ---
-#         fig, ax = plt.subplots(figsize=(12, 8))
-        
-#         pc = data_to_plot.ugrid.plot(
-#             ax=ax, 
-#             cmap=terrain_cmap, 
-#             add_colorbar=False, 
-#             edgecolors='none',
-#             vmin=-15,
-#             vmax=13
-#         )
-
-#         ax.set_aspect('equal')
-#         ax.set_title(f"Bed level on {title_info}", color='black')
-
-#         # Add colorbar
-#         divider = make_axes_locatable(ax)
-#         cax = divider.append_axes("right", size="3%", pad=0.1)
-#         cbar = plt.colorbar(pc, cax=cax)
-#         cbar.set_label('Bed Level [m]')
-
-#         plt.tight_layout()
-
-#         # Save in the specific model folder
-#         save_name = f"terrain_map_final_{folder}.png"
-#         save_path = os.path.join(output_plots_dir, save_name)
-#         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-#         plt.show()
-#         print(f"Successfully saved: {save_name}")
-        
-#         # Close plot and dataset to save memory
-#         plt.close(fig)
-#         ds.close()
-
-#     except Exception as e:
-#         print(f"Error processing {folder}: {e}")
-
-# print("\nBatch processing complete.")
-# # %%
