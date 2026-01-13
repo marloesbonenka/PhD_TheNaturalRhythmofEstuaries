@@ -19,7 +19,7 @@ from FUNCTIONS.F_braiding_index import *
 scenarios_morfac = True
 scenarios_discharge = False 
 scenarios_variability = False 
-apply_detrending = False
+apply_detrending = True
 reference_time_idx = 0
 
 var_name = 'mesh2d_mor_bl'
@@ -37,7 +37,7 @@ if scenarios_morfac:
     morfyears = 400
 
     # --- COMPARISON SETTINGS ---
-    compare_against_baseline = True
+    compare_against_baseline = False
     baseline_prefix = 'MF100' 
     comparison_vmin = -2.0  
     comparison_vmax = 2.0
@@ -122,7 +122,7 @@ if scenarios_morfac and compare_against_baseline:
     else:
         print(f"Warning: Baseline prefix '{baseline_prefix}' not found in model_folders.")
 
-# --- LOOP THROUGH DIRECTORIES ---
+# --- loop through directories ---
 for folder in model_folders:
     model_location = os.path.join(base_directory, folder)
     output_plots_dir = os.path.join(model_location, 'output_plots')
@@ -132,59 +132,67 @@ for folder in model_folders:
     print(f"\nProcessing: {folder}")
 
     try:
-        # 1. load the dataset and data_to_plot first
+        # 1. load data
         ds = dfmt.open_partitioned_dataset(file_pattern)
-        
         if var_name not in ds:
             print(f"Skipping {folder}: Variable {var_name} not found.")
-            ds.close()
-            continue
+            ds.close(); continue
 
-        # Find time index and extract the bed level
+        # 2. define reference bed (for detrending scenario)
+        reference_bed = None
+        if apply_detrending:
+            if use_mf50_reference and (reference_bed_MF50 is not None):
+                reference_bed = reference_bed_MF50
+            elif 'time' in ds[var_name].dims:
+                reference_bed = ds[var_name].isel(time=reference_time_idx).values.copy()
+
+        # 3. extract target data
         if 'time' in ds[var_name].dims:
             closest_idx, actual_time, actual_hydro_years, actual_morph_years, current_morfac = \
                 find_timestep_for_target_morphtime(ds, morfyears, run_startdate)
             data_to_plot = ds[var_name].isel(time=closest_idx)
-            title_info = f"Tmorph = {actual_morph_years:.1f} years"
+            
+            # optional detrending
+            if apply_detrending and (reference_bed is not None):
+                data_to_plot = data_to_plot - reference_bed
+            
+            timestamp_str = str(actual_time).split('.')[0].replace('T', ' ')
+            title_info = f"{timestamp_str} | MF={current_morfac:.0f} | Tmorph={actual_morph_years:.1f}y"
         else:
             data_to_plot = ds[var_name]
+            if apply_detrending and (reference_bed is not None):
+                data_to_plot = data_to_plot - reference_bed
             title_info = "Static Map"
 
-        # 2. choose which plots to make
+        # 4. choose plots
         if not compare_against_baseline:
             # --- standard bed level plots ---
             fig, ax = plt.subplots(figsize=(12, 8))
-            pc = data_to_plot.ugrid.plot(
-                ax=ax, cmap=terrain_cmap, add_colorbar=False,
-                edgecolors='none', vmin=-15, vmax=15
-            )
+            pc = data_to_plot.ugrid.plot(ax=ax, cmap=terrain_cmap, add_colorbar=False, 
+                                        edgecolors='none', vmin=-15, vmax=15)
             ax.set_aspect('equal')
-            ax.set_title(f"Bed level: {folder} | {title_info}")
+            det_suf = " (detrended)" if apply_detrending else ""
+            ax.set_title(f"Bed level{det_suf}: {folder}\n{title_info}")
             
             divider = make_axes_locatable(ax)
             cax = divider.append_axes("right", size="3%", pad=0.1)
             plt.colorbar(pc, cax=cax).set_label('Bed Level [m]')
             
-            save_name = f"terrain_map_final_{folder}.png"
+            save_name = f"terrain_map_final{'_detrended' if apply_detrending else ''}_{folder}.png"
             plt.savefig(os.path.join(output_plots_dir, save_name), dpi=300, bbox_inches='tight')
             plt.show()
             plt.close(fig)
 
         elif compare_against_baseline and baseline_bed_data is not None:
             # --- difference maps ---
-            print(f"Generating difference map for {folder} vs {baseline_prefix}...")
-            
-            # subtraction of data vs basline
+            print(f"Generating difference map: {folder} - {baseline_prefix}")
             diff_values = data_to_plot - baseline_bed_data
 
             fig_diff, ax_diff = plt.subplots(figsize=(12, 8))
-            pc_diff = diff_values.ugrid.plot(
-                ax=ax_diff, cmap='RdBu_r', add_colorbar=False,
-                edgecolors='none', vmin=comparison_vmin, vmax=comparison_vmax
-            )
-
+            pc_diff = diff_values.ugrid.plot(ax=ax_diff, cmap='RdBu_r', add_colorbar=False, 
+                                            edgecolors='none', vmin=comparison_vmin, vmax=comparison_vmax)
             ax_diff.set_aspect('equal')
-            ax_diff.set_title(f"Difference: {folder} - {baseline_prefix}\n(Red=Accretion, Blue=Erosion)")
+            ax_diff.set_title(f"Bed Level Difference: {folder} vs {baseline_prefix}\n(Red=Accretion, Blue=Erosion)")
 
             divider_diff = make_axes_locatable(ax_diff)
             cax_diff = divider_diff.append_axes("right", size="3%", pad=0.1)
@@ -195,7 +203,6 @@ for folder in model_folders:
             plt.show()
             plt.close(fig_diff)
 
-        # 3. close the dataset at the end of the loop
         ds.close()
 
     except Exception as e:
