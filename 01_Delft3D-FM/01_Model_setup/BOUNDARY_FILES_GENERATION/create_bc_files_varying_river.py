@@ -12,51 +12,13 @@ Description: Generates river boundary conditions for an estuary domain, incorpor
 # Load packages
 import os
 import sys
-import numpy as np
-import matplotlib as mpl
 
 #%%
 #Add the current working directory (where FUNCTIONS is located)
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\01_Model_setup\BOUNDARY_FILES_GENERATION")
 
-#%%
-import importlib.util
-print(importlib.util.find_spec("FUNCTIONS"))
-print(importlib.util.find_spec("FUNCTIONS.FUNCS_create_bc_files_varying_river"))
-#%%
 # Load functions to create Delft3D-FM boundary files
 from FUNCTIONS.FUNCS_create_bc_varyingriver_csv_FM import *
-
-#%% PLOTTING SETTINGS   
-defaultcolour = 'black'
-defaultfont = 20
-
-mpl.rcParams['text.color'] = 'black'          # Default text color
-mpl.rcParams['font.size'] = defaultfont             # Default font size
-
-mpl.rcParams['axes.titlesize'] = defaultfont+4      # Title font size
-mpl.rcParams['axes.titlecolor'] = defaultcolour     # Title color
-mpl.rcParams['axes.labelsize'] = defaultfont        # Axis label size
-mpl.rcParams['axes.labelcolor'] = defaultcolour     # Axis label color
-mpl.rcParams['axes.facecolor'] = defaultcolour      # Background color of the axes (plot area)
-
-mpl.rcParams['xtick.labelsize'] = defaultfont       # X tick labels size
-mpl.rcParams['xtick.color'] = defaultcolour         # tick color matches text color
-mpl.rcParams['xtick.labelcolor'] = defaultcolour
-
-mpl.rcParams['ytick.labelsize'] = defaultfont       # Y tick labels size
-mpl.rcParams['ytick.color'] = defaultcolour
-mpl.rcParams['ytick.labelcolor'] = defaultcolour
-
-mpl.rcParams['axes.grid'] = True                    # Default enable grid
-mpl.rcParams['grid.alpha'] = 0.3                    # Grid transparency
-
-mpl.rcParams['figure.figsize'] = (11, 8)            # Default figure size (width, height) in inches
-mpl.rcParams['legend.fontsize'] = defaultfont       # Legend font size
-
-mpl.rcParams['lines.linewidth'] = 3
-mpl.rcParams['savefig.dpi'] = 600
-
 
  #%% Configuration settings
 total_discharge = 1000                   # Total river discharge in m³/s
