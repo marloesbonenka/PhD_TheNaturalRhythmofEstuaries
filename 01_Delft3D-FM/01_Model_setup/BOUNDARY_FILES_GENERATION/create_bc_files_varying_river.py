@@ -1,0 +1,142 @@
+"""
+Delft3D-FM River Boundary Condition Generation Script
+Author: Marloes Bonenkamp
+Date: Janaury 15, 2026
+Description: Generates river boundary conditions for an estuary domain, incorporating
+             variability, flashiness, climate change scenarios, and a sinusoidal distribution
+             of discharge among four river cells. Includes checks for cell-to-cell
+             difference limit, preservation of the sinusoidal pattern, and total mean discharge.
+"""
+
+#%% 
+# Load packages
+import os
+import sys
+import numpy as np
+import matplotlib as mpl
+
+#%%
+#Add the current working directory (where FUNCTIONS is located)
+sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\01_Model_setup\BOUNDARY_FILES_GENERATION")
+
+#%%
+import importlib.util
+print(importlib.util.find_spec("FUNCTIONS"))
+print(importlib.util.find_spec("FUNCTIONS.FUNCS_create_bc_files_varying_river"))
+#%%
+# Load functions to create Delft3D-FM boundary files
+from FUNCTIONS.FUNCS_create_bc_varyingriver_csv_FM import *
+
+#%% PLOTTING SETTINGS   
+defaultcolour = 'black'
+defaultfont = 20
+
+mpl.rcParams['text.color'] = 'black'          # Default text color
+mpl.rcParams['font.size'] = defaultfont             # Default font size
+
+mpl.rcParams['axes.titlesize'] = defaultfont+4      # Title font size
+mpl.rcParams['axes.titlecolor'] = defaultcolour     # Title color
+mpl.rcParams['axes.labelsize'] = defaultfont        # Axis label size
+mpl.rcParams['axes.labelcolor'] = defaultcolour     # Axis label color
+mpl.rcParams['axes.facecolor'] = defaultcolour      # Background color of the axes (plot area)
+
+mpl.rcParams['xtick.labelsize'] = defaultfont       # X tick labels size
+mpl.rcParams['xtick.color'] = defaultcolour         # tick color matches text color
+mpl.rcParams['xtick.labelcolor'] = defaultcolour
+
+mpl.rcParams['ytick.labelsize'] = defaultfont       # Y tick labels size
+mpl.rcParams['ytick.color'] = defaultcolour
+mpl.rcParams['ytick.labelcolor'] = defaultcolour
+
+mpl.rcParams['axes.grid'] = True                    # Default enable grid
+mpl.rcParams['grid.alpha'] = 0.3                    # Grid transparency
+
+mpl.rcParams['figure.figsize'] = (11, 8)            # Default figure size (width, height) in inches
+mpl.rcParams['legend.fontsize'] = defaultfont       # Legend font size
+
+mpl.rcParams['lines.linewidth'] = 3
+mpl.rcParams['savefig.dpi'] = 600
+
+
+ #%% Configuration settings
+total_discharge = 1000                   # Total river discharge in m³/s
+nyears = 52
+duration_min    = 365.25 * 24 * 60 * nyears               # Total simulation duration in minutes;  525600 = 1 year;     2629440 = 5 years
+time_step_rcel  = 1440                                  # Time step for variations over consecutive river cells in minutes, to force bar formation      
+
+# IMPORTANT: Update these values based on your grid script
+grid_info = {
+    'nx': 99,#100,                                              # Number of sea basin cells in x-direction (m-direction)
+    'ny': 141,#153,                                          # Number of sea basin cells in y-direction (n-direction)
+    'river_cells': [
+        (395, 72),
+        (395, 71),
+        (395, 70),
+        (395, 69)
+    ]
+}
+
+# Specify the directory of model runs
+specific_scenario_location = f'Test_CSVfiles_boundaries_50years'
+output_dir = r"u:\PhDNaturalRhythmEstuaries\Models"
+
+output_dir = os.path.join(output_dir, specific_scenario_location)
+os.makedirs(output_dir, exist_ok=True)
+
+#%%
+# Define scenarios  
+scenarios = [
+    {
+        "name":                 f"01_baserun{total_discharge}",               # Name for the single scenario
+        "total_discharge":      total_discharge,                        # Total river discharge in m³/s
+        "duration_min":         duration_min,                           # Total simulation duration in minutes
+        "time_step":            time_step_rcel,                         # Time step for variations over river cells in minutes
+        #"cv":                   0,                                      # Long-term/overall variability: standard deviation of the mean
+        "pattern_type":         "constant"                              # or "seasonal"
+    }
+    ,    
+    {
+        "name":                 f"02_run{total_discharge}_seasonal",          # Name for the single scenario
+        "total_discharge":      total_discharge,                        # Total river discharge in m³/s
+        "duration_min":         duration_min,                           # 525600 = 1year #5 years = 2629440, total simulation duration in minutes
+        "time_step":            time_step_rcel,                         # Time step for variations over river cells in minutes
+        #"cv":                   0.5,                                    # Long-term/overall variability: standard deviation of the mean
+        "pattern_type":         "seasonal"                              # or "constant"
+    }
+    ,    
+    {
+        "name":                 f"03_run{total_discharge}_flashy",            # Name for the single scenario
+        "total_discharge":      total_discharge,                        # Total river discharge in m³/s
+        "duration_min":         duration_min,                           # 525600 = 1year #5 years = 2629440,  # Total simulation duration in minutes
+        "time_step":            time_step_rcel,                         # Time step for variations over river cells in minutes
+        # "cv":                   1.0,                                    # Long-term/overall variability: standard deviation of the mean
+        "pattern_type":         "flashy"                                # or "seasonal" or "constant" (flashiness refers to daily fluctuations, where high values indicate frequent abrupt changes)
+    }
+]
+
+# for scenario in scenarios:
+#     scenario_dir = os.path.join(output_dir, scenario["name"])
+#     boundary_dir = os.path.join(scenario_dir, "boundaryfiles")
+#     os.makedirs(boundary_dir, exist_ok=True)
+
+#     generate_boundary_files(grid_info, scenario, boundary_dir)
+
+# # Visualize and analyze can use output_dir and scenario names accordingly
+# visualize_discharge_scenarios(scenarios, output_dir, grid_info)
+
+for scenario in scenarios:
+    # Create the specific directory for this scenario's boundary files
+    scenario_name = scenario["name"]
+    boundary_dir = os.path.join(output_dir, scenario_name, "boundaryfiles_csv")
+    os.makedirs(boundary_dir, exist_ok=True)
+
+    # Call the updated function
+    generate_river_discharges_fm(
+        grid_info=grid_info, 
+        params=scenario, 
+        output_dir=boundary_dir, 
+        start_date_str='2024-01-01 00:00:00'
+    )
+
+print("finished --> load CSVs into GUI and create. bc files")
+#%%

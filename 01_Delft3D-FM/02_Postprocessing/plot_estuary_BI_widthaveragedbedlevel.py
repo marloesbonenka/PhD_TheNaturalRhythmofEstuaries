@@ -19,7 +19,7 @@ from FUNCTIONS.F_channelwidth import *
 #%% --- CONFIGURATION ---
 # Model output
 base_directory = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15"
-target_year = 400 
+target_year = 50 
 config = f'Test_MORFAC/Tmorph_{target_year}years'
 
 # Braiding index
@@ -33,7 +33,7 @@ bed_threshold = 6
 depth_percentile = 95  # For maximum depth analysis (95th percentile)
 safety_buffer = 0.20  # For channel width analysis (20 cm below mean)
 
-#%% -- CONFIGURATION | do not change ---
+#%% -- special configuration | do not change ---
 special_base = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15"
 special_config = 'Test_MORFAC/Tmorph_50years'
 use_mf50_reference = (base_directory == special_base) and (config == special_config)
@@ -46,7 +46,7 @@ x_targets = np.arange(20000, 44001, 1000)
 y_range = (5000, 10000)
 
 #%% --- SETTINGS ---
-apply_detrending = False  # Subtract initial bed level to see changes
+apply_detrending = True  # Subtract initial bed level to see changes
 reference_time_idx = 0   # Time index to use as reference (0 = first timestep)
 use_absolute_depth = True  # Use absolute depth values (positive = deep)
 
@@ -324,7 +324,7 @@ else:
                 axes[plot_idx].plot(x_targets/1000, data['BI_tau'], 
                                    label=f'MF {mf}', color=colors[idx], marker='o', ms=4)
         axes[plot_idx].set_title(f'BI ({var_tau}), fixed threshold: tau > {tau_threshold} N/m²')
-        axes[plot_idx].set_ylabel('Braiding Index')
+        axes[plot_idx].set_ylabel('braiding index')
         axes[plot_idx].legend(loc='best')
         axes[plot_idx].grid(True, alpha=0.2)
         plot_idx += 1
@@ -337,7 +337,7 @@ else:
                 axes[plot_idx].plot(x_targets/1000, data['BI_depth'], 
                                    label=f'MF {mf}', color=colors[idx], marker='s', ms=4, linestyle='--')
         axes[plot_idx].set_title(f'BI ({var_depth}), relative threshold: {int(depth_threshold*100)}% above mean water depth')
-        axes[plot_idx].set_ylabel('Braiding Index')
+        axes[plot_idx].set_ylabel('braiding index')
         axes[plot_idx].legend(loc='best')
         axes[plot_idx].grid(True, alpha=0.2)
         plot_idx += 1
@@ -349,8 +349,8 @@ else:
             if 'BL' in data:
                 axes[plot_idx].plot(data['x_centers']/1000, data['BL'], 
                                    color=colors[idx], linewidth=2, label=f'MF {mf}')
-        axes[plot_idx].set_title('Width-averaged Bed Level')
-        axes[plot_idx].set_ylabel('Bed Level [m]')
+        axes[plot_idx].set_title('width-averaged bed level')
+        axes[plot_idx].set_ylabel('bed level [m]')
         axes[plot_idx].legend(loc='best')
         axes[plot_idx].grid(True, alpha=0.2)
         plot_idx += 1
@@ -362,8 +362,8 @@ else:
             if 'MaxDepth' in data:
                 axes[plot_idx].plot(data['x_centers']/1000, data['MaxDepth'], 
                                    color=colors[idx], linewidth=2, label=f'MF {mf}', marker='o', ms=3)
-        axes[plot_idx].set_title(f'{depth_percentile}th Percentile Channel Depth')
-        axes[plot_idx].set_ylabel('Depth [m]')
+        axes[plot_idx].set_title(f'p{depth_percentile} channel depth')
+        axes[plot_idx].set_ylabel('depth [m]')
         axes[plot_idx].legend(loc='best')
         axes[plot_idx].grid(True, alpha=0.2)
         plot_idx += 1
@@ -375,18 +375,19 @@ else:
             if 'ChannelWidth' in data:
                 axes[plot_idx].plot(x_targets/1000, data['ChannelWidth'], 
                                    color=colors[idx], linewidth=2, label=f'MF {mf}', marker='s', ms=3)
-        axes[plot_idx].set_title(f'Maximum Channel Width (threshold: mean - {int(safety_buffer*100)} cm)')
-        axes[plot_idx].set_ylabel('Width [m]')
+        axes[plot_idx].set_title(f'maximum channel width (threshold: mean depth - {int(safety_buffer*100)} cm)')
+        axes[plot_idx].set_ylabel('width [m]')
         axes[plot_idx].legend(loc='best')
         axes[plot_idx].grid(True, alpha=0.2)
     
-    axes[-1].set_xlabel('X-coordinate along estuary [km]')
+    axes[-1].set_xlabel('x-coordinate along estuary [km]')
     
     plt.tight_layout()
+
     if apply_detrending:
-        plt.savefig(os.path.join(base_directory, config, f'comparison_Tmorph_{target_year}years_detrended.png'), dpi=300)
+        plt.savefig(os.path.join(base_directory, config, f'sensitivity_MF_detrended_along_estuary_Tmorph_{target_year}years.png'), dpi=300)
     else:
-        plt.savefig(os.path.join(base_directory, config, f'comparison_Tmorph_{target_year}years.png'), dpi=300)
+        plt.savefig(os.path.join(base_directory, config, f'sensitivity_MF_along_estuary_Tmorph_{target_year}years.png'), dpi=300)
     plt.show()
     
     print(f'Saved comparison plot at {os.path.join(base_directory, config)}')
