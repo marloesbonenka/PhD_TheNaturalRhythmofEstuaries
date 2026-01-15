@@ -76,16 +76,6 @@ scenarios = [
     }
 ]
 
-# for scenario in scenarios:
-#     scenario_dir = os.path.join(output_dir, scenario["name"])
-#     boundary_dir = os.path.join(scenario_dir, "boundaryfiles")
-#     os.makedirs(boundary_dir, exist_ok=True)
-
-#     generate_boundary_files(grid_info, scenario, boundary_dir)
-
-# # Visualize and analyze can use output_dir and scenario names accordingly
-# visualize_discharge_scenarios(scenarios, output_dir, grid_info)
-
 for scenario in scenarios:
     # Create the specific directory for this scenario's boundary files
     scenario_name = scenario["name"]
