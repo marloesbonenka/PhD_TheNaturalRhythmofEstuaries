@@ -19,10 +19,10 @@ from FUNCTIONS.F_braiding_index import *
 #%%
 # --- SETTINGS ---
 # Choose discharge variability type: '02_seasonal' or '03_flashy'
-discharge_type = '02_seasonal'  # Change to '03_flashy' as needed
+discharge_type = '03_flashy'  # Change to '03_flashy' as needed
 
 # --- TOGGLE: Which morphological time periods to load and plot ---
-load_tmorph_periods = [50, 400]  # Load both 50 and 400-year data
+load_tmorph_periods = [400]  # Load both 50 and 400-year data
 # Alternative: load_tmorph_periods = [50]  # Only 50-year data
 # Alternative: load_tmorph_periods = [400]  # Only 400-year data
 

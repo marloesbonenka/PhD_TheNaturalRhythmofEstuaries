@@ -1,35 +1,25 @@
 """Very simple map plot"""
 #%% 
-import os
+from pathlib import Path
 import matplotlib.pyplot as plt
 import dfm_tools as dfmt
-from matplotlib.colors import LinearSegmentedColormap
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from FUNCTIONS.F_general import terrain_cmap
 #%%
 
 # --- 1. SETTINGS & PATHS ---
 # Update these to match your actual folders
-model_location = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Test_MORFAC\MF50_sens.8778435"
+base_location = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
+model_location = base_location / 'Test_MORFAC' / '02_seasonal' / 'Tmorph_50years' / 'MF50_sens.8778435'
 # discharge = 500
 # scenario = f"01_baserun{discharge}"
 # # This pattern finds all partitioned map files
-# file_pattern = os.path.join(model_location, f"Q{discharge}", scenario, 'DFM_OUTPUT_*', "*_map.nc")
-file_pattern = os.path.join(model_location, 'output', '*_map.nc')
+# file_pattern = model_location / f"Q{discharge}" / scenario / 'DFM_OUTPUT_*' / "*_map.nc"
+file_pattern = model_location / 'output' / '*_map.nc'
 
-# --- 2. CUSTOM COLORMAP ---
-def create_terrain_colormap():
-    colors = [
-        (0.00, "#000066"), (0.10, "#0000ff"), (0.30, "#00ffff"),
-        (0.40, "#00ffff"), (0.50, "#ffffcc"), (0.60, "#ffcc00"),
-        (0.75, "#cc6600"), (0.90, "#228B22"), (1.00, "#006400"),
-    ]
-    return LinearSegmentedColormap.from_list("custom_terrain", colors)
-
-terrain_cmap = create_terrain_colormap()
-
-# --- 3. LOADING DATA ---
+# --- 2. LOADING DATA ---
 print(f"Searching for files: {file_pattern}")
-ds = dfmt.open_partitioned_dataset(file_pattern)
+ds = dfmt.open_partitioned_dataset(str(file_pattern))
 
 #%%
 # --- DIAGNOSTIC: WHAT IS IN MY DATASET? ---
@@ -49,71 +39,60 @@ for var in ds.data_vars:
 #%%
 var_name = 'mesh2d_mor_bl'
 
-# #Check if the variable exists and has a time dimension
+def build_title_info(time_index, label):
+    raw_time = ds['time'].isel(time=time_index).values
+    timestamp_str = str(raw_time).split('.')[0].replace('T', ' ')
+    if 'morfac' in ds:
+        current_morfac = ds['morfac'].isel(time=time_index).values
+        return f"{label}: {timestamp_str} | MORFAC = {current_morfac:.0f}"
+    return f"{label}: {timestamp_str}"
 
-# if var_name not in ds:
-#     print(f"Variable {var_name} not found. Available variables: {list(ds.data_vars)}")
-# else:
-#     # If the variable has 'time', take the last one. Otherwise, take it as is.
-#     if 'time' in ds[var_name].dims:
-#         data_to_plot = ds[var_name].isel(time=-1)
-#         print("Selected the last timestep.")
-#     else:
-#         data_to_plot = ds[var_name]
-#         print("No time dimension found, plotting the static map.")
+def plot_timestep(data, title_info, save_name):
+    fig, ax = plt.subplots(figsize=(12, 8))
+    pc = data.ugrid.plot(
+        ax=ax,
+        cmap=terrain_cmap,
+        add_colorbar=False,
+        edgecolors='none',
+        vmin=-15,
+        vmax=13
+    )
+
+    ax.set_aspect('equal')
+    ax.set_title(f"Bed level on {title_info}", color='black')
+
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="3%", pad=0.1)
+    cbar = plt.colorbar(pc, cax=cax)
+    cbar.set_label('Bed Level [m]')
+
+    plt.tight_layout()
+
+    save_path = model_location / save_name
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    print(f"Plot saved to: {save_path}")
+    plt.show()
 
 if var_name not in ds:
     print(f"Variable {var_name} not found.")
 else:
     if 'time' in ds[var_name].dims:
-        # Select the last timestep
-        data_to_plot = ds[var_name].isel(time=-1)
-        
-        # 1. Get the actual timestamp
-        # Converting to string and taking the first 16 characters for YYYY-MM-DD HH:MM
-        raw_time = ds['time'].isel(time=-1).values
-        timestamp_str = str(raw_time).split('.')[0].replace('T', ' ') 
-        
-        # 2. Get the MORFAC value at the last timestep
-        # We use .values to get the number from the array
-        current_morfac = ds['morfac'].isel(time=-1).values
-        
-        title_info = f"{timestamp_str} | MORFAC = {current_morfac:.0f}"
-        print(f"Selected last timestep: {title_info}")
+        first_index = 0
+        last_index = -1
+
+        first_data = ds[var_name].isel(time=first_index)
+        first_title = build_title_info(first_index, "First timestep")
+        print(f"Selected first timestep: {first_title}")
+        plot_timestep(first_data, first_title, "terrain_map_first.png")
+
+        last_data = ds[var_name].isel(time=last_index)
+        last_title = build_title_info(last_index, "Last timestep")
+        print(f"Selected last timestep: {last_title}")
+        plot_timestep(last_data, last_title, "terrain_map_final.png")
     else:
         data_to_plot = ds[var_name]
         title_info = "Static Map"
-        
-# --- 4. PLOTTING ---
-fig, ax = plt.subplots(figsize=(12, 8))
-
-# Use the ugrid plotting engine
-pc = data_to_plot.ugrid.plot(
-    ax=ax, 
-    cmap=terrain_cmap, 
-    add_colorbar=False, 
-    edgecolors='none', # 'none' makes it look smoother/terrain-like
-    vmin = -15,
-    vmax = 13
-)
-
-# Formatting
-ax.set_aspect('equal')
-ax.set_title(f"Bed level on {title_info}", color='black')
-
-# Add colorbar
-divider = make_axes_locatable(ax)
-cax = divider.append_axes("right", size="3%", pad=0.1)
-cbar = plt.colorbar(pc, cax=cax)
-cbar.set_label('Bed Level [m]')
-
-plt.tight_layout()
-
-# Save and Show
-save_path = os.path.join(model_location, f"terrain_map_final.png")
-plt.savefig(save_path, dpi=300, bbox_inches='tight')
-print(f"Plot saved to: {save_path}")
-plt.show()
+        plot_timestep(data_to_plot, title_info, "terrain_map_static.png")
 
 # Clean up
 ds.close()
