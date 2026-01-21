@@ -55,11 +55,10 @@ def plot_timestep(data, title_info, save_name):
         add_colorbar=False,
         edgecolors='none',
         vmin=-15,
-        vmax=13
+        vmax=15
     )
 
     ax.set_aspect('equal')
-    ax.set_title(f"Bed level on {title_info}", color='black')
 
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="3%", pad=0.1)
@@ -68,7 +67,7 @@ def plot_timestep(data, title_info, save_name):
 
     plt.tight_layout()
 
-    save_path = model_location / save_name
+    save_path = model_location / 'output_plots' / save_name 
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"Plot saved to: {save_path}")
     plt.show()
@@ -81,7 +80,8 @@ else:
         last_index = -1
 
         first_data = ds[var_name].isel(time=first_index)
-        first_title = build_title_info(first_index, "First timestep")
+        # first_title = build_title_info(first_index, "first timestep")
+        first_title = 'at t = 0'
         print(f"Selected first timestep: {first_title}")
         plot_timestep(first_data, first_title, "terrain_map_first.png")
 
