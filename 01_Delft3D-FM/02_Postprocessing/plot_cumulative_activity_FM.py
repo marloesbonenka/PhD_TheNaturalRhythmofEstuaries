@@ -38,11 +38,12 @@ scenarios_variability = False
 var_name = "mesh2d_mor_bl"
 
 # Estuary bounds (same as other FM scripts)
-x_range = (20000, 45000)
+x_targets = np.arange(20000, 44001, 1000)
 y_range = (5000, 10000)
+dx = int(np.diff(x_targets).min())
 
 # Spatial binning for width-averaged profiles
-x_bin_size = 250  # meters
+x_bin_size = dx  # meters
 bed_threshold = 6  # exclude land (higher than 6 m)
 
 # Time slicing
@@ -56,12 +57,16 @@ fontsize_labels = 12
 fontsize_titles = 14
 fontsize_axes = 10
 
+# Detrending (matches width-averaged bed level logic)
+apply_detrending = False
+reference_time_idx = 0
+
 # Cache + plotting controls
-compute = True
+compute = False
 show_plots = True
-base_directory = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Test_MORFAC\02_seasonal\Tmorph_50years"
-model_folders = ['MF50_sens.8778435']
-run_startdate = "2025-01-01"
+base_directory = r"u:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Test_FourRiverBoundaries" #r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Test_MORFAC\02_seasonal\Tmorph_50years"
+model_folders = ['02_seasonal_Qr500_T2m_FourRiverBoundaries']
+run_startdate = None  # None -> use first timestamp in dataset
 
 # For MORFAC: Get all subdirectories starting with 'MF'
 
@@ -101,12 +106,34 @@ cache_path = output_dir / "cached_results.pkl"
 results = {}
 run_names = {}
 
+cache_settings = {
+    'base_directory': str(base_directory),
+    'model_folders': list(model_folders),
+    'x_targets_start': float(x_targets[0]),
+    'x_targets_end': float(x_targets[-1]),
+    'x_targets_step': float(x_targets[1] - x_targets[0]) if len(x_targets) > 1 else float(x_bin_size),
+    'y_range': tuple(y_range),
+    'x_bin_size': float(x_bin_size),
+    'bed_threshold': float(bed_threshold),
+    'apply_detrending': bool(apply_detrending),
+    'reference_time_idx': int(reference_time_idx),
+    'slice_start': int(slice_start),
+    'slice_end': None if slice_end is None else int(slice_end),
+    'var_name': var_name,
+    'run_startdate': None if run_startdate is None else str(run_startdate),
+}
+
 if (not compute) and cache_path.exists():
     cached = load_cache(cache_path)
-    results = cached.get('results', {})
     meta = cached.get('metadata', {})
-    run_names = meta.get('run_names', {})
-    print(f"Loaded cached results from: {cache_path}")
+    cached_settings = meta.get('settings', {})
+    if cached_settings == cache_settings:
+        results = cached.get('results', {})
+        run_names = meta.get('run_names', {})
+        print(f"Loaded cached results from: {cache_path}")
+    else:
+        print("Cache settings differ from current settings; recomputing.")
+        compute = True
 else:
     if not compute:
         print(f"Cache not found, computing results: {cache_path}")
@@ -129,9 +156,14 @@ if compute:
             face_x = ds["mesh2d_face_x"].values
             face_y = ds["mesh2d_face_y"].values
 
-            # Masks and bins
+            # Optional detrending (reference bed)
+            reference_bed = None
+            if apply_detrending and 'time' in ds[var_name].dims:
+                reference_bed = ds[var_name].isel(time=reference_time_idx).values.copy()
+
+            # Masks and bins (match width-averaged bed level logic)
             width_mask = (face_y >= y_range[0]) & (face_y <= y_range[1])
-            x_bins = np.arange(x_range[0], x_range[1] + x_bin_size, x_bin_size)
+            x_bins = np.arange(x_targets[0], x_targets[-1] + x_bin_size, x_bin_size)
             x_centers = (x_bins[:-1] + x_bins[1:]) / 2
             bin_index = np.digitize(face_x, x_bins) - 1
             in_range = (bin_index >= 0) & (bin_index < len(x_centers))
@@ -148,7 +180,11 @@ if compute:
 
             for t_i, time_idx in enumerate(time_indices):
                 bedlev_t = ds[var_name].isel(time=time_idx).values
-                valid_mask = base_mask & (bedlev_t < bed_threshold)
+                if apply_detrending and (reference_bed is not None):
+                    bedlev_t = bedlev_t - reference_bed
+                    valid_mask = base_mask
+                else:
+                    valid_mask = base_mask & (bedlev_t < bed_threshold)
 
                 # Bin-wise mean
                 for bi in range(len(x_centers)):
@@ -166,7 +202,10 @@ if compute:
             # Morphological time (years)
             if "time" in ds:
                 times = pd.to_datetime(ds["time"].values)
-                start_timestamp = pd.Timestamp(run_startdate)
+                if run_startdate is None:
+                    start_timestamp = pd.to_datetime(ds["time"].values[0])
+                else:
+                    start_timestamp = pd.Timestamp(run_startdate)
                 hydro_years = np.array([(t - start_timestamp).days / 365.25 for t in times])
                 hydro_years = hydro_years[start_idx:end_idx]
 
@@ -193,7 +232,13 @@ if compute:
         except Exception as e:
             print(f"Error processing {folder}: {e}")
 
-    save_cache(cache_path, {'results': results, 'metadata': {'run_names': run_names}})
+    save_cache(cache_path, {
+        'results': results,
+        'metadata': {
+            'run_names': run_names,
+            'settings': cache_settings,
+        },
+    })
     print(f"Saved cache: {cache_path}")
 
 # --- plotting from cache/results ---
@@ -264,3 +309,5 @@ for folder in model_folders:
         plt.show()
     else:
         plt.close(fig)
+
+# %%
