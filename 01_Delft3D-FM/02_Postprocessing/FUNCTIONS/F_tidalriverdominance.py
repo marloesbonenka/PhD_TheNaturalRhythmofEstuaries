@@ -69,8 +69,8 @@ def select_max_flood_indices_by_period(times, discharge, km_positions, n_periods
 	return np.array(indices, dtype=int)
 
 
-def plot_max_flood_profile(data, figsize=(12, 4)):
-	"""Plot discharge profile at maximum flood penetration timestep."""
+def plot_max_flood_profile(data, figsize=(12, 4), y_label='Discharge [m³/s]'):
+	"""Plot profile at maximum flood penetration timestep."""
 	discharge = data['discharge']
 	km_positions = data['km_positions']
 	times = data['times_datetime']
@@ -86,7 +86,7 @@ def plot_max_flood_profile(data, figsize=(12, 4)):
 	ax.plot(km_positions, q_profile, color='tab:blue', linewidth=2)
 	ax.axhline(0, color='black', linewidth=1, linestyle='--', alpha=0.5)
 	ax.set_xlabel('Distance from Sea [km]', fontsize=11, fontweight='bold')
-	ax.set_ylabel('Discharge [m³/s]', fontsize=11, fontweight='bold')
+	ax.set_ylabel(y_label, fontsize=11, fontweight='bold')
 	if max_flood_km is not None:
 		ax.set_title(f'Max flood profile at {time_label} (penetration to km {max_flood_km:.1f})',
 					 fontsize=12, fontweight='bold')
@@ -97,7 +97,8 @@ def plot_max_flood_profile(data, figsize=(12, 4)):
 	return fig, ax
 
 
-def plot_multiple_max_flood_profiles(data, indices, figsize=(12, 5)):
+def plot_multiple_max_flood_profiles(data, indices, figsize=(12, 5), y_label='Discharge [m³/s]',
+									 title='Max-flood profiles (representative periods)'):
 	"""Plot multiple max-flood profiles for selected timesteps."""
 	discharge = data['discharge']
 	km_positions = data['km_positions']
@@ -113,16 +114,16 @@ def plot_multiple_max_flood_profiles(data, indices, figsize=(12, 5)):
 
 	ax.axhline(0, color='black', linewidth=1, linestyle='--', alpha=0.5)
 	ax.set_xlabel('Distance from Sea [km]', fontsize=11, fontweight='bold')
-	ax.set_ylabel('Discharge [m³/s]', fontsize=11, fontweight='bold')
-	ax.set_title('Max-flood profiles (representative periods)', fontsize=12, fontweight='bold')
+	ax.set_ylabel(y_label, fontsize=11, fontweight='bold')
+	ax.set_title(title, fontsize=12, fontweight='bold')
 	ax.grid(True, alpha=0.5, linestyle=':')
 	ax.legend(loc='best', fontsize=9)
 
 	return fig, ax
 
 
-def plot_discharge_statistics(data, figsize=(14, 8)):
-	"""Create subplot showing mean, min, max discharge profiles."""
+def plot_discharge_statistics(data, figsize=(14, 8), quantity_name='Discharge', y_label='Discharge [m³/s]'):
+	"""Create subplot showing mean, min, max profiles."""
 	discharge = data['discharge']
 	km_positions = data['km_positions']
 
@@ -134,12 +135,12 @@ def plot_discharge_statistics(data, figsize=(14, 8)):
 	fig, axes = plt.subplots(2, 1, figsize=figsize, sharex=True)
 
 	ax = axes[0]
-	ax.plot(km_positions, mean_q, 'b-', linewidth=2.5, label='Mean Discharge')
+	ax.plot(km_positions, mean_q, 'b-', linewidth=2.5, label=f'Mean {quantity_name}')
 	ax.fill_between(km_positions, mean_q - std_q, mean_q + std_q,
 					 alpha=0.3, color='blue', label='±1 Std Dev')
 	ax.axhline(0, color='black', linewidth=1, linestyle='--', alpha=0.5)
-	ax.set_ylabel('Discharge [m³/s]', fontsize=11, fontweight='bold')
-	ax.set_title('Mean Longitudinal Discharge Profile with Variability', fontsize=12, fontweight='bold')
+	ax.set_ylabel(y_label, fontsize=11, fontweight='bold')
+	ax.set_title(f'Mean Longitudinal {quantity_name} Profile with Variability', fontsize=12, fontweight='bold')
 	ax.grid(True, alpha=0.5, linestyle=':')
 	ax.legend(loc='upper left')
 
@@ -148,16 +149,16 @@ def plot_discharge_statistics(data, figsize=(14, 8)):
 	ax.plot(km_positions, mean_q, 'b-', linewidth=2, label='Mean', alpha=0.7)
 	ax.axhline(0, color='black', linewidth=1, linestyle='--', alpha=0.5)
 	ax.set_xlabel('Distance from Sea [km]', fontsize=11, fontweight='bold')
-	ax.set_ylabel('Discharge [m³/s]', fontsize=11, fontweight='bold')
-	ax.set_title('Discharge Range Over Time', fontsize=12, fontweight='bold')
+	ax.set_ylabel(y_label, fontsize=11, fontweight='bold')
+	ax.set_title(f'{quantity_name} Range Over Time', fontsize=12, fontweight='bold')
 	ax.grid(True, alpha=0.5, linestyle=':')
 	ax.legend(loc='upper left')
 
 	return fig, axes
 
 
-def plot_upstream_inflow_timeseries(data, figsize=(12, 4)):
-	"""Plot discharge time series at the most upstream cross-section."""
+def plot_upstream_inflow_timeseries(data, figsize=(12, 4), quantity_name='Discharge', y_label='Discharge [m³/s]'):
+	"""Plot time series at the most upstream cross-section."""
 	discharge = data['discharge']
 	km_positions = data['km_positions']
 	times = data['times_datetime']
@@ -188,8 +189,8 @@ def plot_upstream_inflow_timeseries(data, figsize=(12, 4)):
 	ax.plot(times_plot, q_plot, color='tab:red', linewidth=1.5)
 	ax.axhline(0, color='black', linewidth=1, linestyle='--', alpha=0.5)
 	ax.set_xlabel('Time', fontsize=11, fontweight='bold')
-	ax.set_ylabel('Discharge [m³/s]', fontsize=11, fontweight='bold')
-	ax.set_title(f'Upstream Inflow (most upstream cross-section, km {km_positions[upstream_idx]:.1f})',
+	ax.set_ylabel(y_label, fontsize=11, fontweight='bold')
+	ax.set_title(f'Upstream {quantity_name} (most upstream cross-section, km {km_positions[upstream_idx]:.1f})',
 				 fontsize=12, fontweight='bold')
 	ax.grid(True, alpha=0.5, linestyle=':')
 	locator = mdates.AutoDateLocator()
@@ -201,7 +202,10 @@ def plot_upstream_inflow_timeseries(data, figsize=(12, 4)):
 
 
 def plot_discharge_heatmap(data, figsize=(14, 6), flood_sign=-1, show_flood_limit=True,
-						   percentile_low=2, percentile_high=95, symmetric_scale=False):
+						   percentile_low=2, percentile_high=95, symmetric_scale=False,
+						   cbar_label='Discharge [m³/s]',
+						   title='Discharge Evolution: Space-Time Heatmap',
+						   low_label='sea', high_label='river'):
 	"""Create a 2D heatmap showing discharge evolution in space and time."""
 	discharge = data['discharge']
 	km_positions = data['km_positions']
@@ -224,14 +228,14 @@ def plot_discharge_heatmap(data, figsize=(14, 6), flood_sign=-1, show_flood_limi
 	else:
 		norm = None
 	im = ax.pcolormesh(km_positions, times_num, q_vals, cmap='RdBu_r', shading='auto', norm=norm)
-	cbar = plt.colorbar(im, ax=ax, label='Discharge [m³/s]')
+	cbar = plt.colorbar(im, ax=ax, label=cbar_label)
 	if vmin is not None and vmax is not None:
 		cbar.set_ticks([vmin, 0.0, vmax])
-		cbar.set_ticklabels([f"{vmin:.0f} (sea)", "0", f"{vmax:.0f} (river)"])
+		cbar.set_ticklabels([f"{vmin:.0f} ({low_label})", "0", f"{vmax:.0f} ({high_label})"])
 
 	ax.set_xlabel('Distance from Sea [km]', fontsize=11, fontweight='bold')
 	ax.set_ylabel('Time', fontsize=11, fontweight='bold')
-	ax.set_title('Discharge Evolution: Space-Time Heatmap', fontsize=12, fontweight='bold')
+	ax.set_title(title, fontsize=12, fontweight='bold')
 	ax.yaxis_date()
 	time_span_days = (pd.to_datetime(times[-1]) - pd.to_datetime(times[0])).days if len(times) > 1 else 0
 	if time_span_days > 365 * 2:

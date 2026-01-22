@@ -11,6 +11,18 @@ from FUNCTIONS.F_tidalriverdominance import (
 	select_max_flood_indices_per_cycle,
 )
 
+_DATASET_CACHE = {}
+
+
+def _get_cached_dataset(path):
+	path = Path(path)
+	key = str(path.resolve())
+	if key in _DATASET_CACHE:
+		return _DATASET_CACHE[key]
+	ds = xr.open_dataset(path)
+	_DATASET_CACHE[key] = ds
+	return ds
+
 
 def select_representative_days(times, n_periods=3):
 	"""
@@ -95,14 +107,25 @@ def load_cross_section_data(his_file_path, q_var='cross_section_discharge',
 							select_max_flood=False, flood_sign=-1,
 							select_max_flood_per_cycle=False,
 							exclude_last_timestep=False,
-							exclude_last_n_days=0):
+							exclude_last_n_days=0,
+							selected_time_indices=None,
+							use_cache=True):
 	"""Load discharge data from HIS file(s) and extract cross-section information."""
 	if isinstance(his_file_path, (list, tuple)) and len(his_file_path) > 1:
-		ds_first = xr.open_dataset(his_file_path[0])
-		ds_for_coords = ds_first
+		if use_cache:
+			datasets = [_get_cached_dataset(p) for p in his_file_path]
+			ds_first = datasets[0]
+			ds_for_coords = ds_first
+		else:
+			ds_first = xr.open_dataset(his_file_path[0])
+			ds_for_coords = ds_first
+			datasets = None
 	else:
 		ds_first = None
-		ds_for_coords = open_his_dataset(his_file_path)
+		if use_cache:
+			ds_for_coords = _get_cached_dataset(his_file_path if not isinstance(his_file_path, (list, tuple)) else his_file_path[0])
+		else:
+			ds_for_coords = open_his_dataset(his_file_path)
 
 	cs_coords = ds_for_coords['cross_section_geom_node_coordx'].values
 	cs_count = ds_for_coords['cross_section_geom_node_count'].values
@@ -136,7 +159,8 @@ def load_cross_section_data(his_file_path, q_var='cross_section_discharge',
 	if isinstance(his_file_path, (list, tuple)) and len(his_file_path) > 1:
 		q_list = []
 		t_list = []
-		datasets = [ds_first] + [xr.open_dataset(p) for p in his_file_path[1:]]
+		if datasets is None:
+			datasets = [ds_first] + [xr.open_dataset(p) for p in his_file_path[1:]]
 		last_time = None
 		for ds_part in datasets:
 			q_part = ds_part[q_var].isel(cross_section=plot_indices)
@@ -150,8 +174,9 @@ def load_cross_section_data(his_file_path, q_var='cross_section_discharge',
 			last_time = t_part[-1] if len(t_part) else last_time
 		q_data = xr.concat(q_list, dim='time')
 		times = np.concatenate(t_list)
-		for ds_part in datasets:
-			ds_part.close()
+		if not use_cache:
+			for ds_part in datasets:
+				ds_part.close()
 		ds = ds_for_coords
 	else:
 		ds = ds_for_coords
@@ -172,16 +197,36 @@ def load_cross_section_data(his_file_path, q_var='cross_section_discharge',
 			times = times[:-drop_steps]
 
 	max_flood_km = None
-	if select_max_flood_per_cycle:
+	flood_sign_used = flood_sign
+	def _flip_sign(sign):
+		return 1 if sign == -1 else -1
+	if selected_time_indices is not None:
+		selected_time_indices = np.asarray(selected_time_indices, dtype=int)
+		q_data = q_data.isel(time=selected_time_indices)
+		times_selected = times[selected_time_indices]
+		n_timesteps_original = len(times)
+		selection_mode = 'external'
+	elif select_max_flood_per_cycle:
 		print("  Selecting max flood timestep for each cycle...")
 		selected_time_indices = select_max_flood_indices_per_cycle(times, q_data, plot_km, flood_sign=flood_sign)
+		if len(selected_time_indices) == 0:
+			alt_sign = _flip_sign(flood_sign)
+			alt_indices = select_max_flood_indices_per_cycle(times, q_data, plot_km, flood_sign=alt_sign)
+			if len(alt_indices) > 0:
+				selected_time_indices = alt_indices
+				flood_sign_used = alt_sign
 		q_data = q_data.isel(time=selected_time_indices)
 		times_selected = times[selected_time_indices]
 		n_timesteps_original = len(times)
 		selection_mode = 'max_flood_per_cycle'
 	elif select_max_flood:
 		print("  Selecting maximum flood penetration timestep...")
-		t_idx, max_flood_km = select_max_flood_timestep(q_data, plot_km, flood_sign=flood_sign)
+		try:
+			t_idx, max_flood_km = select_max_flood_timestep(q_data, plot_km, flood_sign=flood_sign)
+		except ValueError:
+			alt_sign = _flip_sign(flood_sign)
+			t_idx, max_flood_km = select_max_flood_timestep(q_data, plot_km, flood_sign=alt_sign)
+			flood_sign_used = alt_sign
 		q_data = q_data.isel(time=[t_idx])
 		times_selected = np.array([times[t_idx]])
 		selected_time_indices = np.array([t_idx])
@@ -221,4 +266,5 @@ def load_cross_section_data(his_file_path, q_var='cross_section_discharge',
 		'cross_section_indices': plot_indices,
 		'selection_mode': selection_mode,
 		'max_flood_km': max_flood_km,
+		'flood_sign_used': flood_sign_used,
 	}
