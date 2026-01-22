@@ -28,9 +28,7 @@ if __name__ == '__main__':
     base_dir = root_dir / scenario_dir / f"Tmorph_{tmorph_years}years"
     mf_number = 1
     exclude_last_n_days = 0
-    plot_variable = 'sediment'  # discharge | sediment | both
     use_cache = True
-    sediment_var_name = 'cross_section_bedload_sediment_transport'
     
     run_folder, run_name = find_mf_run_folder(base_dir, mf_number)
     his_file_paths = get_his_paths_for_run(base_dir, run_folder)
@@ -42,56 +40,27 @@ if __name__ == '__main__':
     try:
         # ===== DATA LOADING =====
         print("Loading cross-section data...")
-        var_settings = {
-            'discharge': {
-                'q_var': 'cross_section_discharge',
-                'quantity_name': 'Discharge',
-                'y_label': 'Discharge [m³/s]',
-                'cbar_label': 'Discharge [m³/s]',
-                'title': 'Discharge Evolution: Space-Time Heatmap',
-                'low_label': 'sea',
-                'high_label': 'river',
-                'symmetric_scale': False
-            },
-            'sediment': {
-                'q_var': sediment_var_name,
-                'quantity_name': 'Sediment transport',
-                'y_label': 'Bedload sediment transport',
-                'cbar_label': 'Bedload sediment transport',
-                'title': 'Bedload Sediment Transport: Space-Time Heatmap',
-                'low_label': 'landward',
-                'high_label': 'seaward',
-                'symmetric_scale': True
-            }
-        }
-
-        def load_var_data(var_key, select_max_flood):
-            settings = var_settings[var_key]
-            return load_cross_section_data(
-                his_file_paths,
-                q_var=settings['q_var'],
-                estuary_only=True,
-                km_range=(20, 45),
-                select_cycles_hydrodynamic=False,
-                n_periods=3,
-                select_max_flood=select_max_flood,
-                flood_sign=-1,
-                exclude_last_timestep=True,
-                exclude_last_n_days=exclude_last_n_days,
-                use_cache=use_cache
-            )
-
-        data = load_var_data('discharge' if plot_variable != 'sediment' else 'sediment', select_max_flood=True)
+        data = load_cross_section_data(
+            his_file_paths,
+            q_var='cross_section_discharge',
+            estuary_only=True,
+            km_range=(20, 45),
+            select_cycles_hydrodynamic=False,
+            n_periods=3,
+            select_max_flood=True,
+            flood_sign=-1,
+            exclude_last_timestep=True,
+            exclude_last_n_days=exclude_last_n_days,
+            use_cache=use_cache
+        )
         flood_sign_used = data.get('flood_sign_used', -1)
         
         heatmap_data = None
         full_data = None
-        secondary_data = None
-        sediment_heatmap_data = None
         if data.get('selection_mode') == 'max_flood':
             heatmap_data = load_cross_section_data(
                 his_file_paths,
-                q_var=var_settings['discharge' if plot_variable != 'sediment' else 'sediment']['q_var'],
+                q_var='cross_section_discharge',
                 estuary_only=True,
                 km_range=(20, 45),
                 select_cycles_hydrodynamic=False,
@@ -105,7 +74,7 @@ if __name__ == '__main__':
             )
             full_data = load_cross_section_data(
                 his_file_paths,
-                q_var=var_settings['discharge' if plot_variable != 'sediment' else 'sediment']['q_var'],
+                q_var='cross_section_discharge',
                 estuary_only=True,
                 km_range=(20, 45),
                 select_cycles_hydrodynamic=False,
@@ -117,22 +86,6 @@ if __name__ == '__main__':
                 exclude_last_n_days=exclude_last_n_days,
                 use_cache=use_cache
             )
-            if plot_variable == 'both':
-                secondary_data = load_var_data('sediment', select_max_flood=True)
-                sediment_heatmap_data = load_cross_section_data(
-                    his_file_paths,
-                    q_var=var_settings['sediment']['q_var'],
-                    estuary_only=True,
-                    km_range=(20, 45),
-                    select_cycles_hydrodynamic=False,
-                    n_periods=3,
-                    select_max_flood=False,
-                    flood_sign=-1,
-                    select_max_flood_per_cycle=True,
-                    exclude_last_timestep=True,
-                    exclude_last_n_days=exclude_last_n_days,
-                    use_cache=use_cache
-                )
         print(f"✓ Selected {data['n_timesteps']} timesteps from {data['n_timesteps_original']} total")
         print(f"✓ Found {len(data['km_positions'])} cross-sections")
         print(f"✓ KM range: {data['km_positions'].min():.1f} to {data['km_positions'].max():.1f} km")
@@ -141,8 +94,16 @@ if __name__ == '__main__':
         # ===== PLOTTING =====
         print("Creating visualizations...")
         
-        settings = var_settings['discharge' if plot_variable != 'sediment' else 'sediment']
-        file_tag = settings['quantity_name'].lower().replace(' ', '_')
+        settings = {
+            'quantity_name': 'Discharge',
+            'y_label': 'Discharge [m³/s]',
+            'cbar_label': 'Discharge [m³/s]',
+            'title': 'Discharge Evolution: Space-Time Heatmap',
+            'low_label': 'sea',
+            'high_label': 'river',
+            'symmetric_scale': False
+        }
+        file_tag = 'discharge'
         if data.get('selection_mode') == 'max_flood':
             # Plot: Max flood profile
             print("  - Max flood longitudinal profile...")
@@ -186,21 +147,6 @@ if __name__ == '__main__':
                 plt.tight_layout()
                 fig3.savefig(output_dir / f"{run_name}_heatmap_max_flood_per_cycle_{file_tag}.png", dpi=300, bbox_inches='tight')
                 plt.show()
-
-                if plot_variable == 'both' and sediment_heatmap_data is not None:
-                    print("  - Space-time heatmap (sediment transport, max flood per cycle)...")
-                    fig4, ax4 = plot_discharge_heatmap(
-                        sediment_heatmap_data,
-                        show_flood_limit=False,
-                        symmetric_scale=var_settings['sediment']['symmetric_scale'],
-                        cbar_label=var_settings['sediment']['cbar_label'],
-                        title=var_settings['sediment']['title'],
-                        low_label=var_settings['sediment']['low_label'],
-                        high_label=var_settings['sediment']['high_label']
-                    )
-                    plt.tight_layout()
-                    fig4.savefig(output_dir / f"{run_name}_heatmap_sediment_max_flood_per_cycle.png", dpi=300, bbox_inches='tight')
-                    plt.show()
         else:
             # Plot 1: Statistics
             print(f"  - {settings['quantity_name']} statistics...")
@@ -242,10 +188,6 @@ if __name__ == '__main__':
         # Close dataset (only when not caching)
         if not use_cache:
             data['ds'].close()
-            if secondary_data is not None:
-                secondary_data['ds'].close()
-            if sediment_heatmap_data is not None:
-                sediment_heatmap_data['ds'].close()
         print("\n✓ Done!")
         
     except Exception as e:
