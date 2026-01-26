@@ -10,24 +10,22 @@ from FUNCTIONS.F_tidalriverdominance import (
 	select_max_flood_timestep,
 	select_max_flood_indices_per_cycle,
 )
-from FUNCTIONS.F_cache import *
+from FUNCTIONS.F_cache import DatasetCache
 
 _DATASET_CACHE = DatasetCache()
-_DATASET_CACHE = {}
+
+
 def _get_cached_dataset(path):
 	return _DATASET_CACHE.get_xr(path)
+
 
 def close_cached_datasets() -> None:
 	"""Close cached datasets opened via this module."""
 	_DATASET_CACHE.close_all()
-	_DATASET_CACHE[key] = ds
-	return ds
 
 
 def select_representative_days(times, n_periods=3):
-			return _DATASET_CACHE.get_xr(his_paths[0])
-	Select one hydrodynamic day from each period of the simulation.
-	return _DATASET_CACHE.get_xr(his_paths)
+	"""Select one hydrodynamic day from each period of the simulation."""
 	n_total = len(times)
 	period_size = n_total / n_periods
 
@@ -71,25 +69,37 @@ def get_his_paths_for_run(base_dir, run_folder):
 	paths = [run_folder / "output" / "FlowFM_0000_his.nc"]
 	debug_msgs = []
 
-	if "restart" in run_folder.name.lower():
-		timed_out_dir = base_dir / "timed-out"
-		mf_match = re.search(r"MF(\d+(?:\.\d+)?)", run_folder.name)
-		if timed_out_dir.exists() and mf_match:
-			mf_prefix = f"MF{int(float(mf_match.group(1)))}"
-			matching = [p for p in timed_out_dir.iterdir()
-						if p.is_dir() and p.name.startswith(mf_prefix + "_")]
-			if matching:
-				timed_out_path = matching[0] / "output" / "FlowFM_0000_his.nc"
+	# Always try to find a timed-out part for the same MF run.
+	timed_out_dir = base_dir / "timed-out"
+	mf_match = re.search(r"MF(\d+(?:\.\d+)?)", run_folder.name)
+	if timed_out_dir.exists() and mf_match:
+		mf_prefix = f"MF{int(float(mf_match.group(1)))}"
+		matching = sorted([p for p in timed_out_dir.iterdir()
+						if p.is_dir() and p.name.startswith(mf_prefix + "_")])
+		if matching:
+			timed_out_path = matching[0] / "output" / "FlowFM_0000_his.nc"
+			if timed_out_path.exists():
 				paths = [timed_out_path] + paths
 				debug_msgs.append(f"[DEBUG] Timed-out HIS found: {timed_out_path}")
 			else:
-				debug_msgs.append("[DEBUG] Timed-out folder not found for restart run.")
+				debug_msgs.append(f"[DEBUG] Timed-out HIS missing: {timed_out_path}")
 		else:
+			if "restart" in run_folder.name.lower():
+				debug_msgs.append("[DEBUG] Timed-out folder not found for restart run.")
+	else:
+		if "restart" in run_folder.name.lower():
 			debug_msgs.append("[DEBUG] Timed-out dir missing or MF not found; skipping timed-out search.")
 
 	for msg in debug_msgs:
 		print(msg)
-	return [p for p in paths if p.exists()]
+	# Return unique existing paths while preserving order
+	seen = set()
+	unique_paths = []
+	for p in paths:
+		if p.exists() and p not in seen:
+			unique_paths.append(p)
+			seen.add(p)
+	return unique_paths
 
 
 def open_his_dataset(his_paths):

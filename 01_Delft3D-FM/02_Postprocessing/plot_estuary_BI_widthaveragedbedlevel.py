@@ -20,8 +20,8 @@ from FUNCTIONS.F_cache import *
 #%% --- CONFIGURATION ---
 # Model output
 base_directory = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15"
-target_year = 50 
-config = f'Test_MORFAC/Tmorph_{target_year}years'
+target_year = 400 
+config = f'Test_MORFAC/03_flashy/Tmorph_{target_year}years'
 
 # Braiding index
 tau_threshold = 0.05
@@ -36,7 +36,7 @@ safety_buffer = 0.20  # For channel width analysis (20 cm below mean)
 
 #%% -- special configuration | do not change ---
 special_base = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15"
-special_config = 'Test_MORFAC/Tmorph_50years'
+special_config = 'Test_MORFAC/03_flashy/Tmorph_50years'
 use_mf50_reference = (base_directory == special_base) and (config == special_config)
 
 var_tau = 'mesh2d_tausmax'
@@ -47,7 +47,7 @@ x_targets = np.arange(20000, 44001, 1000)
 y_range = (5000, 10000)
 
 #%% --- SETTINGS ---
-apply_detrending = True  # Subtract initial bed level to see changes
+apply_detrending = False  # Subtract initial bed level to see changes
 reference_time_idx = 0   # Time index to use as reference (0 = first timestep)
 use_absolute_depth = True  # Use absolute depth values (positive = deep)
 

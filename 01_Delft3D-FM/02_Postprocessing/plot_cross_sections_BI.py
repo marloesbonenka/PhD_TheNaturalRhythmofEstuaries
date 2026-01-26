@@ -169,9 +169,6 @@ for folder in model_folders:
 
     except Exception as e:
         print(f"Error processing {folder}: {e}")
-
-dataset_cache.close_all()
-
     finally:
         # --- 4. CLEAN UP FOR NEXT FOLDER ---
         for ds in loaded_datasets:
@@ -179,6 +176,8 @@ dataset_cache.close_all()
         if 'ds_his' in locals():
             ds_his.close()
         plt.close('all')
+
+dataset_cache.close_all()
 
 print("\n" + "="*60)
 print("ALL FOLDERS COMPLETED.")

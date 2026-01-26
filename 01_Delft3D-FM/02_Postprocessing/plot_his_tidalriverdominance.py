@@ -23,10 +23,10 @@ from FUNCTIONS.F_tidalriverdominance import *
 if __name__ == '__main__':
     # --- SETTINGS ---
     root_dir = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Test_MORFAC")
-    scenario_dir = "02_seasonal"  # 01_constant | 02_seasonal | 03_flashy
-    tmorph_years = 50             # 50 | 400 | ...
+    scenario_dir = "03_flashy"  # 01_constant | 02_seasonal | 03_flashy
+    tmorph_years = 400             # 50 | 400 | ...
     base_dir = root_dir / scenario_dir / f"Tmorph_{tmorph_years}years"
-    mf_number = 1
+    mf_number = 100
     exclude_last_n_days = 0
     use_cache = True
     
