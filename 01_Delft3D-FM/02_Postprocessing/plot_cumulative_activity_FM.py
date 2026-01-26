@@ -2,7 +2,6 @@
 #%%
 import os
 import sys
-import pickle
 from pathlib import Path
 
 import numpy as np
@@ -15,20 +14,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
 
 from FUNCTIONS.F_general import get_mf_number
-
-# =============================================================================
-# IO utilities
-# =============================================================================
-
-def save_cache(cache_path: Path, payload: dict) -> None:
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    with cache_path.open('wb') as f:
-        pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
-
-
-def load_cache(cache_path: Path) -> dict:
-    with cache_path.open('rb') as f:
-        return pickle.load(f)
+from FUNCTIONS.F_cache import DatasetCache, save_cache, load_cache
 
 #%% --- SETTINGS & PATHS ---
 scenarios_morfac = True
@@ -140,17 +126,18 @@ else:
 
 #%% --- LOOP THROUGH RUNS ---
 if compute:
-    for folder in model_folders:
-        model_location = os.path.join(base_directory, folder)
-        file_pattern = os.path.join(model_location, "output", "*_map.nc")
-        print(f"\nProcessing: {folder}")
+    dataset_cache = DatasetCache()
+    try:
+        for folder in model_folders:
+            model_location = os.path.join(base_directory, folder)
+            file_pattern = os.path.join(model_location, "output", "*_map.nc")
+            print(f"\nProcessing: {folder}")
 
-        try:
-            ds = dfmt.open_partitioned_dataset(file_pattern)
-            if var_name not in ds:
-                print(f"Skipping {folder}: Variable {var_name} not found.")
-                ds.close()
-                continue
+            try:
+                ds = dataset_cache.get_partitioned(file_pattern)
+                if var_name not in ds:
+                    print(f"Skipping {folder}: Variable {var_name} not found.")
+                    continue
 
             # Coordinates (faces)
             face_x = ds["mesh2d_face_x"].values
@@ -227,10 +214,10 @@ if compute:
             }
             run_names[folder] = folder
 
-            ds.close()
-
-        except Exception as e:
-            print(f"Error processing {folder}: {e}")
+            except Exception as e:
+                print(f"Error processing {folder}: {e}")
+    finally:
+        dataset_cache.close_all()
 
     save_cache(cache_path, {
         'results': results,

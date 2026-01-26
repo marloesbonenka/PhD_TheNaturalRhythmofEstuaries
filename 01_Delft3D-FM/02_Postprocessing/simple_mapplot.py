@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import dfm_tools as dfmt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from FUNCTIONS.F_general import terrain_cmap
+from FUNCTIONS.F_cache import DatasetCache
 #%%
 
 # --- 1. SETTINGS & PATHS ---
@@ -19,7 +20,8 @@ file_pattern = model_location / 'output' / '*_map.nc'
 
 # --- 2. LOADING DATA ---
 print(f"Searching for files: {file_pattern}")
-ds = dfmt.open_partitioned_dataset(str(file_pattern))
+dataset_cache = DatasetCache()
+ds = dataset_cache.get_partitioned(str(file_pattern))
 
 #%%
 # --- DIAGNOSTIC: WHAT IS IN MY DATASET? ---
@@ -95,5 +97,5 @@ else:
         plot_timestep(data_to_plot, title_info, "terrain_map_static.png")
 
 # Clean up
-ds.close()
+dataset_cache.close_all()
 # %%

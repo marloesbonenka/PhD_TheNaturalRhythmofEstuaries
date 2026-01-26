@@ -15,6 +15,7 @@ sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Post
 from FUNCTIONS.F_general import *
 from FUNCTIONS.F_braiding_index import *
 from FUNCTIONS.F_channelwidth import *
+from FUNCTIONS.F_cache import DatasetCache
 
 #%% --- CONFIGURATION ---
 # Model output
@@ -68,6 +69,7 @@ plot_channel_width_individual = False
 model_folders = [f for f in os.listdir(os.path.join(base_directory, config)) if f.startswith('MF')]
 model_folders.sort(key=get_mf_number)
 
+dataset_cache = DatasetCache()
 # --- OPTIONAL: GLOBAL REFERENCE FROM MF50 ---
 reference_bed_MF50 = None
 if apply_detrending and use_mf50_reference:
@@ -76,9 +78,8 @@ if apply_detrending and use_mf50_reference:
         mf50_folder = mf50_folder[0]
         mf50_location = os.path.join(base_directory, config, mf50_folder)
         mf50_pattern = os.path.join(mf50_location, 'output', '*_map.nc')
-        ds_mf50 = dfmt.open_partitioned_dataset(mf50_pattern)
+        ds_mf50 = dataset_cache.get_partitioned(mf50_pattern)
         reference_bed_MF50 = ds_mf50['mesh2d_mor_bl'].isel(time=reference_time_idx).values.copy()
-        ds_mf50.close()
     else:
         # Fallback: no MF50 found, keep run-specific behavior
         use_mf50_reference = False
@@ -97,7 +98,7 @@ for i, folder in enumerate(model_folders):
     print(f"\nProcessing: {folder}")
     
     # 1. LOAD FM DATA
-    ds = dfmt.open_partitioned_dataset(file_pattern)
+    ds = dataset_cache.get_partitioned(file_pattern)
 
     # 2. MORPHOLOGICAL TIME LOGIC (Robust to restarts)
     mf_val = get_mf_number(folder)
@@ -110,7 +111,7 @@ for i, folder in enumerate(model_folders):
     
     print(f"Folder: {folder:10} | Found Year: {morph_years[ts_final]:.2f} at Index: {ts_final}")
     
-   # Initialize dictionary for this MF
+    # Initialize dictionary for this MF
     comparison_results[mf_val] = {}
 
     # --- DETRENDING: Store reference bed level if needed ---
@@ -124,10 +125,10 @@ for i, folder in enumerate(model_folders):
             print(f"Storing reference bed level at time index {reference_time_idx} for {folder}...")
             reference_bed = ds['mesh2d_mor_bl'].isel(time=reference_time_idx).values.copy()
             
-    # --- CHECK VARIABLES ---
-    if check_variables and i == 0:
-        check_available_variables_xarray(ds)
-        break
+        # --- CHECK VARIABLES ---
+        if check_variables and i == 0:
+            check_available_variables_xarray(ds)
+            break
 
     # Build KDTree for spatial queries (needed for new analyses)
     if compare_max_depth or compare_channel_width:
@@ -136,31 +137,31 @@ for i, folder in enumerate(model_folders):
         from scipy.spatial import cKDTree
         tree = cKDTree(np.vstack([face_x, face_y]).T)
 
-    # 3. BRAIDING ANALYSIS
-    if compare_braiding_index:
-        # 3.1 shear stress method (fixed threshold over entire estuary)
-        if var_tau in ds:
-            print(f"Computing BI for {folder}...")
-            bi_tau, _ = compute_BI_FM(ds, var_tau, x_targets, y_range, threshold=tau_threshold, time_idx=ts_final)
-            
-            # Store Year 50 specifically
-            comparison_results[mf_val]['BI_tau'] = bi_tau[0, :]
-    
-            if plot_braiding_index_individual: 
-                plt.figure(figsize=(10, 6))
-                plt.plot(x_targets/1000, bi_tau[ts_final, :], 'o-', label=f'Morph Year {morph_years[ts_final]:.1f}')
-                plt.xlabel('Distance [km]')
-                plt.ylabel('Braiding Index')
-                plt.title(f'BI: {folder}')
-                plt.grid(True, alpha=0.3)
-                plt.savefig(os.path.join(save_dir, f'braiding_index_{folder}.png'))
-                plt.close()
+        # 3. BRAIDING ANALYSIS
+        if compare_braiding_index:
+            # 3.1 shear stress method (fixed threshold over entire estuary)
+            if var_tau in ds:
+                print(f"Computing BI for {folder}...")
+                bi_tau, _ = compute_BI_FM(ds, var_tau, x_targets, y_range, threshold=tau_threshold, time_idx=ts_final)
+                
+                # Store Year 50 specifically
+                comparison_results[mf_val]['BI_tau'] = bi_tau[0, :]
+        
+                if plot_braiding_index_individual: 
+                    plt.figure(figsize=(10, 6))
+                    plt.plot(x_targets/1000, bi_tau[ts_final, :], 'o-', label=f'Morph Year {morph_years[ts_final]:.1f}')
+                    plt.xlabel('Distance [km]')
+                    plt.ylabel('Braiding Index')
+                    plt.title(f'BI: {folder}')
+                    plt.grid(True, alpha=0.3)
+                    plt.savefig(os.path.join(save_dir, f'braiding_index_{folder}.png'))
+                    plt.close()
 
-        # 2. NEW METHOD: Water Depth (Relative Threshold)
-        if var_depth in ds:
-            bi_depth, _ = compute_BI_FM(ds, var_depth, x_targets, y_range, 
-                                        threshold=depth_threshold, time_idx=ts_final, method='relative')
-            comparison_results[mf_val]['BI_depth'] = bi_depth[0, :]
+            # 2. NEW METHOD: Water Depth (Relative Threshold)
+            if var_depth in ds:
+                bi_depth, _ = compute_BI_FM(ds, var_depth, x_targets, y_range, 
+                                            threshold=depth_threshold, time_idx=ts_final, method='relative')
+                comparison_results[mf_val]['BI_depth'] = bi_depth[0, :]
 
     # 4. WIDTH-AVERAGED BED LEVEL
     if compare_width_averaged_bedlevel:
@@ -391,5 +392,7 @@ else:
     plt.show()
     
     print(f'Saved comparison plot at {os.path.join(base_directory, config)}')
+
+dataset_cache.close_all()
 
 print("\nAll FM processing complete.")

@@ -9,7 +9,6 @@ bedload cross-section variable.
 
 import sys
 from pathlib import Path
-import pickle
 
 import numpy as np
 import pandas as pd
@@ -26,21 +25,7 @@ for candidate in (script_dir, script_dir / "01_Delft3D-FM" / "02_Postprocessing"
 		break
 
 from FUNCTIONS.F_loaddata import *
-
-# =============================================================================
-# IO utilities
-# =============================================================================
-
-def save_cache(cache_path: Path, payload: dict) -> None:
-	cache_path.parent.mkdir(parents=True, exist_ok=True)
-	with cache_path.open('wb') as f:
-		pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
-
-
-def load_cache(cache_path: Path) -> dict:
-	with cache_path.open('rb') as f:
-		return pickle.load(f)
-
+from FUNCTIONS.F_cache import save_cache, load_cache
 
 # =============================================================================
 # Core helpers (loading and computations)

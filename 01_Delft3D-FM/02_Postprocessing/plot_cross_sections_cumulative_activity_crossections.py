@@ -35,6 +35,7 @@ from tqdm import tqdm
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
 
 from FUNCTIONS.F_general import get_mf_number
+from FUNCTIONS.F_cache import DatasetCache
 from FUNCTIONS.F_braiding_index import get_bed_profile
 
 
@@ -156,6 +157,8 @@ if __name__ == '__main__':
 	if not base_path.exists():
 		raise FileNotFoundError(f"Base path not found: {base_path}")
 
+	dataset_cache = DatasetCache()
+
 	output_dir = base_path / output_dirname
 	output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -189,9 +192,8 @@ if __name__ == '__main__':
 			# Load MAP parts + KDTree
 			for p_path in all_run_paths:
 				map_pattern = str(p_path / 'output' / '*_map.nc')
-				ds_map = dfmt.open_partitioned_dataset(map_pattern, chunks={'time': 1})
+				ds_map = dataset_cache.get_partitioned(map_pattern, chunks={'time': 1})
 				if map_bedlevel_var not in ds_map:
-					ds_map.close()
 					raise KeyError(f"{map_bedlevel_var} not found in MAP for {p_path}")
 
 				face_x = ds_map['mesh2d_face_x'].values
@@ -203,7 +205,7 @@ if __name__ == '__main__':
 
 			# Load HIS from last part (cross-section geometry)
 			his_path = all_run_paths[-1] / 'output' / 'FlowFM_0000_his.nc'
-			ds_his = xr.open_dataset(his_path)
+			ds_his = dataset_cache.get_xr(his_path)
 
 			# Determine MORFAC
 			if use_folder_morfac:
@@ -261,13 +263,10 @@ if __name__ == '__main__':
 
 		except Exception as e:
 			print(f"Error processing {folder}: {e}")
-
 		finally:
-			for ds_map in loaded_datasets:
-				ds_map.close()
-			if ds_his is not None:
-				ds_his.close()
 			plt.close('all')
+
+	dataset_cache.close_all()
 
 	print("\n" + "=" * 60)
 	print("ALL FOLDERS COMPLETED.")

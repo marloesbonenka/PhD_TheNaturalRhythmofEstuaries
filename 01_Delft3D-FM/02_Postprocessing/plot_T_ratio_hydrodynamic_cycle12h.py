@@ -19,7 +19,6 @@ Workflow mirrors the other scripts:
 
 import sys
 from pathlib import Path
-import pickle
 
 import numpy as np
 import pandas as pd
@@ -45,21 +44,7 @@ from FUNCTIONS.F_loaddata import (
 	get_his_paths_for_run,
 	load_cross_section_data,
 )
-
-
-# =============================================================================
-# IO utilities
-# =============================================================================
-
-def save_cache(cache_path: Path, payload: dict) -> None:
-	cache_path.parent.mkdir(parents=True, exist_ok=True)
-	with cache_path.open('wb') as f:
-		pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
-
-
-def load_cache(cache_path: Path) -> dict:
-	with cache_path.open('rb') as f:
-		return pickle.load(f)
+from FUNCTIONS.F_cache import save_cache, load_cache
 
 
 # =============================================================================

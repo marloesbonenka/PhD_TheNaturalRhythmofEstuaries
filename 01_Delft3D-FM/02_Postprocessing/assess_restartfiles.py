@@ -5,15 +5,17 @@
 import xarray as xr
 import pandas as pd
 import os
+from FUNCTIONS.F_cache import DatasetCache
 
 #%%
 # Path to just ONE of your restart files
 model_location = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Test_MORFAC\MF1_sens"
 single_file = os.path.join(model_location, 'FlowFM_0000_20541225_000000_rst.nc')
 
+dataset_cache = DatasetCache()
 try:
     # Open a single file without decoding anything
-    ds = xr.open_dataset(single_file, decode_times=False)
+    ds = dataset_cache.get_xr(single_file, decode_times=False)
     
     # 1. Get the raw numeric time
     t_start_seconds = ds.time.values[0]
@@ -32,7 +34,7 @@ try:
         readable_time = pd.to_datetime(ref_date_str) + pd.to_timedelta(t_start_seconds, unit='s')
         print(f"Confirmed Date: {readable_time}")
     
-    ds.close()
-
 except Exception as e:
     print(f"Failed to read file: {e}")
+finally:
+    dataset_cache.close_all()

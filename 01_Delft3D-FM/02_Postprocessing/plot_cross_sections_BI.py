@@ -20,6 +20,7 @@ sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Post
 
 from FUNCTIONS.F_general import *
 from FUNCTIONS.F_braiding_index import *
+from FUNCTIONS.F_cache import DatasetCache
 
 #%% --- CONFIGURATION ---
 base_directory = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15"
@@ -44,6 +45,7 @@ model_folders.sort(key=get_mf_number)
 
 #%% --- MAIN PROCESSING LOOP ---
 
+dataset_cache = DatasetCache()
 for folder in model_folders:
     model_location = os.path.join(base_directory, config, folder)
     
@@ -69,7 +71,7 @@ for folder in model_folders:
         for p_path in all_run_paths:
             print(f"   -> Opening Map: {os.path.basename(p_path)}")
             # Chunks=1 keeps metadata loading fast and memory low
-            ds = dfmt.open_partitioned_dataset(os.path.join(p_path, 'output', '*_map.nc'), chunks={'time': 1})
+            ds = dataset_cache.get_partitioned(os.path.join(p_path, 'output', '*_map.nc'), chunks={'time': 1})
             
             # Build Tree for this part's specific mesh (handles mesh size changes)
             face_x = ds['mesh2d_face_x'].values
@@ -81,7 +83,7 @@ for folder in model_folders:
 
         # Load HIS once (from the last part) for cross-section metadata
         his_file = os.path.join(all_run_paths[-1], 'output', 'FlowFM_0000_his.nc')
-        ds_his = xr.open_dataset(his_file)
+        ds_his = dataset_cache.get_xr(his_file)
 
         # --- 3. ANALYZE CROSS SECTIONS ---
         n_cs = len(selected_cross_sections)
@@ -167,6 +169,8 @@ for folder in model_folders:
 
     except Exception as e:
         print(f"Error processing {folder}: {e}")
+
+dataset_cache.close_all()
 
     finally:
         # --- 4. CLEAN UP FOR NEXT FOLDER ---

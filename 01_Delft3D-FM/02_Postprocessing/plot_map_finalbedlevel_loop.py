@@ -6,6 +6,7 @@ import dfm_tools as dfmt
 from matplotlib.colors import LinearSegmentedColormap
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import numpy as np
+from FUNCTIONS.F_cache import DatasetCache
 
 # --- 1. SETTINGS & PATHS ---
 base_directory = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Test_MORFAC\Tmorph_50years"
@@ -28,25 +29,26 @@ model_folders = [f for f in os.listdir(base_directory) if f.startswith('MF') and
 
 print(f"Found {len(model_folders)} folders to process.")
 
-for folder in model_folders:
-    model_location = os.path.join(base_directory, folder)
-    
-    # Create output_plots directory inside each model folder
-    output_plots_dir = os.path.join(model_location, 'output_plots')
-    os.makedirs(output_plots_dir, exist_ok=True)
-
-    file_pattern = os.path.join(model_location, 'output', '*_map.nc')
-    
-    print(f"\nProcessing: {folder}")
-    
-    try:
-        # Load the partitioned dataset
-        ds = dfmt.open_partitioned_dataset(file_pattern)
+dataset_cache = DatasetCache()
+try:
+    for folder in model_folders:
+        model_location = os.path.join(base_directory, folder)
         
-        if var_name not in ds:
-            print(f"Skipping {folder}: Variable {var_name} not found.")
-            ds.close()
-            continue
+        # Create output_plots directory inside each model folder
+        output_plots_dir = os.path.join(model_location, 'output_plots')
+        os.makedirs(output_plots_dir, exist_ok=True)
+
+        file_pattern = os.path.join(model_location, 'output', '*_map.nc')
+        
+        print(f"\nProcessing: {folder}")
+        
+        try:
+            # Load the partitioned dataset
+            ds = dataset_cache.get_partitioned(file_pattern)
+            
+            if var_name not in ds:
+                print(f"Skipping {folder}: Variable {var_name} not found.")
+                continue
 
         # Extract timing and data
         if 'time' in ds[var_name].dims:
@@ -94,11 +96,12 @@ for folder in model_folders:
         plt.show()
         print(f"Successfully saved: {save_name}")
         
-        # Close plot and dataset to save memory
-        plt.close(fig)
-        ds.close()
+            # Close plot to save memory
+            plt.close(fig)
 
-    except Exception as e:
-        print(f"Error processing {folder}: {e}")
+        except Exception as e:
+            print(f"Error processing {folder}: {e}")
+finally:
+    dataset_cache.close_all()
 
 print("\nBatch processing complete.")

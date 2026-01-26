@@ -13,6 +13,7 @@ from pathlib import Path
 # Add your custom functions path
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\Delft3D-FM\Postprocessing")
 from FUNCTIONS.F_general import *
+from FUNCTIONS.F_cache import DatasetCache
 
 # --- SETTINGS ---
 # Point this to your specific MF50 his file example
@@ -20,9 +21,10 @@ his_file_path = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVaria
 
 print(f"Opening history file: {his_file_path.name}")
 
+dataset_cache = DatasetCache()
 try:
     # Since it's not partitioned, we use xr.open_dataset or dfmt.open_dataset
-    ds_his = xr.open_dataset(his_file_path)
+    ds_his = dataset_cache.get_xr(his_file_path)
     
     print("\n" + "="*50)
     print("HISTORY FILE INSPECTION")
@@ -57,7 +59,7 @@ try:
         attrs = ds_his[var].attrs.get('long_name', 'No description')
         print(f"  - {var:25} dims: {str(dims):20} | {attrs}")
 
-    ds_his.close()
-
 except Exception as e:
     print(f"Error opening his file: {e}")
+finally:
+    dataset_cache.close_all()
