@@ -20,7 +20,7 @@ sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Post
 
 from FUNCTIONS.F_general import *
 from FUNCTIONS.F_braiding_index import *
-from FUNCTIONS.F_cache import DatasetCache
+from FUNCTIONS.F_cache import *
 
 #%% --- CONFIGURATION ---
 base_directory = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15"

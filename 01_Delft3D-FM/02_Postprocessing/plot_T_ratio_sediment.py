@@ -25,7 +25,7 @@ for candidate in (script_dir, script_dir / "01_Delft3D-FM" / "02_Postprocessing"
 		break
 
 from FUNCTIONS.F_loaddata import *
-from FUNCTIONS.F_cache import save_cache, load_cache
+from FUNCTIONS.F_cache import *
 
 # =============================================================================
 # Core helpers (loading and computations)

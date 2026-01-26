@@ -13,7 +13,7 @@ sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\Delft3D-FM\Postproces
 
 from FUNCTIONS.F_general import *
 from FUNCTIONS.F_braiding_index import *
-from FUNCTIONS.F_cache import DatasetCache, save_cache, load_cache
+from FUNCTIONS.F_cache import *
 
 #%%
 # --- 1. SETTINGS & PATHS ---

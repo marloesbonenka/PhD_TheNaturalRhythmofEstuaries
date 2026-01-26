@@ -35,7 +35,7 @@ from tqdm import tqdm
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
 
 from FUNCTIONS.F_general import get_mf_number
-from FUNCTIONS.F_cache import DatasetCache
+from FUNCTIONS.F_cache import *
 from FUNCTIONS.F_braiding_index import get_bed_profile
 
 

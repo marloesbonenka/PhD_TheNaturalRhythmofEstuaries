@@ -10,24 +10,24 @@ from FUNCTIONS.F_tidalriverdominance import (
 	select_max_flood_timestep,
 	select_max_flood_indices_per_cycle,
 )
+from FUNCTIONS.F_cache import *
 
+_DATASET_CACHE = DatasetCache()
 _DATASET_CACHE = {}
-
-
 def _get_cached_dataset(path):
-	path = Path(path)
-	key = str(path.resolve())
-	if key in _DATASET_CACHE:
-		return _DATASET_CACHE[key]
-	ds = xr.open_dataset(path)
+	return _DATASET_CACHE.get_xr(path)
+
+def close_cached_datasets() -> None:
+	"""Close cached datasets opened via this module."""
+	_DATASET_CACHE.close_all()
 	_DATASET_CACHE[key] = ds
 	return ds
 
 
 def select_representative_days(times, n_periods=3):
-	"""
+			return _DATASET_CACHE.get_xr(his_paths[0])
 	Select one hydrodynamic day from each period of the simulation.
-	"""
+	return _DATASET_CACHE.get_xr(his_paths)
 	n_total = len(times)
 	period_size = n_total / n_periods
 

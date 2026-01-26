@@ -14,7 +14,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
 
 from FUNCTIONS.F_general import get_mf_number
-from FUNCTIONS.F_cache import DatasetCache, save_cache, load_cache
+from FUNCTIONS.F_cache import *
 
 #%% --- SETTINGS & PATHS ---
 scenarios_morfac = True

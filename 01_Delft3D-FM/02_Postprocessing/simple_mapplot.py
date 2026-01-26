@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import dfm_tools as dfmt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from FUNCTIONS.F_general import terrain_cmap
-from FUNCTIONS.F_cache import DatasetCache
+from FUNCTIONS.F_cache import *
 #%%
 
 # --- 1. SETTINGS & PATHS ---

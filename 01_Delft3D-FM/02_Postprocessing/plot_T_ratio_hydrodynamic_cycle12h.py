@@ -44,7 +44,7 @@ from FUNCTIONS.F_loaddata import (
 	get_his_paths_for_run,
 	load_cross_section_data,
 )
-from FUNCTIONS.F_cache import save_cache, load_cache
+from FUNCTIONS.F_cache import *
 
 
 # =============================================================================

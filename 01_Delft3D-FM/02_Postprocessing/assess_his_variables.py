@@ -13,7 +13,7 @@ from pathlib import Path
 # Add your custom functions path
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\Delft3D-FM\Postprocessing")
 from FUNCTIONS.F_general import *
-from FUNCTIONS.F_cache import DatasetCache
+from FUNCTIONS.F_cache import *
 
 # --- SETTINGS ---
 # Point this to your specific MF50 his file example
