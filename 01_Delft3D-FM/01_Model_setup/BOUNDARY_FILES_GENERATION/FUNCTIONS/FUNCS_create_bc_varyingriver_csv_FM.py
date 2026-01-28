@@ -60,6 +60,24 @@ def generate_river_discharges_fm(grid_info, params, output_dir, start_date_str='
                 if s < num_steps:
                     discharge_abs[s : s + low_flow_duration_steps] = low_flow_magnitude
     
+    elif pattern_type == "singlepeak":
+        # Single peak per year, no droughts - same magnitude and duration as flashy
+        base_discharge = 0.8 * total_q
+        discharge_abs = np.full(num_steps, base_discharge)
+        
+        flood_magnitude = 2.5 * total_q
+        flood_duration_steps = int(3 * 24 * 60 / time_step)  # 3 days
+        
+        num_years = int(np.floor(duration_min / (365.25 * 24 * 60)))
+        
+        for year in range(max(1, num_years)):
+            # Single flood peak around mid-year (day 135, midpoint of original wet season)
+            flood_day = 135
+            s = int((year * 365.25 + flood_day) * 24 * 60 / time_step)
+            if s < num_steps:
+                discharge_abs[s : s + flood_duration_steps] = flood_magnitude
+        # No low flow/drought periods
+    
     # Scaling & Positivity Check
     discharge_abs[discharge_abs < 0.1 * total_q] = 0.1 * total_q
     scaling_factor = total_q / np.mean(discharge_abs)

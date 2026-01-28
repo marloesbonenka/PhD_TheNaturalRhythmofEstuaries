@@ -21,14 +21,14 @@ sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\01_Mode
 from FUNCTIONS.FUNCS_create_bc_varyingriver_csv_FM import *
 
  #%% Configuration settings
-total_discharge = 1000                   # Total river discharge in m³/s
+total_discharge = 250                   # Total river discharge in m³/s
 nyears = 52
 duration_min    = 365.25 * 24 * 60 * nyears               # Total simulation duration in minutes;  525600 = 1 year;     2629440 = 5 years
 time_step_rcel  = 1440                                  # Time step for variations over consecutive river cells in minutes, to force bar formation      
 
 # IMPORTANT: Update these values based on your grid script
 grid_info = {
-    'nx': 99,#100,                                              # Number of sea basin cells in x-direction (m-direction)
+    'nx': 99,#100,                                           # Number of sea basin cells in x-direction (m-direction)
     'ny': 141,#153,                                          # Number of sea basin cells in y-direction (n-direction)
     'river_cells': [
         (395, 72),
@@ -39,7 +39,7 @@ grid_info = {
 }
 
 # Specify the directory of model runs
-specific_scenario_location = f'Test_CSVfiles_boundaries_50years'
+specific_scenario_location = f'CSVfiles_boundaries_50hydroyears'
 output_dir = r"u:\PhDNaturalRhythmEstuaries\Models"
 
 output_dir = os.path.join(output_dir, specific_scenario_location)
@@ -73,6 +73,14 @@ scenarios = [
         "time_step":            time_step_rcel,                         # Time step for variations over river cells in minutes
         # "cv":                   1.0,                                    # Long-term/overall variability: standard deviation of the mean
         "pattern_type":         "flashy"                                # or "seasonal" or "constant" (flashiness refers to daily fluctuations, where high values indicate frequent abrupt changes)
+    }
+    ,    
+    {
+        "name":                 f"04_run{total_discharge}_singlepeak",        # Name for the single peak scenario
+        "total_discharge":      total_discharge,                        # Total river discharge in m³/s
+        "duration_min":         duration_min,                           # Total simulation duration in minutes
+        "time_step":            time_step_rcel,                         # Time step for variations over river cells in minutes
+        "pattern_type":         "singlepeak"                            # One peak per year, no droughts, same magnitude/duration as flashy
     }
 ]
 
