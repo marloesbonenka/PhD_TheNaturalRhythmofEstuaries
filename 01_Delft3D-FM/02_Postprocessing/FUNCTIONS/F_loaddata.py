@@ -62,27 +62,31 @@ def find_mf_run_folder(base_dir, mf_number):
 def get_his_paths_for_run(base_dir, run_folder):
 	"""
 	Return list of HIS files to load. If run folder contains 'restart',
-	include the timed-out part (if available) before the main run.
+	include the timed-out part(s) (if available) before the main run.
 	"""
 	base_dir = Path(base_dir)
 	run_folder = Path(run_folder)
 	paths = [run_folder / "output" / "FlowFM_0000_his.nc"]
 	debug_msgs = []
 
-	# Always try to find a timed-out part for the same MF run.
+	# Always try to find timed-out parts (including nested timed-out1 folders) for the same MF run.
 	timed_out_dir = base_dir / "timed-out"
 	mf_match = re.search(r"MF(\d+(?:\.\d+)?)", run_folder.name)
 	if timed_out_dir.exists() and mf_match:
 		mf_prefix = f"MF{int(float(mf_match.group(1)))}"
-		matching = sorted([p for p in timed_out_dir.iterdir()
-						if p.is_dir() and p.name.startswith(mf_prefix + "_")])
+		candidates = [p for p in timed_out_dir.rglob("*")
+						if p.is_dir() and p.name.startswith(mf_prefix + "_")]
+		matching = sorted(candidates, key=lambda p: (p.name, str(p)))
 		if matching:
-			timed_out_path = matching[0] / "output" / "FlowFM_0000_his.nc"
-			if timed_out_path.exists():
-				paths = [timed_out_path] + paths
-				debug_msgs.append(f"[DEBUG] Timed-out HIS found: {timed_out_path}")
-			else:
-				debug_msgs.append(f"[DEBUG] Timed-out HIS missing: {timed_out_path}")
+			timed_out_paths = []
+			for timed_out_folder in matching:
+				timed_out_path = timed_out_folder / "output" / "FlowFM_0000_his.nc"
+				if timed_out_path.exists():
+					timed_out_paths.append(timed_out_path)
+					debug_msgs.append(f"[DEBUG] Timed-out HIS found: {timed_out_path}")
+				else:
+					debug_msgs.append(f"[DEBUG] Timed-out HIS missing: {timed_out_path}")
+			paths = timed_out_paths + paths
 		else:
 			if "restart" in run_folder.name.lower():
 				debug_msgs.append("[DEBUG] Timed-out folder not found for restart run.")

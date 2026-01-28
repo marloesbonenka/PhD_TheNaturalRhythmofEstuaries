@@ -55,10 +55,10 @@ if __name__ == '__main__':
 	# --- SETTINGS ---
 	root_dir = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Test_MORFAC")
 	scenario_dir = "03_flashy"
-	tmorph_years = 50
+	tmorph_years = 400
 	base_dir = root_dir / scenario_dir / f"Tmorph_{tmorph_years}years"
 
-	morfac_values = [2, 5, 10, 50]
+	morfac_values = [100,200,400]#[1, 2, 5, 10, 50]
 	exclude_last_n_days = 0
 
 	# 12-hour cycle settings
