@@ -1,10 +1,11 @@
+#%%
 from pathlib import Path
 import sys
-
+#%%
 # Add the FUNCTIONS directory to the path
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\01_Model_setup\BOUNDARY_FILES_GENERATION")
 
-from FUNCTIONS.FUNCS_plot_discharge_scenarios import *
+from FUNCTIONS.FUNCS_plot_discharge_scenarios import * 
 
 
 if __name__ == "__main__":
@@ -47,3 +48,5 @@ if __name__ == "__main__":
         )
     
     print(f"All plots saved to: {output_base_dir}")
+
+# %%

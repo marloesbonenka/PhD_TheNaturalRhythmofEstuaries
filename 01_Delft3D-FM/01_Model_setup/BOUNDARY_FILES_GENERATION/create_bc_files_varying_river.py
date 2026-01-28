@@ -12,6 +12,7 @@ Description: Generates river boundary conditions for an estuary domain, incorpor
 # Load packages
 import os
 import sys
+from datetime import datetime
 
 #%%
 #Add the current working directory (where FUNCTIONS is located)
@@ -19,6 +20,7 @@ sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\01_Mode
 
 # Load functions to create Delft3D-FM boundary files
 from FUNCTIONS.FUNCS_create_bc_varyingriver_csv_FM import *
+from FUNCTIONS.FUNCS_csv_to_bc_converter import convert_csv_folder_to_bc
 
  #%% Configuration settings
 total_discharge = 250                   # Total river discharge in m³/s
@@ -90,13 +92,20 @@ for scenario in scenarios:
     boundary_dir = os.path.join(output_dir, scenario_name, "boundaryfiles_csv")
     os.makedirs(boundary_dir, exist_ok=True)
 
-    # Call the updated function
+    # Generate CSV files
     generate_river_discharges_fm(
         grid_info=grid_info, 
         params=scenario, 
         output_dir=boundary_dir, 
         start_date_str='2024-01-01 00:00:00'
     )
+    
+    # Convert CSV files to .bc files
+    convert_csv_folder_to_bc(
+        csv_dir=boundary_dir,
+        output_prefix=f"Qr{total_discharge}_inflow_sinuous",
+        reference_date=datetime(2001, 1, 1)
+    )
 
-print("finished --> load CSVs into GUI and create. bc files")
+print("Finished --> CSV and .bc files generated successfully!")
 #%%
