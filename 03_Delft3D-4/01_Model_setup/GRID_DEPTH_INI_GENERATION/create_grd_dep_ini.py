@@ -7,9 +7,9 @@ Description: Generates bathymetry for an estuary domain, allows for visual inspe
 
 #%% Import modules
 
-import os
 import sys
 import numpy as np
+from pathlib import Path
 
 # Add the current working directory (where FUNCTIONS is located)
 sys.path.append(r"C:\Users\marloesbonenka\surfdrive\Python\01_Model_setup\GRID_DEPTH_INI_GENERATION")
@@ -34,11 +34,14 @@ def generate_files(grid_data, resolution, output_dir, ESTUARYWIDTH_UPSTREAM, EST
     data = grid_data[resolution]
 
     # Write and save grd and dep files
-    write_grd_file(os.path.join(output_dir, f'grid_slopingsea_{resolution}_Wup{ESTUARYWIDTH_UPSTREAM}m_Wdown{ESTUARYWIDTH_DOWNSTREAM}m.grd'), data['x'], data['y'])
-    write_dep_file(os.path.join(output_dir, f'dep_slopingsea_{resolution}_Wup{ESTUARYWIDTH_UPSTREAM}m_Wdown{ESTUARYWIDTH_DOWNSTREAM}m.dep'), data['dep_data'])
+    write_grd_file(output_dir / f'grid_slopingsea_{resolution}_Wup{ESTUARYWIDTH_UPSTREAM}m_Wdown{ESTUARYWIDTH_DOWNSTREAM}m.grd', data['x'], data['y'])
+    write_dep_file(output_dir / f'dep_slopingsea_{resolution}_Wup{ESTUARYWIDTH_UPSTREAM}m_Wdown{ESTUARYWIDTH_DOWNSTREAM}m.dep', data['dep_data'])
     
     # Use the 2D meshgrid data for the X and Y coordinates
-    xyz_filename = os.path.join(output_dir, f'bathymetry_slopingsea_{resolution}_Wup{ESTUARYWIDTH_UPSTREAM}m_Wdown{ESTUARYWIDTH_DOWNSTREAM}m.xyz')
+    if ADD_NOISE:
+        xyz_filename = output_dir / f'noisybathy_seed{NOISE_SEED}.xyz'
+    else:
+        xyz_filename = output_dir / f'bathymetry_slopingsea_{resolution}_Wup{ESTUARYWIDTH_UPSTREAM}m_Wdown{ESTUARYWIDTH_DOWNSTREAM}m.xyz'
     write_xyz_file(xyz_filename, data['X'], data['Y'], data['dep_data'], crs_epsg=3857)
     
     # # Generate the base INI arrays for Delft3D-4
@@ -58,7 +61,7 @@ def generate_files(grid_data, resolution, output_dir, ESTUARYWIDTH_UPSTREAM, EST
     ini_result = generate_ini_depth(data, SEA_EXTENT)
     
     # Write the .xyz file for the Initial Water Level
-    ini_filename = os.path.join(output_dir, f'ini_depth_{resolution}_Wup{ESTUARYWIDTH_UPSTREAM}m_Wdown{ESTUARYWIDTH_DOWNSTREAM}m.xyz')
+    ini_filename = output_dir / f'ini_depth_{resolution}_Wup{ESTUARYWIDTH_UPSTREAM}m_Wdown{ESTUARYWIDTH_DOWNSTREAM}m.xyz'
     write_ini_xyz_file(ini_filename, data['X'], data['Y'], ini_result['ini_data'])
 
     print(f"Generated .grd, .dep and .ini files for {resolution} resolution.")
@@ -78,11 +81,16 @@ def generate_all_files(grid_data, base_resolutions, output_dir, ESTUARYWIDTH_UPS
 #%%
 
 # Print current working directory
-print("Current working directory:", os.getcwd())
+print("Current working directory:", Path.cwd())
+
+# Noise Configuration
+ADD_NOISE = True                # Set to True to add noise to estuary bathymetry
+NOISE_AMPLITUDE_CM = 20.0        # Noise amplitude in centimeters (e.g., 5 cm = ±5 cm random variation)
+NOISE_SEED = 2                # Random seed for reproducibility (set to None for random noise each run)
 
 # Configuration Settings
-path_loc = r"u:\PhDNaturalRhythmEstuaries\Models\Test_Models\FM_vs_FLOW"
-model_name = "test_correct_bathy_depthini_xyz"
+path_loc = Path(r"u:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
+model_name = Path("Noisy_Bathy") / f"Seed_{NOISE_SEED}" if ADD_NOISE else Path("Base_Bath")
 
 # Grid Configuration
 USE_VARIABLE_GRID = True  # Set to True for variable grid, False for uniform grid
@@ -122,8 +130,8 @@ SAVE_FIGURES = 'yes'            # Set to 'yes' to save figures, 'no' to just sho
 INI_VALUE = 0.5
 
 # Create the output directory if it doesn't exist
-output_dir = os.path.join(path_loc, model_name, 'D3D_base_input' if USE_VARIABLE_GRID else f'D3D_base_input_{ESTUARYWIDTH_DOWNSTREAM}_{ESTUARYWIDTH_UPSTREAM}')
-os.makedirs(output_dir, exist_ok=True)
+output_dir = path_loc / model_name / ('D3D_base_input' if USE_VARIABLE_GRID else f'D3D_base_input_{ESTUARYWIDTH_DOWNSTREAM}_{ESTUARYWIDTH_UPSTREAM}')
+output_dir.mkdir(parents=True, exist_ok=True)
 
 # Dictionary to store grid and depth data
 grid_data = {}
@@ -148,6 +156,32 @@ if USE_VARIABLE_GRID:
         ESTUARYWIDTH_UPSTREAM, ESTUARYWIDTH_DOWNSTREAM
     )
     
+    # Add noise to estuary bathymetry if enabled
+    if ADD_NOISE:
+        print(f"Adding noise to estuary bathymetry: ±{NOISE_AMPLITUDE_CM} cm")
+        # Create estuary mask for variable grid
+        X, Y = data['X'], data['Y']
+        ny, nx = X.shape
+        river_length = DOMAIN_EXTENT[0] - SEA_EXTENT
+        y_center = DOMAIN_EXTENT[1] / 2 + 1
+        estuary_mask = np.zeros((ny, nx), dtype=bool)
+        
+        for i in range(ny):
+            for j in range(nx):
+                if X[i, j] > SEA_EXTENT:
+                    x_pos = X[i, j] - SEA_EXTENT
+                    river_width = ESTUARYWIDTH_DOWNSTREAM * np.exp(np.log(ESTUARYWIDTH_UPSTREAM / ESTUARYWIDTH_DOWNSTREAM) * x_pos / river_length)
+                    if abs(Y[i, j] - y_center) < river_width / 2:
+                        estuary_mask[i, j] = True
+        
+        # Apply noise
+        if NOISE_SEED is not None:
+            np.random.seed(NOISE_SEED)
+        noise_amplitude_m = NOISE_AMPLITUDE_CM / 100.0
+        noise = np.random.uniform(-noise_amplitude_m, noise_amplitude_m, (ny, nx))
+        data['dep_data'][estuary_mask] += noise[estuary_mask]
+        data['estuary_mask'] = estuary_mask
+    
     # Store data
     grid_data[grid_name] = data
     
@@ -161,8 +195,16 @@ if USE_VARIABLE_GRID:
 else:
     # Generate uniform grids (your existing code)
     for res in BASE_RESOLUTIONS:
-        # Generate bathymetry
-        data = generate_bathymetry(res, DOMAIN_EXTENT, SEA_EXTENT, SLOPE_EXTENT, SEABASIN_DEPTH, ESTUARYWIDTH_UPSTREAM, ESTUARYWIDTH_DOWNSTREAM)
+        # Generate bathymetry - with or without noise
+        if ADD_NOISE:
+            print(f"Generating bathymetry with noise: ±{NOISE_AMPLITUDE_CM} cm")
+            data = generate_bathymetry_with_noise(
+                res, DOMAIN_EXTENT, SEA_EXTENT, SLOPE_EXTENT, SEABASIN_DEPTH, 
+                ESTUARYWIDTH_UPSTREAM, ESTUARYWIDTH_DOWNSTREAM,
+                noise_amplitude_cm=NOISE_AMPLITUDE_CM, random_seed=NOISE_SEED
+            )
+        else:
+            data = generate_bathymetry(res, DOMAIN_EXTENT, SEA_EXTENT, SLOPE_EXTENT, SEABASIN_DEPTH, ESTUARYWIDTH_UPSTREAM, ESTUARYWIDTH_DOWNSTREAM)
         
         # Store data
         grid_data[res] = {'x': data['x'], 

@@ -23,7 +23,7 @@ from FUNCTIONS.FUNCS_create_bc_varyingriver_csv_FM import *
 from FUNCTIONS.FUNCS_csv_to_bc_converter import convert_csv_folder_to_bc
 
  #%% Configuration settings
-total_discharge = 250                   # Total river discharge in m³/s
+total_discharge = 500                   # Total river discharge in m³/s
 nyears = 52
 duration_min    = 365.25 * 24 * 60 * nyears               # Total simulation duration in minutes;  525600 = 1 year;     2629440 = 5 years
 time_step_rcel  = 1440                                  # Time step for variations over consecutive river cells in minutes, to force bar formation      

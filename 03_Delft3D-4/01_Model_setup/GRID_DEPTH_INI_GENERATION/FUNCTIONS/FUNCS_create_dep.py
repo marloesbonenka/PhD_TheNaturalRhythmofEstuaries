@@ -128,6 +128,97 @@ def generate_bathymetry(res, domain_extent, sea_extent, slope_extent, seabasin_d
     
     return {'x': x, 'y': y, 'dep_data': dep_data, 'X': X, 'Y': Y}
 
+
+def generate_bathymetry_with_noise(res, domain_extent, sea_extent, slope_extent, seabasin_depth, 
+                                   estuarywidth_upstream, estuarywidth_downstream, 
+                                   noise_amplitude_cm=5.0, random_seed=None):
+    """
+    Generates bathymetry grid and depth data with noise added to the estuary bed.
+    
+    The sea basin and land areas remain unchanged. Only the estuary/river bed 
+    receives pixel-level random noise.
+    
+    Parameters:
+    - res: Grid resolution in meters
+    - domain_extent: (x_length, y_length) tuple
+    - sea_extent: Sea basin extent in x-direction
+    - slope_extent: Sloping region extent in sea basin
+    - seabasin_depth: Maximum depth of sea basin
+    - estuarywidth_upstream, estuarywidth_downstream: Estuary widths
+    - noise_amplitude_cm: Maximum noise amplitude in centimeters (default: 5 cm)
+    - random_seed: Optional seed for reproducibility (default: None)
+    
+    Returns:
+    - Dictionary with grid and bathymetry data including 'estuary_mask'
+    """
+    if random_seed is not None:
+        np.random.seed(random_seed)
+    
+    land_downstream = 2.1
+    land_upstream = 4.1
+
+    nx = int(domain_extent[0] / res) + 2   # +2 to include both ends starting at (1)
+    ny = int(domain_extent[1] / res) + 2
+
+    x = np.linspace(1, domain_extent[0] + res + 1, nx)   # Starts at x=1 (1-based indexing)
+    y = np.linspace(1, domain_extent[1] + res + 1, ny)   # Starts at y=1 (1-based indexing)
+    X, Y = np.meshgrid(x, y)
+
+    # Initialize depth data array
+    dep_data = np.zeros((ny, nx))
+    
+    # Initialize estuary mask to track which cells are in the estuary
+    estuary_mask = np.zeros((ny, nx), dtype=bool)
+
+    if slope_extent <= 0:
+        # If no slope is required, apply a uniform depth 
+        sea_mask = (X <= sea_extent)
+        dep_data[sea_mask] = seabasin_depth
+    else:
+        # Deep sea basin (constant depth)
+        deep_sea_mask = (X <= (sea_extent - slope_extent))
+        dep_data[deep_sea_mask] = seabasin_depth
+
+        # Sloping sea basin (from beach level to deep sea level)
+        slope_mask = ((X > sea_extent - slope_extent) & (X <= sea_extent))
+        normalized_dist = (sea_extent - X[slope_mask]) / slope_extent
+        dep_data[slope_mask] = 2 + normalized_dist * (seabasin_depth - 2)
+
+    # Land (sloping from land_downstream m to land_upstream m)
+    land_mask = (X > sea_extent)
+    x_land = X[land_mask]
+    dep_data[land_mask] = -land_downstream + (x_land - sea_extent) * ((-land_upstream + land_downstream) / (domain_extent[0] - sea_extent))
+    
+    # River / estuary
+    river_length = domain_extent[0] - sea_extent  # Length of river
+
+    for i in range(ny):
+        for j in range(nx):
+            if X[i, j] > sea_extent:
+                # Calculate river width at current x-coordinate
+                x_pos = X[i, j] - sea_extent
+                river_width = estuarywidth_downstream * np.exp(np.log(estuarywidth_upstream / estuarywidth_downstream) * x_pos / river_length)
+                    
+                # Check if point is within the river
+                if abs(Y[i, j] - 7500) < river_width/2:
+                    # Calculate river bed level at current x-coordinate
+                    river_bed = 2 - (x_pos / river_length) * 4  # Linear slope from -2 to 2
+                    dep_data[i, j] = river_bed
+                    estuary_mask[i, j] = True
+    
+    # Add noise only to the estuary cells
+    # Convert noise amplitude from cm to meters
+    noise_amplitude_m = noise_amplitude_cm / 100.0
+    
+    # Generate random noise for the entire grid
+    noise = np.random.uniform(-noise_amplitude_m, noise_amplitude_m, (ny, nx))
+    
+    # Apply noise only to estuary cells
+    dep_data[estuary_mask] += noise[estuary_mask]
+    
+    return {'x': x, 'y': y, 'dep_data': dep_data, 'X': X, 'Y': Y, 'estuary_mask': estuary_mask}
+
+
 def plot_bathymetry(X, Y, dep_data, res, output_dir, save_figures=False):
     """
     Creates a plot of the bathymetry data.
