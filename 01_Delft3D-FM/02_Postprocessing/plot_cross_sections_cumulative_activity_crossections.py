@@ -1,33 +1,25 @@
-"""Cumulative activity on cross-section bed profiles (from MAP), using cross-section geometry (from HIS).
+"""Cumulative activity on cross-section bed profiles from MAP files.
 
-This answers:
-- You have cross-sections defined in the HIS (cross_section geom coords)
-- You do NOT want point/station data
-- You want to extract bed profiles from MAP (like plot_cross_sections_BI.py)
-- Then plot only the *first* profile + a cumulative-activity heatmap above it.
-
-For each selected cross-section:
-- Sample bedlevel along the transect (mesh2d_mor_bl) for every output time
-- Compute cumulative activity: Σ|Δz| over time at each transect point
-- Plot:
+This script:
+- Extracts bed profiles directly from MAP files using x-coordinates
+- Computes cumulative activity: Σ|Δz| over time at each transect point
+- Plots:
   (top) heatmap of cumulative activity (time vs cross-section distance)
   (bottom) first bedlevel profile (t=0)
 
 Notes
 -----
-- This uses the same restart stitching pattern as plot_cross_sections_BI.py
-- For long runs, set `time_stride` to reduce runtime/memory.
+- Uses restart stitching pattern for complete time series
+- Supports both MORFAC sensitivity analysis and discharge variability analysis
+- Includes disk caching for fast reruns
 """
 
-import os
 import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import xarray as xr
-import dfm_tools as dfmt
 from scipy.spatial import cKDTree
 from tqdm import tqdm
 
@@ -35,238 +27,298 @@ from tqdm import tqdm
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
 
 from FUNCTIONS.F_general import get_mf_number
-from FUNCTIONS.F_cache import *
+from FUNCTIONS.F_cache import (
+    DatasetCache,
+    get_profile_cache_path, load_profile_cache, save_profile_cache
+)
 from FUNCTIONS.F_braiding_index import get_bed_profile
+from FUNCTIONS.F_morphological_activity import (
+    cumulative_activity,
+    morph_years_from_datetimes,
+    plot_activity_and_first_profile,
+)
 
 
 # =============================================================================
 # Configuration
 # =============================================================================
 
-base_directory = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15"
-config = r"Test_MORFAC\02_seasonal\Tmorph_50years"  # folder containing MF* runs
+# ANALYSIS_MODE: "variability" for river discharge variability scenarios
+#                "morfac" for MORFAC sensitivity analysis
+ANALYSIS_MODE = "variability"
 
-# Cross-sections to analyze (3)
-selected_cross_sections = [
-	"ObservationCrossSection_Estuary_km20",
-	"ObservationCrossSection_Estuary_km33",
-	"ObservationCrossSection_Estuary_km44",
-]
+if ANALYSIS_MODE == "variability":
+    base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
+    config = 'Model_Output'
+    # Mapping: restart folder prefix -> timed-out folder prefix
+    # 1 = constant (baserun), 2 = seasonal, 3 = flashy, 4 = singlepeak
+    VARIABILITY_MAP = {
+        '1': '01_baserun500',
+        '2': '02_run500_seasonal',
+        '3': '03_run500_flashy',
+        '4': '04_run500_singlepeak',
+    }
+    # Which scenarios to process (set to None or empty list for all)
+    SCENARIOS_TO_PROCESS = ['1']  # e.g., ['1'] for baserun only, None for all
+    use_folder_morfac = False
+    default_morfac = 100  # MORFAC used in variability runs
+
+elif ANALYSIS_MODE == "morfac":
+    base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
+    config = r'TestingBoundaries_and_SensitivityAnalyses\Test_MORFAC\02_seasonal\Tmorph_50years'
+    use_folder_morfac = True  # Extract MORFAC from folder name (MF1, MF2, etc.)
+    default_morfac = 1.0
+
+timed_out_dir = base_directory / config / "timed-out"
+
+# --- CROSS-SECTION SETTINGS ---
+# X-coordinates in meters (km value * 1000)
+selected_x_coords = [20000, 30000, 40000]
+
+# Y-range of the estuary (min, max) and sampling resolution
+# Based on MAP file: mesh2d_face_y ranges from 337.5 to 15000.5 m
+y_range = (300, 15000)
+n_y_samples = 300
 
 # Bedlevel variable in MAP
 map_bedlevel_var = "mesh2d_mor_bl"
 
-# Masking similar to BI script
+# Masking threshold for land
 bedlevel_land_threshold = 8.0  # set None to disable
 
-# Time control
-# - Use stride > 1 to reduce runtime (e.g., stride=10 keeps every 10th timestep)
+# Time control (stride > 1 to reduce runtime)
 time_stride = 1
 
 # Morph-time conversion
-# If your run_startdate differs, set it here. If None, uses first timestamp per run.
-run_startdate = None  # e.g. "2025-01-01"
-use_folder_morfac = True  # if True, uses MF number from folder name
+run_startdate = None  # e.g. "2025-01-01", or None to use first timestamp
+
+# --- CACHE SETTINGS ---
+compute = False  # Set True to force recompute, False to use cache if available
 
 # Output
 output_dirname = "output_plots_crosssections_cumactivity"
 
 
 # =============================================================================
-# Helpers
+# Search & Sort Folders
 # =============================================================================
 
-def cumulative_activity(profiles_time_space: np.ndarray) -> np.ndarray:
-	"""Σ|Δz| along the time axis; returns array same shape (time, space)."""
-	z = np.asarray(profiles_time_space)
-	if z.ndim != 2:
-		raise ValueError("Expected 2D array (time, space)")
-	dz = np.diff(z, axis=0)
-	abs_dz = np.abs(dz)
-	zeros = np.zeros((1, z.shape[1]))
-	abs_dz0 = np.vstack([zeros, abs_dz])
-	return np.cumsum(abs_dz0, axis=0)
+base_path = base_directory / config
+if not base_path.exists():
+    raise FileNotFoundError(f"Base path not found: {base_path}")
 
+if ANALYSIS_MODE == "variability":
+    # Find restart folders: start with digit and contain "_rst"
+    model_folders = [f.name for f in base_path.iterdir() 
+                     if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
+    # Filter by SCENARIOS_TO_PROCESS if specified
+    if SCENARIOS_TO_PROCESS:
+        model_folders = [f for f in model_folders if f.split('_')[0] in SCENARIOS_TO_PROCESS]
+    # Sort by leading number
+    model_folders.sort(key=lambda x: int(x.split('_')[0]))
+elif ANALYSIS_MODE == "morfac":
+    model_folders = [f.name for f in base_path.iterdir() 
+                     if f.is_dir() and f.name.startswith('MF')]
+    model_folders.sort(key=get_mf_number)
 
-def morph_years_from_datetimes(times: pd.DatetimeIndex, *, startdate=None, morfac=1.0) -> np.ndarray:
-	if startdate is None:
-		t0 = times[0]
-	else:
-		t0 = pd.Timestamp(startdate)
-	hydro_years = np.array([(t - t0).total_seconds() / (365.25 * 24 * 3600) for t in times])
-	return hydro_years * float(morfac)
-
-
-def get_cross_section_geom(ds_his: xr.Dataset, cs_name: str):
-	cs_names = [n.decode() if isinstance(n, (bytes, bytearray)) else str(n) for n in ds_his.cross_section_name.values]
-	if cs_name not in cs_names:
-		return None
-	idx = cs_names.index(cs_name)
-	start = int(ds_his['cross_section_geom_node_count'].values[:idx].sum())
-	end = start + int(ds_his['cross_section_geom_node_count'].values[idx])
-	x = ds_his['cross_section_geom_node_coordx'].values[start:end]
-	y = ds_his['cross_section_geom_node_coordy'].values[start:end]
-	dist = np.sqrt((x - x[0]) ** 2 + (y - y[0]) ** 2)
-	return x, y, dist
-
-
-def plot_activity_and_first_profile(*, dist_m, first_profile, cumact, morph_years, title, outpath: Path, show=False):
-	fig = plt.figure(figsize=(10, 7))
-	gs = fig.add_gridspec(2, 1, height_ratios=[2.0, 1.0], hspace=0.25)
-	ax0 = fig.add_subplot(gs[0, 0])
-	ax1 = fig.add_subplot(gs[1, 0])
-
-	x_km = dist_m / 1000.0
-	extent = [x_km.min(), x_km.max(), morph_years.min(), morph_years.max()]
-	vmax = np.nanpercentile(cumact, 98) if np.any(np.isfinite(cumact)) else 1.0
-
-	im = ax0.imshow(
-		cumact,
-		aspect='auto',
-		origin='lower',
-		extent=extent,
-		cmap='viridis',
-		vmin=0,
-		vmax=vmax,
-	)
-	cbar = fig.colorbar(im, ax=ax0, fraction=0.046, pad=0.04)
-	cbar.set_label(r"$\Sigma |\Delta z_b|$ [m]", fontsize=11, fontweight='bold')
-
-	ax0.set_ylabel('Morphological time [years]', fontsize=11, fontweight='bold')
-	ax0.set_title(title, fontsize=12, fontweight='bold')
-
-	ax1.plot(x_km, first_profile, color='black', linewidth=2)
-	ax1.set_xlabel('Cross-section distance [km]', fontsize=11, fontweight='bold')
-	ax1.set_ylabel('Bed level [m]', fontsize=11, fontweight='bold')
-	ax1.grid(True, alpha=0.3, linestyle=':')
-
-	plt.tight_layout()
-	fig.savefig(outpath, dpi=300, bbox_inches='tight')
-	if show:
-		plt.show()
-	else:
-		plt.close(fig)
+print(f"Found {len(model_folders)} run folders in: {base_path}")
 
 
 # =============================================================================
-# Main
+# Main Processing Loop
 # =============================================================================
 
-if __name__ == '__main__':
-	base_path = Path(base_directory) / config
-	if not base_path.exists():
-		raise FileNotFoundError(f"Base path not found: {base_path}")
+dataset_cache = DatasetCache()
+output_dir = base_path / output_dirname
+output_dir.mkdir(parents=True, exist_ok=True)
 
-	dataset_cache = DatasetCache()
+for folder in model_folders:
+    model_location = base_path / folder
+    
+    # --- UNIFIED CACHE ---
+    cache_path = get_profile_cache_path(model_location, folder)
+    cache_settings_profiles = {
+        'y_range': y_range,
+        'n_y_samples': n_y_samples,
+        'bedlevel_land_threshold': bedlevel_land_threshold,
+        'time_stride': time_stride,
+        'map_bedlevel_var': map_bedlevel_var,
+    }
+    
+    folder_results = {}
+    missing_x_coords = selected_x_coords  # by default, compute all
+    
+    # Try to load from unified cache
+    if not compute:
+        loaded_results, missing_x_coords = load_profile_cache(
+            cache_path, selected_x_coords, cache_settings_profiles
+        )
+        if loaded_results:
+            # Convert loaded format to our working format (handle key name compatibility)
+            for cs_name, data in loaded_results.items():
+                # Handle times vs time_series key name
+                times_data = data.get('times') or data.get('time_series')
+                folder_results[cs_name] = {
+                    'profiles': data['profiles'],
+                    'times': times_data,
+                    'dist': data['dist'],
+                    'morfac': data.get('morfac', default_morfac),
+                }
+            print(f"\n" + "="*60)
+            print(f"LOADED FROM CACHE: {folder} ({len(loaded_results)} cross-sections)")
+            if missing_x_coords:
+                print(f"  Still need to compute: {missing_x_coords}")
+            else:
+                # Nothing to compute - skip to analysis
+                pass
 
-	output_dir = base_path / output_dirname
-	output_dir.mkdir(parents=True, exist_ok=True)
+    # --- 1. RESTART LOGIC (Find all parts) ---
+    all_run_paths = []
+    
+    if ANALYSIS_MODE == "variability":
+        scenario_num = folder.split('_')[0]
+        if scenario_num in VARIABILITY_MAP and timed_out_dir.exists():
+            timed_out_folder = VARIABILITY_MAP[scenario_num]
+            timed_out_path = timed_out_dir / timed_out_folder
+            if timed_out_path.exists():
+                all_run_paths.append(timed_out_path)
+                
+    elif ANALYSIS_MODE == "morfac":
+        if 'restart' in folder.lower() and timed_out_dir.exists():
+            mf_prefix = folder.split('_')[0]
+            matches = [f.name for f in timed_out_dir.iterdir() if f.name.startswith(mf_prefix)]
+            if matches:
+                all_run_paths.append(timed_out_dir / matches[0])
+    
+    all_run_paths.append(model_location)
 
-	timed_out_dir = base_path / 'timed-out'
-	model_folders = [f for f in os.listdir(base_path) if f.startswith('MF') and (base_path / f).is_dir()]
-	model_folders.sort(key=get_mf_number)
+    # Determine MORFAC
+    if use_folder_morfac:
+        morfac = float(get_mf_number(folder))
+    else:
+        morfac = default_morfac
 
-	print(f"Found {len(model_folders)} run folders in: {base_path}")
+    # --- 2. COMPUTE MISSING CROSS-SECTIONS ---
+    if missing_x_coords:
+        print(f"\n" + "="*60)
+        print(f"PROCESSING: {folder}")
+        print(f"Computing {len(missing_x_coords)} cross-sections, MORFAC={morfac}")
+        print(f"Stitching {len(all_run_paths)} parts")
 
-	for folder in model_folders:
-		run_dir = base_path / folder
+        loaded_datasets = []
+        loaded_trees = []
+        new_results = {}
 
-		# --- restart stitching (same pattern as BI script) ---
-		all_run_paths = []
-		if 'restart' in folder.lower() and timed_out_dir.exists():
-			mf_prefix = folder.split('_')[0]  # e.g., MF50
-			matches = [p for p in os.listdir(timed_out_dir) if p.startswith(mf_prefix)]
-			if matches:
-				all_run_paths.append(timed_out_dir / matches[0])
-		all_run_paths.append(run_dir)
+        try:
+            # Load MAP parts + KDTree
+            for p_path in all_run_paths:
+                print(f"   -> Opening Map: {p_path.name}")
+                map_pattern = str(p_path / 'output' / '*_map.nc')
+                ds_map = dataset_cache.get_partitioned(map_pattern, chunks={'time': 1})
+                if map_bedlevel_var not in ds_map:
+                    raise KeyError(f"{map_bedlevel_var} not found in MAP for {p_path}")
 
-		print("\n" + "=" * 60)
-		print(f"PROCESSING: {folder}")
-		print(f"Stitching {len(all_run_paths)} parts")
+                face_x = ds_map['mesh2d_face_x'].values
+                face_y = ds_map['mesh2d_face_y'].values
+                tree = cKDTree(np.vstack([face_x, face_y]).T)
 
-		loaded_datasets = []
-		loaded_trees = []
-		ds_his = None
+                loaded_datasets.append(ds_map)
+                loaded_trees.append(tree)
 
-		try:
-			# Load MAP parts + KDTree
-			for p_path in all_run_paths:
-				map_pattern = str(p_path / 'output' / '*_map.nc')
-				ds_map = dataset_cache.get_partitioned(map_pattern, chunks={'time': 1})
-				if map_bedlevel_var not in ds_map:
-					raise KeyError(f"{map_bedlevel_var} not found in MAP for {p_path}")
+            # Create y-coordinates for sampling
+            y_samples = np.linspace(y_range[0], y_range[1], n_y_samples)
 
-				face_x = ds_map['mesh2d_face_x'].values
-				face_y = ds_map['mesh2d_face_y'].values
-				tree = cKDTree(np.vstack([face_x, face_y]).T)
+            # Process only missing x-coordinates
+            for x_coord in missing_x_coords:
+                cs_name = f"km{int(x_coord / 1000)}"
+                print(f"   Analyzing x = {x_coord}m ({cs_name})...")
 
-				loaded_datasets.append(ds_map)
-				loaded_trees.append(tree)
+                cs_x = np.full(n_y_samples, x_coord)
+                cs_y = y_samples
+                dist = y_samples - y_samples[0]
 
-			# Load HIS from last part (cross-section geometry)
-			his_path = all_run_paths[-1] / 'output' / 'FlowFM_0000_his.nc'
-			ds_his = dataset_cache.get_xr(his_path)
+                all_times = []
+                all_profiles = []
 
-			# Determine MORFAC
-			if use_folder_morfac:
-				morfac = float(get_mf_number(folder))
-			else:
-				morfac = 1.0
+                # Extract profiles sequentially over stitched parts
+                for ds_map, tree in zip(loaded_datasets, loaded_trees):
+                    time_vals = pd.to_datetime(ds_map.time.values)
+                    idxs = range(0, len(time_vals), int(time_stride))
+                    for t in tqdm(idxs, desc=f"      Timesteps", leave=False):
+                        profile = get_bed_profile(ds_map, tree, cs_x, cs_y, t)
+                        if bedlevel_land_threshold is not None:
+                            profile = profile.copy()
+                            profile[profile > float(bedlevel_land_threshold)] = np.nan
+                        all_times.append(time_vals[t])
+                        all_profiles.append(profile)
 
-			# Process each selected cross-section
-			for cs_name in selected_cross_sections:
-				geom = get_cross_section_geom(ds_his, cs_name)
-				if geom is None:
-					print(f"  [WARN] Cross-section not found in HIS: {cs_name}")
-					continue
-				cs_x, cs_y, dist = geom
+                # Clean up overlaps between restart parts
+                df_idx = pd.DataFrame({'time': all_times, 'p_idx': np.arange(len(all_profiles))})
+                df_idx = df_idx.drop_duplicates('time').sort_values('time')
 
-				all_times = []
-				all_profiles = []
+                profiles_clean = [all_profiles[int(i)] for i in df_idx['p_idx'].values]
+                times_clean = pd.to_datetime(df_idx['time'].values)
 
-				# Extract profiles sequentially over stitched parts
-				for ds_map, tree in zip(loaded_datasets, loaded_trees):
-					time_vals = pd.to_datetime(ds_map.time.values)
-					idxs = range(0, len(time_vals), int(time_stride))
-					for t in tqdm(idxs, desc=f"  {cs_name} timesteps", leave=False):
-						profile = get_bed_profile(ds_map, tree, cs_x, cs_y, t)
-						if bedlevel_land_threshold is not None:
-							profile = profile.copy()
-							profile[profile > float(bedlevel_land_threshold)] = np.nan
-						all_times.append(time_vals[t])
-						all_profiles.append(profile)
+                new_results[cs_name] = {
+                    'profiles': profiles_clean,
+                    'times': times_clean,
+                    'dist': dist,
+                    'morfac': morfac,
+                }
+                folder_results[cs_name] = new_results[cs_name]
 
-				# Clean up overlaps between restart parts
-				df_idx = pd.DataFrame({'time': all_times, 'p_idx': np.arange(len(all_profiles))})
-				df_idx = df_idx.drop_duplicates('time').sort_values('time')
+            # Save newly computed results to unified cache
+            save_profile_cache(cache_path, new_results, cache_settings_profiles)
+            print(f"   Saved {len(new_results)} cross-sections to cache: {cache_path}")
 
-				profiles_clean = [all_profiles[int(i)] for i in df_idx['p_idx'].values]
-				times_clean = pd.to_datetime(df_idx['time'].values)
+        except Exception as e:
+            print(f"Error processing {folder}: {e}")
+            continue
+        finally:
+            for ds in loaded_datasets:
+                ds.close()
 
-				Z = np.vstack([p[None, :] for p in profiles_clean])
-				cum = cumulative_activity(Z)
+    # --- 3. PLOTTING (from cache or freshly computed results) ---
+    try:
+        for x_coord in selected_x_coords:
+            cs_name = f"km{int(x_coord / 1000)}"
+            if cs_name not in folder_results:
+                continue
 
-				morph_years = morph_years_from_datetimes(times_clean, startdate=run_startdate, morfac=morfac)
-				first_profile = Z[0, :]
+            data = folder_results[cs_name]
+            profiles_clean = data['profiles']
+            times_clean = data['times']
+            dist = data['dist']
+            morfac = data.get('morfac', default_morfac)
 
-				outpath = output_dir / f"{folder}_{cs_name}_cumactivity.png"
-				plot_activity_and_first_profile(
-					dist_m=dist,
-					first_profile=first_profile,
-					cumact=cum,
-					morph_years=morph_years,
-					title=f"{folder}: {cs_name}",
-					outpath=outpath,
-					show=True,
-				)
-				print(f"  Saved: {outpath}")
+            Z = np.vstack([p[None, :] for p in profiles_clean])
+            cum = cumulative_activity(Z)
 
-		except Exception as e:
-			print(f"Error processing {folder}: {e}")
-		finally:
-			plt.close('all')
+            morph_years = morph_years_from_datetimes(
+                pd.to_datetime(times_clean), 
+                startdate=run_startdate, 
+                morfac=morfac
+            )
+            first_profile = Z[0, :]
 
-	dataset_cache.close_all()
+            outpath = output_dir / f"{folder}_{cs_name}_cumactivity.png"
+            plot_activity_and_first_profile(
+                dist_m=dist,
+                first_profile=first_profile,
+                cumact=cum,
+                morph_years=morph_years,
+                title=f"{folder}: {cs_name}",
+                outpath=outpath,
+                show=False,
+            )
+            print(f"  Saved: {outpath}")
 
-	print("\n" + "=" * 60)
-	print("ALL FOLDERS COMPLETED.")
+    except Exception as e:
+        print(f"Error plotting {folder}: {e}")
+    finally:
+        plt.close('all')
+
+dataset_cache.close_all()
+
+print("\n" + "="*60)
+print("ALL FOLDERS COMPLETED.")

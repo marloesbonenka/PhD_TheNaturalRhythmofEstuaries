@@ -5,7 +5,7 @@
 import xarray as xr
 import pandas as pd
 import os
-from FUNCTIONS.F_cache import *
+from FUNCTIONS.F_cache import DatasetCache
 
 #%%
 # Path to just ONE of your restart files

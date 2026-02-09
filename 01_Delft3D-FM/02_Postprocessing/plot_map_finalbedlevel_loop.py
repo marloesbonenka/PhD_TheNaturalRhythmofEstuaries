@@ -6,7 +6,7 @@ import dfm_tools as dfmt
 from matplotlib.colors import LinearSegmentedColormap
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import numpy as np
-from FUNCTIONS.F_cache import *
+from FUNCTIONS.F_cache import DatasetCache
 
 # --- 1. SETTINGS & PATHS ---
 base_directory = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Test_MORFAC\Tmorph_50years"

@@ -4,142 +4,272 @@ Robust version: Handles restarts with mesh changes and optimizes U-drive access.
 """
 
 #%% IMPORTS
-import os
+from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
-import xarray as xr
-import dfm_tools as dfmt
-import time
 import pandas as pd
 from scipy.spatial import cKDTree
 from tqdm import tqdm
 import sys
 
-#%% Add path for functions
+#%% Add path for succesful loading of functions
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
 
 from FUNCTIONS.F_general import *
 from FUNCTIONS.F_braiding_index import *
-from FUNCTIONS.F_cache import *
+from FUNCTIONS.F_cache import (
+    DatasetCache,
+    get_profile_cache_path, load_profile_cache, save_profile_cache
+)
 
 #%% --- CONFIGURATION ---
-base_directory = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15"
-config = 'Test_OneRiverBoundary'
-#'Test_MORFAC/Tmorph_400years'
-timed_out_dir = os.path.join(base_directory, config, "timed-out")
+# ANALYSIS_MODE: "variability" for river discharge variability scenarios
+#                "morfac" for MORFAC sensitivity analysis
+ANALYSIS_MODE = "variability"
+
+if ANALYSIS_MODE == "variability":
+    base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
+    config = 'Model_Output'
+    default_morfac = 100  # All variability scenarios use MORFAC=100
+    # Mapping: restart folder prefix -> timed-out folder prefix
+    # 1 = constant (baserun), 2 = seasonal, 3 = flashy, 4 = singlepeak
+    VARIABILITY_MAP = {
+        '1': '01_baserun500',
+        '2': '02_run500_seasonal',
+        '3': '03_run500_flashy',
+        '4': '04_run500_singlepeak',
+    }
+    # Which scenarios to process (set to None or empty list for all)
+    SCENARIOS_TO_PROCESS = ['1']  # e.g., ['1'] for baserun only, ['1', '2'] for multiple, None for all
+
+elif ANALYSIS_MODE == "morfac":
+    base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
+    config = r'TestingBoundaries_and_SensitivityAnalyses\Test_MORFAC\02_seasonal\Tmorph_50years'
+    default_morfac = None  # Will extract from folder name
+
+timed_out_dir = base_directory / config / "timed-out"
 
 # --- SETTINGS ---
 n_slices = 5  
 safety_buffer = 0.20 
-selected_cross_sections = ["ObservationCrossSection_Estuary_km20",
-                           "ObservationCrossSection_Estuary_km26",
-                           "ObservationCrossSection_Estuary_km32",
-                           "ObservationCrossSection_Estuary_km38",
-                           "ObservationCrossSection_Estuary_km42",
-                           "ObservationCrossSection_Estuary_km43",
-                           "ObservationCrossSection_Estuary_km44"]
+
+# Cross-section x-coordinates in meters (km value * 1000)
+# e.g., km20 -> 20000m, km26 -> 26000m
+selected_x_coords = [20000, 30000, 40000]
+
+# Y-range of the estuary (min, max) and sampling resolution
+# Based on MAP file: mesh2d_face_y ranges from 337.5 to 15000.5 m
+y_range = (5000, 10000)  # Estuary width in meters
+n_y_samples = 300  # Number of points to sample across the width
+
+# --- CACHE SETTINGS ---
+compute = False  # Set True to force recompute, False to use cache if available
+
+# Settings dict for cache validation (if any setting changes, cache is invalidated)
+cache_settings = {
+    'selected_x_coords': selected_x_coords,
+    'y_range': y_range,
+    'n_y_samples': n_y_samples,
+    'safety_buffer': safety_buffer,
+    'n_slices': n_slices,
+}
 
 #%% --- SEARCH & SORT FOLDERS ---
-model_folders = [f for f in os.listdir(os.path.join(base_directory, config)) if f.startswith('0')]
-model_folders.sort(key=get_mf_number)
+# For variability: restart folders start with digit (e.g., "1_Q500_rst...")
+# For morfac: restart folders start with "MF" (e.g., "MF1_restart...")
+if ANALYSIS_MODE == "variability":
+    # Find restart folders: start with digit and contain "_rst"
+    model_folders = [f.name for f in (base_directory / config).iterdir() 
+                     if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
+    # Filter by SCENARIOS_TO_PROCESS if specified
+    if SCENARIOS_TO_PROCESS:
+        model_folders = [f for f in model_folders if f.split('_')[0] in SCENARIOS_TO_PROCESS]
+    # Sort by leading number (e.g., "1_Q500..." -> 1)
+    model_folders.sort(key=lambda x: int(x.split('_')[0]))
+elif ANALYSIS_MODE == "morfac":
+    model_folders = [f.name for f in (base_directory / config).iterdir() 
+                     if f.is_dir() and f.name.startswith('MF')]
+    model_folders.sort(key=get_mf_number)
 
 #%% --- MAIN PROCESSING LOOP ---
 
 dataset_cache = DatasetCache()
 for folder in model_folders:
-    model_location = os.path.join(base_directory, config, folder)
+    model_location = base_directory / config / folder
+    
+    # --- UNIFIED CACHE: shared between all profile-based scripts ---
+    cache_path = get_profile_cache_path(model_location, folder)
+    
+    # Try to load from unified cache (only loads x-coords we need)
+    folder_results, missing_x_coords = load_profile_cache(cache_path, selected_x_coords)
+    
+    # If loaded from cache, ensure bi_series exists (compute from profiles if needed)
+    for cs_name, data in folder_results.items():
+        # Handle key name compatibility (times vs time_series)
+        if 'time_series' not in data and 'times' in data:
+            data['time_series'] = data['times']
+        # Compute bi_series if not cached (e.g., loaded from cumactivity cache)
+        if 'bi_series' not in data and 'profiles' in data:
+            print(f"   Computing braiding index for {cs_name} from cached profiles...")
+            data['bi_series'] = []
+            for profile in data['profiles']:
+                plot_profile = profile.copy()
+                plot_profile[plot_profile > 8.0] = np.nan
+                bi = compute_braiding_index_with_threshold(plot_profile, safety_buffer=safety_buffer)
+                data['bi_series'].append(bi)
+    
+    if not compute and not missing_x_coords:
+        print(f"\n" + "="*60)
+        print(f"LOADED FROM CACHE: {folder} ({len(folder_results)} cross-sections)")
+        use_cache = True
+    elif not compute and folder_results:
+        print(f"\n" + "="*60)
+        print(f"PARTIAL CACHE: {folder}")
+        print(f"   Found: {list(folder_results.keys())}")
+        print(f"   Missing: {[f'km{int(x/1000)}' for x in missing_x_coords]}")
+        use_cache = False  # Need to compute missing ones
+    else:
+        if not compute:
+            print(f"\nNo cache found for {folder}, computing...")
+        use_cache = False
+        missing_x_coords = selected_x_coords  # Compute all
     
     # --- 1. RESTART LOGIC (Find all parts) ---
     all_run_paths = []
-    if 'restart' in folder:
-        mf_prefix = folder.split('_')[0] # e.g., "MF1"
-        if os.path.exists(timed_out_dir):
-            match = [f for f in os.listdir(timed_out_dir) if f.startswith(mf_prefix)]
-            if match:
-                all_run_paths.append(os.path.join(timed_out_dir, match[0]))
+    
+    if ANALYSIS_MODE == "variability":
+        # Variability mode: match by leading digit (e.g., "1_Q500_rst..." -> "01_baserun500")
+        scenario_num = folder.split('_')[0]  # e.g., "1", "2", "3", "4"
+        if scenario_num in VARIABILITY_MAP and timed_out_dir.exists():
+            timed_out_folder = VARIABILITY_MAP[scenario_num]
+            timed_out_path = timed_out_dir / timed_out_folder
+            if timed_out_path.exists():
+                all_run_paths.append(timed_out_path)
+                
+    elif ANALYSIS_MODE == "morfac":
+        # Morfac mode: match by MF prefix (e.g., "MF2_restart..." -> "MF2...")
+        if 'restart' in folder:
+            mf_prefix = folder.split('_')[0]  # e.g., "MF1", "MF2"
+            if timed_out_dir.exists():
+                match = [f.name for f in timed_out_dir.iterdir() if f.name.startswith(mf_prefix)]
+                if match:
+                    all_run_paths.append(timed_out_dir / match[0])
+    
     all_run_paths.append(model_location)
 
-    print(f"\n" + "="*60)
-    print(f"PROCESSING FOLDER: {folder}")
-    print(f"Stitching {len(all_run_paths)} parts.")
+    # --- 2. COMPUTE MISSING CROSS-SECTIONS ---
+    if missing_x_coords and not use_cache:
+        print(f"\n" + "="*60)
+        print(f"PROCESSING FOLDER: {folder}")
+        print(f"Stitching {len(all_run_paths)} parts.")
+        print(f"Computing {len(missing_x_coords)} cross-sections...")
 
-    # --- 2. LOAD DATASETS ONCE PER FOLDER ---
-    loaded_datasets = []
-    loaded_trees = []
-    
+        loaded_datasets = []
+        loaded_trees = []
+        
+        try:
+            for p_path in all_run_paths:
+                print(f"   -> Opening Map: {p_path.name}")
+                ds = dataset_cache.get_partitioned(str(p_path / 'output' / '*_map.nc'), chunks={'time': 1})
+                
+                face_x = ds['mesh2d_face_x'].values
+                face_y = ds['mesh2d_face_y'].values
+                tree = cKDTree(np.vstack([face_x, face_y]).T)
+                
+                loaded_datasets.append(ds)
+                loaded_trees.append(tree)
+
+            # Create y-coordinates for sampling
+            y_samples = np.linspace(y_range[0], y_range[1], n_y_samples)
+            
+            new_results = {}
+            for x_coord in missing_x_coords:
+                cs_name = f"km{int(x_coord / 1000)}"
+                print(f"   Analyzing x = {x_coord}m ({cs_name})...")
+                
+                cs_x = np.full(n_y_samples, x_coord)
+                cs_y = y_samples
+                dist = y_samples - y_samples[0]
+                
+                full_bi_series = []
+                full_times = []
+                all_profiles_raw = []
+
+                for ds_map, tree in zip(loaded_datasets, loaded_trees):
+                    for t in tqdm(range(len(ds_map.time)), desc=f"      Timesteps", leave=False):
+                        profile = get_bed_profile(ds_map, tree, cs_x, cs_y, t)
+                        
+                        plot_profile = profile.copy()
+                        plot_profile[plot_profile > 8.0] = np.nan
+                        bi = compute_braiding_index_with_threshold(plot_profile, safety_buffer=safety_buffer)
+                        
+                        full_bi_series.append(bi)
+                        full_times.append(pd.to_datetime(ds_map.time.values[t]))
+                        all_profiles_raw.append(plot_profile)
+
+                new_results[cs_name] = {
+                    'bi_series': full_bi_series,
+                    'times': full_times,  # standardized key name
+                    'time_series': full_times,  # backward compatibility
+                    'profiles': all_profiles_raw,
+                    'dist': dist,
+                }
+
+            # Add new results to folder_results
+            folder_results.update(new_results)
+            
+            # Save to unified cache (merges with existing)
+            save_profile_cache(cache_path, new_results, cache_settings)
+            print(f"   Saved to unified cache: {cache_path}")
+
+        except Exception as e:
+            print(f"Error processing {folder}: {e}")
+            continue
+        finally:
+            for ds in loaded_datasets:
+                ds.close()
+
+    # --- 3. PLOTTING (from cache or freshly computed results) ---
     try:
-        for p_path in all_run_paths:
-            print(f"   -> Opening Map: {os.path.basename(p_path)}")
-            # Chunks=1 keeps metadata loading fast and memory low
-            ds = dataset_cache.get_partitioned(os.path.join(p_path, 'output', '*_map.nc'), chunks={'time': 1})
-            
-            # Build Tree for this part's specific mesh (handles mesh size changes)
-            face_x = ds['mesh2d_face_x'].values
-            face_y = ds['mesh2d_face_y'].values
-            tree = cKDTree(np.vstack([face_x, face_y]).T)
-            
-            loaded_datasets.append(ds)
-            loaded_trees.append(tree)
-
-        # Load HIS once (from the last part) for cross-section metadata
-        his_file = os.path.join(all_run_paths[-1], 'output', 'FlowFM_0000_his.nc')
-        ds_his = dataset_cache.get_xr(his_file)
-
-        # --- 3. ANALYZE CROSS SECTIONS ---
-        n_cs = len(selected_cross_sections)
+        n_cs = len(selected_x_coords)
         fig, axes = plt.subplots(n_cs, 2, figsize=(18, 5 * n_cs))
         if n_cs == 1: axes = axes.reshape(1, -1)
 
-        for i, cs_name in enumerate(selected_cross_sections):
-            print(f"   Analyzing {cs_name}...")
+        # Get morfac: use default if set, otherwise extract from folder name
+        morfac = default_morfac if default_morfac else float(get_mf_number(folder))
+
+        for i, x_coord in enumerate(selected_x_coords):
+            cs_name = f"km{int(x_coord / 1000)}"
+            if cs_name not in folder_results:
+                continue
+                
+            data = folder_results[cs_name]
             ax_spatial, ax_bi = axes[i, 0], axes[i, 1]
             
-            # Get Geometry from HIS
-            cs_names = [n.decode() if isinstance(n, bytes) else n for n in ds_his.cross_section_name.values]
-            if cs_name not in cs_names: continue
-            
-            idx = cs_names.index(cs_name)
-            start = int(ds_his['cross_section_geom_node_count'].values[:idx].sum())
-            end = start + int(ds_his['cross_section_geom_node_count'].values[idx])
-            cs_x = ds_his['cross_section_geom_node_coordx'].values[start:end]
-            cs_y = ds_his['cross_section_geom_node_coordy'].values[start:end]
-            dist = np.sqrt((cs_x - cs_x[0])**2 + (cs_y - cs_y[0])**2)
-            
-            full_bi_series = []
-            full_time_series = []
-            all_profiles_raw = []
-
-            # Extract data sequentially from the loaded parts
-            for ds_map, tree in zip(loaded_datasets, loaded_trees):
-                for t in tqdm(range(len(ds_map.time)), desc=f"      Timesteps", leave=False):
-                    profile = get_bed_profile(ds_map, tree, cs_x, cs_y, t)
-                    
-                    # BI Calculation
-                    plot_profile = profile.copy()
-                    plot_profile[plot_profile > 8.0] = np.nan
-                    bi = compute_braiding_index_with_threshold(plot_profile, safety_buffer=safety_buffer)
-                    
-                    full_bi_series.append(bi)
-                    full_time_series.append(pd.to_datetime(ds_map.time.values[t]))
-                    all_profiles_raw.append(plot_profile)
-
-            # --- Handle Time-Stitching & Plotting ---
             df_results = pd.DataFrame({
-                'time': full_time_series, 
-                'bi': full_bi_series, 
-                'p_idx': range(len(all_profiles_raw))
+                'time': data['time_series'], 
+                'bi': data['bi_series'], 
+                'p_idx': range(len(data['profiles']))
             })
-            # Clean up restart overlaps
             df_results = df_results.drop_duplicates('time').sort_values('time')
+            
+            # Convert to morphological time in years (starting from 0)
+            times = pd.to_datetime(df_results['time'])
+            t0 = times.iloc[0]
+            hydro_days = (times - t0).dt.total_seconds() / 86400
+            morph_years = (hydro_days * morfac) / 365.25  # morphological years
+            df_results['morph_years'] = morph_years
             
             slice_indices = np.linspace(0, len(df_results) - 1, n_slices, dtype=int)
             colors = plt.cm.plasma(np.linspace(0, 0.8, n_slices))
             
-            # Profile Plotting
+            dist = data['dist']
+            all_profiles_raw = data['profiles']
+            
             for c_idx, row_idx in enumerate(slice_indices):
                 data_row = df_results.iloc[row_idx]
                 prof = all_profiles_raw[int(data_row['p_idx'])]
-                lbl = data_row['time'].strftime('%Y-%m-%d')
+                lbl = f"t={data_row['morph_years']:.1f}yr"
                 
                 ax_spatial.plot(dist, prof, color=colors[c_idx], label=lbl, linewidth=1.2)
                 ax_spatial.axhline(np.nanmean(prof) - safety_buffer, color=colors[c_idx], 
@@ -151,30 +281,22 @@ for folder in model_folders:
             ax_spatial.grid(True, alpha=0.2)
             ax_spatial.legend(loc='best', fontsize='x-small')
 
-            # Braiding Index Plotting
-            ax_bi.plot(df_results['time'], df_results['bi'], color='black', alpha=0.7)
+            ax_bi.plot(df_results['morph_years'], df_results['bi'], color='black', alpha=0.7)
             ax_bi.set_title(f"Braiding Index: {cs_name}")
-            ax_bi.set_xlabel("Date")
+            ax_bi.set_xlabel("Morphological time [years]")
             ax_bi.set_ylabel("No. of Channels")
             ax_bi.set_ylim(0, 8)
             ax_bi.grid(True, alpha=0.2)
-            plt.setp(ax_bi.get_xticklabels(), rotation=30)
 
-        # --- SAVE FIGURE ---
         plt.tight_layout()
         save_name = f"cross_section_analysis_{folder}.png"
-        plt.savefig(os.path.join(base_directory, config, save_name), dpi=300)
-        plt.close(fig) 
+        plt.savefig(base_directory / config / save_name, dpi=300)
+        plt.show()
         print(f"Finished {folder}. Figure saved.")
 
     except Exception as e:
-        print(f"Error processing {folder}: {e}")
+        print(f"Error plotting {folder}: {e}")
     finally:
-        # --- 4. CLEAN UP FOR NEXT FOLDER ---
-        for ds in loaded_datasets:
-            ds.close()
-        if 'ds_his' in locals():
-            ds_his.close()
         plt.close('all')
 
 dataset_cache.close_all()

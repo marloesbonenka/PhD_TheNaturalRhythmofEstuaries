@@ -13,7 +13,7 @@ sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\Delft3D-FM\Postproces
 
 from FUNCTIONS.F_general import *
 from FUNCTIONS.F_braiding_index import *
-from FUNCTIONS.F_cache import *
+from FUNCTIONS.F_cache import DatasetCache, load_results_cache, save_results_cache
 
 #%%
 # --- 1. SETTINGS & PATHS ---
@@ -107,18 +107,13 @@ try:
         'use_mf50_reference': use_mf50_reference,
     }
 
-    if cache_path.exists():
-        cached = load_cache(cache_path)
-        cached_settings = cached.get('settings', {})
-        if cached_settings == cache_settings:
-            reference_bed_MF50 = cached.get('reference_bed_MF50')
-            baseline_bed_data = cached.get('baseline_bed_data')
-            print(f"Loaded cached reference data from: {cache_path}")
-        else:
-            print("Cache settings differ from current settings; recomputing reference data.")
-            cache_dirty = True
+    loaded_results, loaded_meta = load_results_cache(cache_path, cache_settings)
+    if loaded_results is not None:
+        reference_bed_MF50 = loaded_results.get('reference_bed_MF50')
+        baseline_bed_data = loaded_results.get('baseline_bed_data')
+        print(f"Loaded cached reference data from: {cache_path}")
     else:
-        print(f"Cache not found, computing reference data: {cache_path}")
+        print(f"Cache not found or settings differ, computing reference data...")
         cache_dirty = True
 
     # --- For detrending: reference t=0 from a run with no restart ---
@@ -240,11 +235,14 @@ try:
             print(f"Error processing {folder}: {e}")
 
     if cache_dirty:
-        save_cache(cache_path, {
-            'settings': cache_settings,
-            'reference_bed_MF50': reference_bed_MF50,
-            'baseline_bed_data': baseline_bed_data,
-        })
+        save_results_cache(
+            cache_path,
+            results={
+                'reference_bed_MF50': reference_bed_MF50,
+                'baseline_bed_data': baseline_bed_data,
+            },
+            settings=cache_settings,
+        )
         print(f"Saved reference cache to: {cache_path}")
 finally:
     dataset_cache.close_all()

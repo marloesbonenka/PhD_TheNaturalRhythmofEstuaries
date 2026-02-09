@@ -14,7 +14,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
 
 from FUNCTIONS.F_general import get_mf_number
-from FUNCTIONS.F_cache import *
+from FUNCTIONS.F_cache import DatasetCache, load_results_cache, save_results_cache
 
 #%% --- SETTINGS & PATHS ---
 scenarios_morfac = True
@@ -109,23 +109,17 @@ cache_settings = {
     'run_startdate': None if run_startdate is None else str(run_startdate),
 }
 
-if (not compute) and cache_path.exists():
-    cached = load_cache(cache_path)
-    meta = cached.get('metadata', {})
-    cached_settings = meta.get('settings', {})
-    if cached_settings == cache_settings:
-        results = cached.get('results', {})
-        run_names = meta.get('run_names', {})
+if not compute:
+    loaded_results, loaded_meta = load_results_cache(cache_path, cache_settings)
+    if loaded_results is not None:
+        results = loaded_results
+        run_names = loaded_meta.get('run_names', {})
         print(f"Loaded cached results from: {cache_path}")
     else:
-        print("Cache settings differ from current settings; recomputing.")
-        compute = True
-else:
-    if not compute:
-        print(f"Cache not found, computing results: {cache_path}")
+        print(f"Cache not found or settings differ, computing results...")
 
 #%% --- LOOP THROUGH RUNS ---
-if compute:
+if compute or not results:
     dataset_cache = DatasetCache()
     try:
         for folder in model_folders:
@@ -219,13 +213,12 @@ if compute:
     finally:
         dataset_cache.close_all()
 
-    save_cache(cache_path, {
-        'results': results,
-        'metadata': {
-            'run_names': run_names,
-            'settings': cache_settings,
-        },
-    })
+    save_results_cache(
+        cache_path,
+        results,
+        settings=cache_settings,
+        metadata={'run_names': run_names},
+    )
     print(f"Saved cache: {cache_path}")
 
 # --- plotting from cache/results ---

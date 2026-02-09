@@ -43,7 +43,7 @@ from FUNCTIONS.F_loaddata import (
 	find_mf_run_folder,
 	get_his_paths_for_run,
 )
-from FUNCTIONS.F_cache import *
+from FUNCTIONS.F_cache import load_results_cache, save_results_cache
 from FUNCTIONS.F_T_ratio_hydrodynamic_cycle12h import *
 
 
@@ -89,18 +89,16 @@ if __name__ == '__main__':
 	results = {}
 	run_names = {}
 
-	if (not compute) and cache_path.exists():
-		cached = load_cache(cache_path)
-		results = cached.get('results', {})
-		meta = cached.get('metadata', {})
-		run_names = meta.get('run_names', {})
-		print(f"Loaded cached results from: {cache_path}")
+	if not compute:
+		loaded_results, loaded_meta = load_results_cache(cache_path)
+		if loaded_results is not None:
+			results = loaded_results
+			run_names = loaded_meta.get('run_names', {})
+			print(f"Loaded cached results from: {cache_path}")
+		else:
+			print(f"Cache not found, computing results...")
 
-	else:
-		if not compute:
-			print(f"Cache not found, computing results: {cache_path}")
-
-	if compute:
+	if compute or not results:
 		for mf in morfac_values:
 			run_folder, run_name = find_mf_run_folder(base_dir, mf)
 			his_paths = get_his_paths_for_run(base_dir, run_folder)
@@ -140,9 +138,10 @@ if __name__ == '__main__':
 
 			data['ds'].close()
 
-		save_cache(cache_path, {
-			'results': results,
-			'metadata': {
+		save_results_cache(
+			cache_path,
+			results,
+			metadata={
 				'morfacs': morfac_values,
 				'run_names': run_names,
 				'cycle_hours': cycle_hours,
@@ -151,7 +150,7 @@ if __name__ == '__main__':
 				'estuary_only': estuary_only,
 				'km_range': km_range,
 			}
-		})
+		)
 		print(f"Saved cached results to: {cache_path}")
 
 	# --- MORFAC sensitivity plots (mean over year windows) ---
