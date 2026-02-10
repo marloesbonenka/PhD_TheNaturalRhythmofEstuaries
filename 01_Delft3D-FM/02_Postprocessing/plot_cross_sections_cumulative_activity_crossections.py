@@ -76,8 +76,9 @@ timed_out_dir = base_directory / config / "timed-out"
 selected_x_coords = [20000, 30000, 40000]
 
 # Y-range of the estuary (min, max) and sampling resolution
+# Compute exactly 5 km width to capture channel widening dynamics
 # Based on MAP file: mesh2d_face_y ranges from 337.5 to 15000.5 m
-y_range = (300, 15000)
+y_range = (5000, 10000)  # 5 km width (5000 to 10000 m -> dist 0 to 5000 m = 0 to 5 km)
 n_y_samples = 300
 
 # Bedlevel variable in MAP
@@ -92,8 +93,11 @@ time_stride = 1
 # Morph-time conversion
 run_startdate = None  # e.g. "2025-01-01", or None to use first timestamp
 
+# Fixed x-axis limits for both subplots (set None for auto-scale)
+profile_xlim = None  # Data now spans exactly 0-5 km, no clipping needed
+
 # --- CACHE SETTINGS ---
-compute = False  # Set True to force recompute, False to use cache if available
+compute = True  # Force recompute with new y_range
 
 # Output
 output_dirname = "output_plots_crosssections_cumactivity"
@@ -243,13 +247,18 @@ for folder in model_folders:
                 # Extract profiles sequentially over stitched parts
                 for ds_map, tree in zip(loaded_datasets, loaded_trees):
                     time_vals = pd.to_datetime(ds_map.time.values)
-                    idxs = range(0, len(time_vals), int(time_stride))
-                    for t in tqdm(idxs, desc=f"      Timesteps", leave=False):
-                        profile = get_bed_profile(ds_map, tree, cs_x, cs_y, t)
+                    idx_list = list(range(0, len(time_vals), int(time_stride)))
+                    nearest_indices = get_nearest_face_indices(tree, cs_x, cs_y)
+
+                    # Read only sampled faces for the strided timesteps (time, points)
+                    bl = ds_map[map_bedlevel_var].isel(time=idx_list, mesh2d_nFaces=nearest_indices).values
+
+                    for j in tqdm(range(bl.shape[0]), desc=f"      Timesteps", leave=False):
+                        profile = bl[j, :]
                         if bedlevel_land_threshold is not None:
                             profile = profile.copy()
                             profile[profile > float(bedlevel_land_threshold)] = np.nan
-                        all_times.append(time_vals[t])
+                        all_times.append(time_vals[idx_list[j]])
                         all_profiles.append(profile)
 
                 # Clean up overlaps between restart parts
@@ -300,16 +309,19 @@ for folder in model_folders:
                 morfac=morfac
             )
             first_profile = Z[0, :]
+            final_profile = Z[-1, :]
 
             outpath = output_dir / f"{folder}_{cs_name}_cumactivity.png"
             plot_activity_and_first_profile(
                 dist_m=dist,
                 first_profile=first_profile,
+                final_profile=final_profile,
                 cumact=cum,
                 morph_years=morph_years,
                 title=f"{folder}: {cs_name}",
                 outpath=outpath,
-                show=False,
+                show=True,
+                profile_xlim=profile_xlim,
             )
             print(f"  Saved: {outpath}")
 

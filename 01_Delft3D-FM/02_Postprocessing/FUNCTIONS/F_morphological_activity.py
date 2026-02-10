@@ -9,6 +9,7 @@ Includes:
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 from pathlib import Path
 
 
@@ -64,20 +65,24 @@ def plot_activity_and_first_profile(
     *,
     dist_m: np.ndarray,
     first_profile: np.ndarray,
+    final_profile: np.ndarray,
     cumact: np.ndarray,
     morph_years: np.ndarray,
     title: str,
     outpath: Path,
     show: bool = False,
+    profile_xlim: tuple = None,
 ):
-    """Plot cumulative activity heatmap with initial bed profile.
+    """Plot cumulative activity heatmap with initial and final bed profiles.
     
     Parameters
     ----------
     dist_m : np.ndarray
         Distance along cross-section in meters.
     first_profile : np.ndarray
-        Initial bed level profile.
+        Initial bed level profile (t=0).
+    final_profile : np.ndarray
+        Final bed level profile (t=end).
     cumact : np.ndarray
         Cumulative activity array (time, space).
     morph_years : np.ndarray
@@ -88,6 +93,8 @@ def plot_activity_and_first_profile(
         Output file path.
     show : bool
         If True, display plot interactively.
+    profile_xlim : tuple, optional
+        Fixed (xmin, xmax) in km for both subplots. If None, auto-scale.
     """
     fig = plt.figure(figsize=(10, 7))
     gs = fig.add_gridspec(2, 1, height_ratios=[2.0, 1.0], hspace=0.25)
@@ -107,16 +114,28 @@ def plot_activity_and_first_profile(
         vmin=0,
         vmax=vmax,
     )
-    cbar = fig.colorbar(im, ax=ax0, fraction=0.046, pad=0.04)
+    # Use make_axes_locatable to keep colorbar from misaligning axes
+    divider = make_axes_locatable(ax0)
+    cax = divider.append_axes("right", size="3%", pad=0.1)
+    cbar = fig.colorbar(im, cax=cax)
     cbar.set_label(r"$\Sigma |\Delta z_b|$ [m]", fontsize=11, fontweight='bold')
 
     ax0.set_ylabel('Morphological time [years]', fontsize=11, fontweight='bold')
     ax0.set_title(title, fontsize=12, fontweight='bold')
 
-    ax1.plot(x_km, first_profile, color='black', linewidth=2)
+    ax1.plot(x_km, first_profile, color='gray', linewidth=1.5, label='t = 0')
+    ax1.plot(x_km, final_profile, color='black', linewidth=2, label='t = final')
     ax1.set_xlabel('Cross-section distance [km]', fontsize=11, fontweight='bold')
     ax1.set_ylabel('Bed level [m]', fontsize=11, fontweight='bold')
     ax1.grid(True, alpha=0.3, linestyle=':')
+    ax1.legend(loc='upper right', fontsize=9)
+    # Add invisible spacer to match colorbar width
+    divider1 = make_axes_locatable(ax1)
+    cax1 = divider1.append_axes("right", size="3%", pad=0.1)
+    cax1.axis('off')
+    if profile_xlim is not None:
+        ax0.set_xlim(profile_xlim)
+        ax1.set_xlim(profile_xlim)
 
     plt.tight_layout()
     fig.savefig(outpath, dpi=300, bbox_inches='tight')

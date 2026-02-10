@@ -5,23 +5,10 @@ import re
 import numpy as np
 import pandas as pd
 import xarray as xr
+from tqdm import tqdm
 
-from FUNCTIONS.F_tidalriverdominance import (
-	select_max_flood_timestep,
-	select_max_flood_indices_per_cycle,
-)
-from FUNCTIONS.F_cache import DatasetCache
-
-_DATASET_CACHE = DatasetCache()
-
-
-def _get_cached_dataset(path):
-	return _DATASET_CACHE.get_xr(path)
-
-
-def close_cached_datasets() -> None:
-	"""Close cached datasets opened via this module."""
-	_DATASET_CACHE.close_all()
+from FUNCTIONS.F_tidalriverdominance import *
+from FUNCTIONS.F_cache import *
 
 
 def select_representative_days(times, n_periods=3):
@@ -123,11 +110,21 @@ def load_cross_section_data(his_file_path, q_var='cross_section_discharge',
 							exclude_last_timestep=False,
 							exclude_last_n_days=0,
 							selected_time_indices=None,
-							use_cache=True):
-	"""Load discharge data from HIS file(s) and extract cross-section information."""
+							dataset_cache=None):
+	"""
+	Load discharge data from HIS file(s) and extract cross-section information.
+	
+	Parameters
+	----------
+	dataset_cache : DatasetCache, optional
+		A DatasetCache instance for caching datasets. If None, datasets are opened
+		without caching and caller is responsible for closing them.
+	"""
+	use_cache = dataset_cache is not None
+	
 	if isinstance(his_file_path, (list, tuple)) and len(his_file_path) > 1:
 		if use_cache:
-			datasets = [_get_cached_dataset(p) for p in his_file_path]
+			datasets = [dataset_cache.get_xr(p) for p in his_file_path]
 			ds_first = datasets[0]
 			ds_for_coords = ds_first
 		else:
@@ -137,7 +134,7 @@ def load_cross_section_data(his_file_path, q_var='cross_section_discharge',
 	else:
 		ds_first = None
 		if use_cache:
-			ds_for_coords = _get_cached_dataset(his_file_path if not isinstance(his_file_path, (list, tuple)) else his_file_path[0])
+			ds_for_coords = dataset_cache.get_xr(his_file_path if not isinstance(his_file_path, (list, tuple)) else his_file_path[0])
 		else:
 			ds_for_coords = open_his_dataset(his_file_path)
 
@@ -282,3 +279,185 @@ def load_cross_section_data(his_file_path, q_var='cross_section_discharge',
 		'max_flood_km': max_flood_km,
 		'flood_sign_used': flood_sign_used,
 	}
+
+
+def read_discharge_from_bc_files(model_path, bc_pattern="*_Qr*_inflow_sinuous.bc"):
+    """
+    Read and sum discharge from boundary condition (.bc) files.
+    
+    The BC files contain discharge for individual river cells (01, 02, 03, 04).
+    This function sums them to get the total river discharge.
+    
+    Parameters
+    ----------
+    model_path : Path
+        Path to the model folder containing .bc files
+    bc_pattern : str
+        Glob pattern to find BC files
+        
+    Returns
+    -------
+    times : list of datetime
+        Timestamps
+    discharges : list of float
+        Total discharge values (sum of all cells)
+    """
+    import re
+    from datetime import datetime, timedelta
+    
+    # Find BC files
+    bc_files = list(model_path.glob(bc_pattern))
+    if not bc_files:
+        # Also check in parent folder
+        bc_files = list(model_path.parent.glob(bc_pattern))
+    
+    if not bc_files:
+        print(f"  No BC files found matching {bc_pattern} in {model_path}")
+        return None, None
+    
+    print(f"  Found {len(bc_files)} BC files: {[f.name for f in bc_files]}")
+    
+    # Parse all BC files
+    all_data = {}
+    reference_date = None
+    
+    for bc_file in bc_files:
+        with open(bc_file, 'r') as f:
+            content = f.read()
+        
+        lines = content.strip().split('\n')
+        
+        # Parse header to get reference date
+        for line in lines:
+            if 'seconds since' in line.lower():
+                # Extract reference date: "unit = seconds since 2001-01-01 00:00:00"
+                match = re.search(r'seconds since\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', line)
+                if match:
+                    reference_date = datetime.strptime(match.group(1), "%Y-%m-%d %H:%M:%S")
+                break
+        
+        # Parse data lines (after header)
+        data_started = False
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith('[') or '=' in line:
+                continue
+            
+            # Data lines are: "seconds   discharge"
+            parts = line.split()
+            if len(parts) >= 2:
+                try:
+                    seconds = float(parts[0])
+                    discharge = float(parts[1])
+                    
+                    if seconds not in all_data:
+                        all_data[seconds] = 0.0
+                    all_data[seconds] += discharge
+                except ValueError:
+                    continue
+    
+    if not all_data or reference_date is None:
+        print("  Could not parse BC files.")
+        return None, None
+    
+    # Convert to timestamps and lists
+    sorted_seconds = sorted(all_data.keys())
+    times = [reference_date + timedelta(seconds=s) for s in sorted_seconds]
+    discharges = [all_data[s] for s in sorted_seconds]
+    
+    print(f"  Read {len(times)} timesteps from BC files (ref: {reference_date})")
+    
+    return times, discharges
+
+
+def extract_discharge_at_x(ds, x_target, y_range, time_indices=None):
+    """
+    Extract total discharge through edges near a given x-coordinate.
+    
+    Samples mesh2d_q1 (discharge through flow links) at a cross-section.
+    Returns the integrated/summed discharge across the width.
+    """
+    # Get edge coordinates
+    if 'mesh2d_edge_x' in ds:
+        edge_x = ds['mesh2d_edge_x'].values
+        edge_y = ds['mesh2d_edge_y'].values
+    else:
+        # Fallback: use face coordinates if edge coords not available
+        print("  Warning: mesh2d_edge_x not found, using face coordinates.")
+        edge_x = ds['mesh2d_face_x'].values
+        edge_y = ds['mesh2d_face_y'].values
+    
+    # Find edges near the target x-coordinate and within y_range
+    x_tolerance = 500  # meters tolerance for x-coordinate
+    mask = (np.abs(edge_x - x_target) < x_tolerance) & \
+           (edge_y >= y_range[0]) & (edge_y <= y_range[1])
+    
+    edge_indices = np.where(mask)[0]
+    
+    if len(edge_indices) == 0:
+        print(f"  Warning: No edges found near x={x_target}m.")
+        return None, None
+    
+    print(f"  Found {len(edge_indices)} edges near x={x_target/1000:.0f}km for discharge.")
+    
+    # Extract discharge time series
+    if time_indices is None:
+        time_indices = range(len(ds.time))
+    
+    times = []
+    discharges = []
+    
+    for t in tqdm(time_indices, desc="  Extracting discharge", leave=False):
+        q_vals = ds['mesh2d_q1'].isel(time=t).values[edge_indices]
+        # Sum absolute discharge across the cross-section (accounts for different flow directions)
+        total_q = np.nansum(np.abs(q_vals))
+        
+        times.append(pd.to_datetime(ds.time.values[t]))
+        discharges.append(total_q)
+    
+    return times, discharges
+
+
+def split_by_hydrodynamic_cycle(times, values, cycle_days=365.25):
+    """
+    Split a time series into individual hydrodynamic cycles.
+    
+    Parameters
+    ----------
+    times : array-like of datetime
+        Time stamps
+    values : array-like
+        Values corresponding to times
+    cycle_days : float
+        Duration of one hydrodynamic cycle in days
+        
+    Returns
+    -------
+    cycles : list of dict
+        Each dict contains: {'hydro_day': array, 'values': array, 'cycle_num': int}
+    """
+    times = pd.to_datetime(times)
+    t0 = times[0]
+    
+    # Calculate hydro days from start
+    hydro_days = (times - t0).total_seconds() / 86400
+    
+    # Determine cycle number for each point
+    cycle_nums = (hydro_days // cycle_days).astype(int)
+    
+    # Split into cycles
+    unique_cycles = np.unique(cycle_nums)
+    cycles = []
+    
+    for cycle_num in unique_cycles:
+        mask = cycle_nums == cycle_num
+        cycle_hydro_days = hydro_days[mask] - (cycle_num * cycle_days)  # Reset to start of cycle
+        cycle_values = np.array(values)[mask]
+        
+        cycles.append({
+            'hydro_day': cycle_hydro_days.values,
+            'values': cycle_values,
+            'cycle_num': int(cycle_num),
+        })
+    
+    return cycles

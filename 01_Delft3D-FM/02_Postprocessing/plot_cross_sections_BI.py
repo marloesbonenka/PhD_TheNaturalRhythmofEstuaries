@@ -17,10 +17,7 @@ sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Post
 
 from FUNCTIONS.F_general import *
 from FUNCTIONS.F_braiding_index import *
-from FUNCTIONS.F_cache import (
-    DatasetCache,
-    get_profile_cache_path, load_profile_cache, save_profile_cache
-)
+from FUNCTIONS.F_cache import *
 
 #%% --- CONFIGURATION ---
 # ANALYSIS_MODE: "variability" for river discharge variability scenarios
@@ -60,7 +57,7 @@ selected_x_coords = [20000, 30000, 40000]
 # Y-range of the estuary (min, max) and sampling resolution
 # Based on MAP file: mesh2d_face_y ranges from 337.5 to 15000.5 m
 y_range = (5000, 10000)  # Estuary width in meters
-n_y_samples = 300  # Number of points to sample across the width
+n_y_samples = 150  # Number of points to sample across the width
 
 # --- CACHE SETTINGS ---
 compute = False  # Set True to force recompute, False to use cache if available
@@ -196,15 +193,19 @@ for folder in model_folders:
                 all_profiles_raw = []
 
                 for ds_map, tree in zip(loaded_datasets, loaded_trees):
-                    for t in tqdm(range(len(ds_map.time)), desc=f"      Timesteps", leave=False):
-                        profile = get_bed_profile(ds_map, tree, cs_x, cs_y, t)
-                        
-                        plot_profile = profile.copy()
+                    nearest_indices = get_nearest_face_indices(tree, cs_x, cs_y)
+
+                    # Read only sampled faces for all timesteps (time, points)
+                    bl = ds_map['mesh2d_mor_bl'].isel(mesh2d_nFaces=nearest_indices).values
+                    time_vals = pd.to_datetime(ds_map.time.values)
+
+                    for t in tqdm(range(bl.shape[0]), desc=f"      Timesteps", leave=False):
+                        plot_profile = bl[t, :].copy()
                         plot_profile[plot_profile > 8.0] = np.nan
                         bi = compute_braiding_index_with_threshold(plot_profile, safety_buffer=safety_buffer)
-                        
+
                         full_bi_series.append(bi)
-                        full_times.append(pd.to_datetime(ds_map.time.values[t]))
+                        full_times.append(time_vals[t])
                         all_profiles_raw.append(plot_profile)
 
                 new_results[cs_name] = {

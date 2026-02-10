@@ -15,6 +15,7 @@ sys.path.append(str(base_path))
 
 from FUNCTIONS.F_loaddata import *
 from FUNCTIONS.F_tidalriverdominance import *
+from FUNCTIONS.F_cache import DatasetCache
 
 #%%===========================================================================
 # MAIN EXECUTION
@@ -28,7 +29,9 @@ if __name__ == '__main__':
     base_dir = root_dir / scenario_dir / f"Tmorph_{tmorph_years}years"
     mf_number = 100
     exclude_last_n_days = 0
-    use_cache = True
+    
+    # Initialize dataset cache
+    dataset_cache = DatasetCache()
     
     run_folder, run_name = find_mf_run_folder(base_dir, mf_number)
     his_file_paths = get_his_paths_for_run(base_dir, run_folder)
@@ -51,7 +54,7 @@ if __name__ == '__main__':
             flood_sign=-1,
             exclude_last_timestep=True,
             exclude_last_n_days=exclude_last_n_days,
-            use_cache=use_cache
+            dataset_cache=dataset_cache
         )
         flood_sign_used = data.get('flood_sign_used', -1)
         
@@ -70,7 +73,7 @@ if __name__ == '__main__':
                 select_max_flood_per_cycle=True,
                 exclude_last_timestep=True,
                 exclude_last_n_days=exclude_last_n_days,
-                use_cache=use_cache
+                dataset_cache=dataset_cache
             )
             full_data = load_cross_section_data(
                 his_file_paths,
@@ -84,7 +87,7 @@ if __name__ == '__main__':
                 select_max_flood_per_cycle=False,
                 exclude_last_timestep=True,
                 exclude_last_n_days=exclude_last_n_days,
-                use_cache=use_cache
+                dataset_cache=dataset_cache
             )
         print(f"✓ Selected {data['n_timesteps']} timesteps from {data['n_timesteps_original']} total")
         print(f"✓ Found {len(data['km_positions'])} cross-sections")
@@ -185,9 +188,6 @@ if __name__ == '__main__':
             fig3.savefig(output_dir / f"{run_name}_heatmap_{file_tag}.png", dpi=300, bbox_inches='tight')
             plt.show()
         
-        # Close dataset (only when not caching)
-        if not use_cache:
-            data['ds'].close()
         print("\n✓ Done!")
         
     except Exception as e:
@@ -195,6 +195,5 @@ if __name__ == '__main__':
         import traceback
         traceback.print_exc()
     finally:
-        if use_cache:
-            close_cached_datasets()
+        dataset_cache.close_all()
 # %%

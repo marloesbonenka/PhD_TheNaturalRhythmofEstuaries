@@ -110,6 +110,7 @@ def load_sediment_cross_section_data(
 	km_range=(20, 45),
 	exclude_last_timestep=True,
 	exclude_last_n_days=0,
+	dataset_cache=None,
 ):
 	return load_cross_section_data(
 		his_paths,
@@ -121,6 +122,7 @@ def load_sediment_cross_section_data(
 		select_max_flood_per_cycle=False,
 		exclude_last_timestep=exclude_last_timestep,
 		exclude_last_n_days=exclude_last_n_days,
+		dataset_cache=dataset_cache,
 	)
 
 
