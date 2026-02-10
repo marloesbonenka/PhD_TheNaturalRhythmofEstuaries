@@ -21,8 +21,9 @@ def get_bed_profile(ds_map, tree, x_coords, y_coords, time_idx, *, var_name: str
     """
     nearest_indices = get_nearest_face_indices(tree, x_coords, y_coords)
 
-    # Index faces before converting to numpy (much less I/O than `.values[indices]`).
-    bed_profile = ds_map[var_name].isel(time=time_idx, mesh2d_nFaces=nearest_indices).values
+    # xugrid objects can raise on repeated indices; unwrap to plain xarray first.
+    xr_ds = getattr(ds_map, 'obj', ds_map)
+    bed_profile = xr_ds[var_name].isel(time=time_idx, mesh2d_nFaces=nearest_indices).values
     return bed_profile
 
 def compute_braiding_index_with_threshold(bed_profile_in, safety_buffer=0.20):
@@ -49,4 +50,52 @@ def compute_braiding_index_with_threshold(bed_profile_in, safety_buffer=0.20):
     transitions = np.diff(is_channel, prepend=0)
     num_channels = np.sum(transitions == 1)
     
+    return num_channels
+
+
+def _interpolate_internal_nans_2d(values: np.ndarray) -> np.ndarray:
+    """Interpolate internal NaNs row-wise, keeping NaNs at edges."""
+    out = values.copy()
+    x = np.arange(out.shape[1])
+    for row_idx in range(out.shape[0]):
+        row = out[row_idx]
+        nans = np.isnan(row)
+        if not np.any(nans):
+            continue
+        if np.all(nans):
+            continue
+        row[nans] = np.interp(x[nans], x[~nans], row[~nans], left=np.nan, right=np.nan)
+        out[row_idx] = row
+    return out
+
+
+def compute_braiding_index_series(bed_profiles_in: np.ndarray, safety_buffer=0.20, *, interpolate_gaps=True) -> np.ndarray:
+    """Compute braiding index for a time series of profiles.
+
+    Parameters
+    ----------
+    bed_profiles_in : np.ndarray
+        Array shaped (time, samples).
+    safety_buffer : float
+        Buffer below the mean bed level to define channels.
+    interpolate_gaps : bool
+        When True, interpolate internal NaNs per profile (matches legacy behavior).
+    """
+    profiles = bed_profiles_in.copy()
+
+    if profiles.ndim != 2:
+        raise ValueError("bed_profiles_in must be 2D (time, samples).")
+
+    if interpolate_gaps:
+        profiles = _interpolate_internal_nans_2d(profiles)
+
+    mean_bl = np.nanmean(profiles, axis=1)
+    threshold = mean_bl - safety_buffer
+
+    valid = ~np.isnan(profiles)
+    is_channel = (profiles < threshold[:, None]) & valid
+
+    transitions = np.diff(is_channel.astype(np.int8), axis=1, prepend=0)
+    num_channels = np.sum(transitions == 1, axis=1)
+
     return num_channels

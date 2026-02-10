@@ -52,10 +52,73 @@ class DatasetCache:
         self._partitioned: dict[Hashable, Any] = {}
         self._xr: dict[Hashable, xr.Dataset] = {}
 
-    def get_partitioned(self, file_pattern: str, **kwargs: Any):
-        key = (_normalize_path(file_pattern), _kwargs_key(kwargs))
+    def get_partitioned(self, file_pattern: str, variables: list[str] | None = None, **kwargs: Any):
+        """Open a partitioned dataset, optionally keeping only selected variables.
+
+        Parameters
+        ----------
+        file_pattern
+            Glob pattern passed to dfm_tools.open_partitioned_dataset.
+        variables
+            Optional list of variable names to keep (e.g. ['mesh2d_mor_bl']).
+            Required UGRID topology variables are always retained to keep
+            xugrid merging/topology valid.
+        kwargs
+            Passed through to dfm_tools.open_partitioned_dataset (and further
+            to xarray.open_mfdataset/open_dataset).
+        """
+
+        variables_key = tuple(variables) if variables is not None else None
+        key = (_normalize_path(file_pattern), variables_key, _kwargs_key(kwargs))
         if key not in self._partitioned:
             print(f"Loading partitioned dataset: {key[0]}")
+
+            # Compose preprocess to keep only the requested vars + required UGRID topology.
+            user_preprocess = kwargs.pop('preprocess', None)
+
+            def _keep_topology_and_selected(ds: xr.Dataset) -> xr.Dataset:
+                if user_preprocess is not None:
+                    ds = user_preprocess(ds)
+
+                if variables is None:
+                    return ds
+
+                keep: set[str] = set(variables)
+                # Always keep time if present (used all over for indexing)
+                if 'time' in ds.variables:
+                    keep.add('time')
+
+                # Keep mesh topology and referenced vars so xugrid can merge partitions.
+                for name, var in ds.variables.items():
+                    if getattr(var, 'attrs', {}).get('cf_role') == 'mesh_topology':
+                        keep.add(name)
+                        mesh_attrs = getattr(var, 'attrs', {})
+                        for attr_name in (
+                            'node_coordinates',
+                            'face_node_connectivity',
+                            'edge_node_connectivity',
+                            'face_coordinates',
+                            'edge_coordinates',
+                            'boundary_node_connectivity',
+                            'face_face_connectivity',
+                        ):
+                            ref = mesh_attrs.get(attr_name)
+                            if isinstance(ref, str):
+                                keep.update(ref.split())
+
+                # Keep domain/partition indicators (needed for ghost-cell removal).
+                # dfm_tools may look for a domain variable during open/merge.
+                for name in ds.variables.keys():
+                    if 'domain' in name.lower():
+                        keep.add(name)
+
+                # Only keep variables that actually exist in this dataset
+                keep_existing = [v for v in keep if v in ds.variables]
+                return ds[keep_existing]
+
+            if variables is not None or user_preprocess is not None:
+                kwargs['preprocess'] = _keep_topology_and_selected
+
             self._partitioned[key] = dfmt.open_partitioned_dataset(file_pattern, **kwargs)
         return self._partitioned[key]
 

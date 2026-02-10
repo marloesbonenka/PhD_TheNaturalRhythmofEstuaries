@@ -24,7 +24,7 @@ sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Post
 from FUNCTIONS.F_general import *
 from FUNCTIONS.F_braiding_index import *
 from FUNCTIONS.F_cache import *
-from FUNCTIONS.F_loaddata import read_discharge_from_bc_files, extract_discharge_at_x, split_by_hydrodynamic_cycle
+from FUNCTIONS.F_loaddata import *
 
 #%% CONFIGURATION
 # ANALYSIS_MODE: "variability" for river discharge variability scenarios
@@ -41,7 +41,7 @@ if ANALYSIS_MODE == "variability":
         '3': '03_run500_flashy',
         '4': '04_run500_singlepeak',
     }
-    SCENARIOS_TO_PROCESS = ['2']  # e.g., ['1'] for baserun only
+    SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']  # e.g., ['1'] for baserun only
 
 elif ANALYSIS_MODE == "morfac":
     base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
@@ -51,8 +51,10 @@ elif ANALYSIS_MODE == "morfac":
 timed_out_dir = base_directory / config / "timed-out"
 
 # --- SETTINGS ---
-n_slices = 5  
-safety_buffer = 0.20 
+n_slices = 5                # Controls how many bed levels are plotted in left panel
+safety_buffer = 0.20        # Buffer below mean bed level to define channels (in meters)
+use_vectorized_bi = True    # When True, use compute_braiding_index_series for faster BI computation on profiles with internal NaNs.
+show_cycle_mean = False     # When True, plot mean/envelope across cycles.
 
 # Cross-section x-coordinates in meters
 selected_x_coords = [20000, 30000, 40000]
@@ -118,6 +120,32 @@ if __name__ == "__main__":
                     plot_profile[plot_profile > 8.0] = np.nan
                     bi = compute_braiding_index_with_threshold(plot_profile, safety_buffer=safety_buffer)
                     data['bi_series'].append(bi)
+
+        # --- 2. GET DISCHARGE (Priority: BC files > Cache > Map extraction) ---
+        discharge_cache_key = "discharge_bc"
+        all_discharge_times = []
+        all_discharge_values = []
+        discharge_source = None
+
+        # Option A: Try reading from BC input files (fastest)
+        print("Attempting to read discharge from BC input files...")
+        bc_times, bc_values = read_discharge_from_bc_files(model_location)
+
+        if bc_times is not None:
+            all_discharge_times = bc_times
+            all_discharge_values = bc_values
+            discharge_source = "BC files"
+        else:
+            # Option B: Check cache (stored inside first cross-section entry)
+            for cs_name, data in folder_results.items():
+                if discharge_cache_key in data:
+                    all_discharge_times = data[discharge_cache_key]['times']
+                    all_discharge_values = data[discharge_cache_key]['values']
+                    discharge_source = "cache"
+                    print(f"Loaded discharge from cache ({len(all_discharge_times)} timesteps).")
+                    break
+
+        need_discharge_from_map = not bool(all_discharge_times)
         
         # --- BUILD RUN PATHS (needed for both computing and discharge extraction) ---
         all_run_paths = []
@@ -138,79 +166,146 @@ if __name__ == "__main__":
                         all_run_paths.append(timed_out_dir / match[0])
         
         all_run_paths.append(model_location)
-        
-        # --- COMPUTE IF CACHE DOESN'T EXIST OR IS INCOMPLETE ---
-        if not folder_results or missing_x_coords:
-            if not folder_results:
-                print(f"No cache found, computing profiles and discharge...")
-                missing_x_coords = selected_x_coords
-            else:
-                print(f"Partial cache found. Computing missing cross-sections: {[f'km{int(x/1000)}' for x in missing_x_coords]}")
-            
+
+        # --- OPEN MAP OUTPUT ONLY IF NEEDED (profiles and/or discharge fallback) ---
+        need_profiles_from_map = (not folder_results) or bool(missing_x_coords)
+        need_map_open = need_profiles_from_map or need_discharge_from_map
+
+        loaded_datasets = []
+        loaded_trees = []
+
+        if need_map_open:
+            if need_profiles_from_map:
+                if not folder_results:
+                    print("No cache found, computing profiles...")
+                    missing_x_coords = selected_x_coords
+                else:
+                    print(f"Partial cache found. Computing missing cross-sections: {[f'km{int(x/1000)}' for x in missing_x_coords]}")
+
             print(f"Stitching {len(all_run_paths)} run parts...")
-            
-            loaded_datasets = []
-            loaded_trees = []
-            
+
+            variables_to_open = ['mesh2d_mor_bl', 'mesh2d_face_x', 'mesh2d_face_y']
+            if need_discharge_from_map:
+                variables_to_open += ['mesh2d_q1', 'mesh2d_edge_x', 'mesh2d_edge_y']
+            variables_to_open = list(dict.fromkeys(variables_to_open))
+
             try:
                 for p_path in all_run_paths:
                     print(f"   -> Opening Map: {p_path.name}")
-                    ds = dataset_cache.get_partitioned(str(p_path / 'output' / '*_map.nc'), chunks={'time': 1})
-                    
-                    face_x = ds['mesh2d_face_x'].values
-                    face_y = ds['mesh2d_face_y'].values
-                    tree = cKDTree(np.vstack([face_x, face_y]).T)
-                    
+                    ds = dataset_cache.get_partitioned(
+                        str(p_path / 'output' / '*_map.nc'),
+                        variables=variables_to_open,
+                        chunks={'time': 200},
+                    )
                     loaded_datasets.append(ds)
-                    loaded_trees.append(tree)
-                
-                # Create y-coordinates for sampling
-                y_samples = np.linspace(y_range[0], y_range[1], n_y_samples)
-                
-                new_results = {}
-                for x_coord in missing_x_coords:
-                    cs_name = f"km{int(x_coord / 1000)}"
-                    print(f"   Analyzing x = {x_coord}m ({cs_name})...")
-                    
-                    cs_x = np.full(n_y_samples, x_coord)
-                    cs_y = y_samples
+
+                    if need_profiles_from_map:
+                        face_x = ds['mesh2d_face_x'].values
+                        face_y = ds['mesh2d_face_y'].values
+                        tree = cKDTree(np.vstack([face_x, face_y]).T)
+                        loaded_trees.append(tree)
+
+                # --- Compute missing profiles/BI ---
+                if need_profiles_from_map:
+                    y_samples = np.linspace(y_range[0], y_range[1], n_y_samples)
                     dist = y_samples - y_samples[0]
-                    
-                    full_bi_series = []
-                    full_times = []
-                    all_profiles_raw = []
-                    
+
+                    cs_defs = []
+                    new_results = {}
+                    for x_coord in missing_x_coords:
+                        cs_name = f"km{int(x_coord / 1000)}"
+                        cs_x = np.full(n_y_samples, x_coord)
+                        cs_y = y_samples
+                        cs_defs.append((cs_name, cs_x, cs_y))
+                        new_results[cs_name] = {
+                            'bi_series': [],
+                            'times': [],
+                            'time_series': [],
+                            'profiles': [],
+                            'dist': dist,
+                        }
+
                     for ds_map, tree in zip(loaded_datasets, loaded_trees):
-                        nearest_indices = get_nearest_face_indices(tree, cs_x, cs_y)
+                        cs_indices = []
+                        cs_slices = []
+                        offset = 0
+                        for cs_name, cs_x, cs_y in cs_defs:
+                            nearest_indices = get_nearest_face_indices(tree, cs_x, cs_y)
+                            cs_indices.append(nearest_indices)
+                            cs_slices.append((cs_name, offset, offset + len(nearest_indices)))
+                            offset += len(nearest_indices)
 
-                        # Read only the sampled faces for all timesteps (time, points)
-                        bl = ds_map['mesh2d_mor_bl'].isel(mesh2d_nFaces=nearest_indices).values
-                        time_vals = pd.to_datetime(ds_map.time.values)
+                        all_indices = np.concatenate(cs_indices)
+                        xr_ds = getattr(ds_map, 'obj', ds_map)
+                        bl_all = xr_ds['mesh2d_mor_bl'].isel(mesh2d_nFaces=all_indices).values
+                        time_vals = pd.to_datetime(xr_ds.time.values)
 
-                        for t in tqdm(range(bl.shape[0]), desc=f"      Timesteps", leave=False):
-                            plot_profile = bl[t, :].copy()
-                            plot_profile[plot_profile > 8.0] = np.nan
-                            bi = compute_braiding_index_with_threshold(plot_profile, safety_buffer=safety_buffer)
+                        bl_profiles_all = bl_all.copy()
+                        bl_profiles_all[bl_profiles_all > 8.0] = np.nan
 
-                            full_bi_series.append(bi)
-                            full_times.append(time_vals[t])
-                            all_profiles_raw.append(plot_profile)
-                    
-                    new_results[cs_name] = {
-                        'bi_series': full_bi_series,
-                        'times': full_times,
-                        'time_series': full_times,
-                        'profiles': all_profiles_raw,
-                        'dist': dist,
-                    }
-                
-                # Add new results to folder_results
-                folder_results.update(new_results)
-                
-                # Save to cache
-                save_profile_cache(cache_path, new_results, cache_settings)
-                print(f"   Saved profiles to cache: {cache_path}")
-                
+                        total_cs = len(cs_slices)
+                        if use_vectorized_bi:
+                            for cs_idx, (cs_name, start, end) in enumerate(cs_slices, start=1):
+                                print(f"   Cross-section {cs_idx}/{total_cs}: {cs_name}")
+                                cs_profiles = bl_profiles_all[:, start:end]
+                                cs_bi = compute_braiding_index_series(
+                                    cs_profiles,
+                                    safety_buffer=safety_buffer,
+                                    interpolate_gaps=True,
+                                )
+
+                                new_results[cs_name]['bi_series'].extend(cs_bi.tolist())
+                                new_results[cs_name]['times'].extend(time_vals)
+                                new_results[cs_name]['time_series'].extend(time_vals)
+                                new_results[cs_name]['profiles'].extend(list(cs_profiles))
+                        else:
+                            for cs_idx, (cs_name, _, _) in enumerate(cs_slices, start=1):
+                                print(f"   Cross-section {cs_idx}/{total_cs}: {cs_name}")
+                            for t in tqdm(range(bl_profiles_all.shape[0]), desc="      Timesteps", leave=False):
+                                row = bl_profiles_all[t, :]
+                                time_val = time_vals[t]
+                                for cs_name, start, end in cs_slices:
+                                    plot_profile = row[start:end].copy()
+                                    bi = compute_braiding_index_with_threshold(
+                                        plot_profile,
+                                        safety_buffer=safety_buffer,
+                                    )
+
+                                    new_results[cs_name]['bi_series'].append(bi)
+                                    new_results[cs_name]['times'].append(time_val)
+                                    new_results[cs_name]['time_series'].append(time_val)
+                                    new_results[cs_name]['profiles'].append(plot_profile)
+
+                    folder_results.update(new_results)
+                    save_profile_cache(cache_path, new_results, cache_settings)
+                    print(f"   Saved profiles to cache: {cache_path}")
+                else:
+                    print(f"Loaded {len(folder_results)} cross-sections from cache.")
+
+                # --- Discharge fallback from MAP (only if BC/cache not available) ---
+                if need_discharge_from_map:
+                    print("Extracting discharge from map files (fallback)...")
+                    for ds in loaded_datasets:
+                        q_times, q_values = extract_discharge_at_x(ds, DISCHARGE_X_COORD, y_range)
+                        if q_times is not None:
+                            all_discharge_times.extend(q_times)
+                            all_discharge_values.extend(q_values)
+
+                    if all_discharge_times:
+                        discharge_source = "map files"
+
+                        # Save discharge to cache for next time
+                        if folder_results:
+                            first_cs = list(folder_results.keys())[0]
+                            discharge_data = {
+                                discharge_cache_key: {
+                                    'times': all_discharge_times,
+                                    'values': all_discharge_values,
+                                }
+                            }
+                            save_profile_cache(cache_path, {first_cs: discharge_data}, cache_settings)
+                            print(f"  Saved discharge to cache: {discharge_cache_key}")
+
             except Exception as e:
                 print(f"Error processing {folder}: {e}")
                 import traceback
@@ -218,59 +313,6 @@ if __name__ == "__main__":
                 continue
         else:
             print(f"Loaded {len(folder_results)} cross-sections from cache.")
-        
-        # --- 2. GET DISCHARGE (Priority: BC files > Cache > Map extraction) ---
-        discharge_cache_key = "discharge_bc"
-        all_discharge_times = []
-        all_discharge_values = []
-        discharge_source = None
-        
-        # Option A: Try reading from BC input files (fastest)
-        print("Attempting to read discharge from BC input files...")
-        bc_times, bc_values = read_discharge_from_bc_files(model_location)
-        
-        if bc_times is not None:
-            all_discharge_times = bc_times
-            all_discharge_values = bc_values
-            discharge_source = "BC files"
-        else:
-            # Option B: Check cache
-            for cs_name, data in folder_results.items():
-                if discharge_cache_key in data:
-                    all_discharge_times = data[discharge_cache_key]['times']
-                    all_discharge_values = data[discharge_cache_key]['values']
-                    discharge_source = "cache"
-                    print(f"Loaded discharge from cache ({len(all_discharge_times)} timesteps).")
-                    break
-        
-        # Option C: Extract from map files (slowest - fallback)
-        if not all_discharge_times:
-            print("Extracting discharge from map files (fallback)...")
-            
-            # Use all_run_paths built earlier
-            for p_path in all_run_paths:
-                print(f"   -> Opening Map for discharge: {p_path.name}")
-                ds = dataset_cache.get_partitioned(str(p_path / 'output' / '*_map.nc'), chunks={'time': 1})
-                
-                q_times, q_values = extract_discharge_at_x(ds, DISCHARGE_X_COORD, y_range)
-                
-                if q_times is not None:
-                    all_discharge_times.extend(q_times)
-                    all_discharge_values.extend(q_values)
-            
-            # Save to cache for next time
-            if all_discharge_times and folder_results:
-                first_cs = list(folder_results.keys())[0]
-                discharge_data = {
-                    discharge_cache_key: {
-                        'times': all_discharge_times,
-                        'values': all_discharge_values,
-                    }
-                }
-                save_profile_cache(cache_path, {first_cs: discharge_data}, cache_settings)
-                print(f"  Saved discharge to cache: {discharge_cache_key}")
-            
-            discharge_source = "map files"
         
         if not all_discharge_times:
             print("  Warning: Could not extract discharge. Skipping discharge plot.")
@@ -376,9 +418,26 @@ if __name__ == "__main__":
                 
                 all_morph_times.append(morph_time_years)
                 all_bi_values.append(cycle['values'])
+
+            # Trend over the full run (progress over time)
+            trend_mask = np.isfinite(df_results['morph_years'].values) & np.isfinite(df_results['bi'].values)
+            if np.count_nonzero(trend_mask) > 1:
+                slope, intercept = np.polyfit(
+                    df_results['morph_years'].values[trend_mask],
+                    df_results['bi'].values[trend_mask],
+                    1,
+                )
+                ax_bi.text(
+                    0.02,
+                    0.98,
+                    f"Trend over run: {slope:+.3f} /yr",
+                    transform=ax_bi.transAxes,
+                    va='top',
+                    fontsize='x-small',
+                )
             
             # Compute and plot mean line across cycles (interpolate to common grid)
-            if len(bi_cycles) > 1:
+            if show_cycle_mean and len(bi_cycles) > 1:
                 # Create common time grid
                 max_time = max(t.max() for t in all_morph_times if len(t) > 0)
                 common_time = np.linspace(0, max_time, 100)
@@ -397,7 +456,7 @@ if __name__ == "__main__":
                     
                     # Plot envelope (mean ± std)
                     ax_bi.fill_between(common_time, mean_bi - std_bi, mean_bi + std_bi, 
-                                       color='steelblue', alpha=0.2, label='± 1 std')
+                                       color='steelblue', alpha=0.2, label='μ ± σ')
                     
                     # Plot mean line
                     ax_bi.plot(common_time, mean_bi, color='darkblue', linewidth=2.0, 
