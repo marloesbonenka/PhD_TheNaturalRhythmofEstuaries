@@ -296,8 +296,7 @@ if force_recompute or not results:
 
     dataset_cache.close_all()
 
-
-#%% --- plotting from cache/results ---
+#--- plotting from cache/results ---
 for folder in model_folders:
     if folder not in results:
         continue
