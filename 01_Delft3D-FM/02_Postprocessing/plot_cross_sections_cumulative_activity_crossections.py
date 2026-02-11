@@ -31,7 +31,7 @@ from FUNCTIONS.F_cache import (
     DatasetCache,
     get_profile_cache_path, load_profile_cache, save_profile_cache
 )
-from FUNCTIONS.F_braiding_index import get_bed_profile
+from FUNCTIONS.F_braiding_index import get_nearest_face_indices
 from FUNCTIONS.F_morphological_activity import (
     cumulative_activity,
     morph_years_from_datetimes,
@@ -59,7 +59,7 @@ if ANALYSIS_MODE == "variability":
         '4': '04_run500_singlepeak',
     }
     # Which scenarios to process (set to None or empty list for all)
-    SCENARIOS_TO_PROCESS = ['1']  # e.g., ['1'] for baserun only, None for all
+    SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']  # e.g., ['1'] for baserun only, None for all
     use_folder_morfac = False
     default_morfac = 100  # MORFAC used in variability runs
 
@@ -85,7 +85,8 @@ n_y_samples = 300
 map_bedlevel_var = "mesh2d_mor_bl"
 
 # Masking threshold for land
-bedlevel_land_threshold = 8.0  # set None to disable
+bedlevel_land_threshold = 8.0  # threshold in meters
+apply_land_mask = False  # when False, skip land masking entirely
 
 # Time control (stride > 1 to reduce runtime)
 time_stride = 1
@@ -94,10 +95,13 @@ time_stride = 1
 run_startdate = None  # e.g. "2025-01-01", or None to use first timestamp
 
 # Fixed x-axis limits for both subplots (set None for auto-scale)
-profile_xlim = None  # Data now spans exactly 0-5 km, no clipping needed
+profile_xlim = (0, 5)  # Fix both panels to full 0-5 km cross-section
 
 # --- CACHE SETTINGS ---
-compute = True  # Force recompute with new y_range
+
+# Align cache settings with BI scripts for reuse
+n_slices = 5
+safety_buffer = 0.20
 
 # Output
 output_dirname = "output_plots_crosssections_cumactivity"
@@ -141,40 +145,52 @@ for folder in model_folders:
     
     # --- UNIFIED CACHE ---
     cache_path = get_profile_cache_path(model_location, folder)
+    # Force a cache refresh with new name
+    cache_path = cache_path.with_name(cache_path.stem + "_including_land" + cache_path.suffix)
+    print(f"Using cache: {cache_path}")
     cache_settings_profiles = {
+        'selected_x_coords': selected_x_coords,
         'y_range': y_range,
         'n_y_samples': n_y_samples,
-        'bedlevel_land_threshold': bedlevel_land_threshold,
-        'time_stride': time_stride,
-        'map_bedlevel_var': map_bedlevel_var,
+        'safety_buffer': safety_buffer,
+        'n_slices': n_slices,
     }
     
     folder_results = {}
-    missing_x_coords = selected_x_coords  # by default, compute all
-    
-    # Try to load from unified cache
-    if not compute:
-        loaded_results, missing_x_coords = load_profile_cache(
-            cache_path, selected_x_coords, cache_settings_profiles
-        )
-        if loaded_results:
-            # Convert loaded format to our working format (handle key name compatibility)
-            for cs_name, data in loaded_results.items():
-                # Handle times vs time_series key name
-                times_data = data.get('times') or data.get('time_series')
-                folder_results[cs_name] = {
-                    'profiles': data['profiles'],
-                    'times': times_data,
-                    'dist': data['dist'],
-                    'morfac': data.get('morfac', default_morfac),
-                }
-            print(f"\n" + "="*60)
-            print(f"LOADED FROM CACHE: {folder} ({len(loaded_results)} cross-sections)")
-            if missing_x_coords:
-                print(f"  Still need to compute: {missing_x_coords}")
-            else:
-                # Nothing to compute - skip to analysis
-                pass
+    missing_x_coords = selected_x_coords
+    use_cache = False
+
+    loaded_results, missing_x_coords = load_profile_cache(
+        cache_path, selected_x_coords, cache_settings_profiles
+    )
+    if loaded_results:
+        # Convert loaded format to our working format (handle key name compatibility)
+        for cs_name, data in loaded_results.items():
+            # Handle times vs time_series key name
+            times_data = data.get('times') or data.get('time_series')
+            folder_results[cs_name] = {
+                'profiles': data['profiles'],
+                'times': times_data,
+                'dist': data['dist'],
+                'morfac': data.get('morfac', default_morfac),
+            }
+
+        # Keep cached profiles even if they do not span the full cross-section width.
+
+    if not missing_x_coords:
+        print(f"\n" + "="*60)
+        print(f"LOADED FROM CACHE: {folder} ({len(folder_results)} cross-sections)")
+        use_cache = True
+    elif folder_results:
+        print(f"\n" + "="*60)
+        print(f"PARTIAL CACHE: {folder}")
+        print(f"  Found: {list(folder_results.keys())}")
+        print(f"  Missing: {[f'km{int(x/1000)}' for x in missing_x_coords]}")
+        use_cache = False
+    else:
+        print(f"\nNo cache found for {folder}, computing...")
+        use_cache = False
+        missing_x_coords = selected_x_coords
 
     # --- 1. RESTART LOGIC (Find all parts) ---
     all_run_paths = []
@@ -203,7 +219,7 @@ for folder in model_folders:
         morfac = default_morfac
 
     # --- 2. COMPUTE MISSING CROSS-SECTIONS ---
-    if missing_x_coords:
+    if missing_x_coords and not use_cache:
         print(f"\n" + "="*60)
         print(f"PROCESSING: {folder}")
         print(f"Computing {len(missing_x_coords)} cross-sections, MORFAC={morfac}")
@@ -218,7 +234,11 @@ for folder in model_folders:
             for p_path in all_run_paths:
                 print(f"   -> Opening Map: {p_path.name}")
                 map_pattern = str(p_path / 'output' / '*_map.nc')
-                ds_map = dataset_cache.get_partitioned(map_pattern, chunks={'time': 1})
+                ds_map = dataset_cache.get_partitioned(
+                    map_pattern,
+                    variables=['mesh2d_mor_bl', 'mesh2d_face_x', 'mesh2d_face_y'],
+                    chunks={'time': 200},
+                )
                 if map_bedlevel_var not in ds_map:
                     raise KeyError(f"{map_bedlevel_var} not found in MAP for {p_path}")
 
@@ -251,11 +271,12 @@ for folder in model_folders:
                     nearest_indices = get_nearest_face_indices(tree, cs_x, cs_y)
 
                     # Read only sampled faces for the strided timesteps (time, points)
-                    bl = ds_map[map_bedlevel_var].isel(time=idx_list, mesh2d_nFaces=nearest_indices).values
+                    xr_ds = getattr(ds_map, 'obj', ds_map)
+                    bl = xr_ds[map_bedlevel_var].isel(time=idx_list, mesh2d_nFaces=nearest_indices).values
 
                     for j in tqdm(range(bl.shape[0]), desc=f"      Timesteps", leave=False):
                         profile = bl[j, :]
-                        if bedlevel_land_threshold is not None:
+                        if apply_land_mask and bedlevel_land_threshold is not None:
                             profile = profile.copy()
                             profile[profile > float(bedlevel_land_threshold)] = np.nan
                         all_times.append(time_vals[idx_list[j]])
