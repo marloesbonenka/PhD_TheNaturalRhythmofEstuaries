@@ -34,10 +34,10 @@ BBOX = [20000, 5000, 45000, 10000]
 
 # Mapping: restart folder prefix -> timed-out folder prefix
 VARIABILITY_MAP = {
-    '1': '01_baserun500',
-    '2': '02_run500_seasonal',
-    '3': '03_run500_flashy',
-    '4': '04_run500_singlepeak',
+    # '1': '01_baserun500',
+    # '2': '02_run500_seasonal',
+    # '3': '03_run500_flashy',
+    '4': '04_run500_singlepeak'
 }
 
 # Directories
@@ -100,15 +100,15 @@ for folder in model_folders:
 
     # Combine parts along the time dimension
     print("  Combining parts into full timeline...")
-    full_ds = xr.concat(datasets, dim="time")
+    full_ds = xu.concat(datasets, dim="time")
 
     # --- MASKING (XUGRID) ---
     print(f"  Applying spatial mask: {BBOX}...")
     # Wrap xarray dataset into xugrid
-    uds = xu.UgridDataset(full_ds)
+    # uds = xu.UgridDataset(full_ds)
     
     # Select the estuary area
-    uds_masked = uds.ugrid.sel(x=slice(BBOX[0], BBOX[2]), y=slice(BBOX[1], BBOX[3]))
+    uds_masked = full_ds.ugrid.sel(x=slice(BBOX[0], BBOX[2]), y=slice(BBOX[1], BBOX[3]))
 
     # --- SAVE OUTPUT ---
     save_filename = f"assessment_{var_name}_{folder.name}.nc"
