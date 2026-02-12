@@ -17,13 +17,13 @@ from FUNCTIONS.F_cache import DatasetCache, load_results_cache, save_results_cac
 
 #%%
 # --- 1. SETTINGS & PATHS ---
-scenarios_morfac = True
+scenarios_morfac = False
 scenarios_discharge = False 
 scenarios_variability = False 
 apply_detrending = True
 reference_time_idx = 0
 
-var_name = 'mesh2d_mor_bl'
+var_name = 'mesh2d_mor_bl' #, 'mesh2d_taus', 'mesh2d_s1'
 
 # Special-case MF50 reference (same logic as in first script)
 special_base = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
@@ -63,14 +63,16 @@ if scenarios_discharge:
     run_startdate = '2001-01-01'
     morfyears = 2000
 
-    # For variability: 
+# For variability: 
 if scenarios_variability:
-    base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Test_FourRiverBoundaries")
-    model_folders = [p.name for p in base_directory.iterdir()
-                 if p.is_dir()
-                 and (p.name.startswith('02_') or p.name.startswith('03_'))] #or p.name.startswith('02_') or p.name.startswith('03_')
+    base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Output")
+    model_folders = ['1_Q500_rst.9093769']
+                # [p.name for p in base_directory.iterdir()
+                #  if p.is_dir()
+                #  and (p.name.startswith('02_') or p.name.startswith('03_'))]
+                 
     run_startdate = '2024-01-01'
-    morfyears = 2000
+    morfyears = 3000
 
 print(f"Found {len(model_folders)} folders to process.")
 

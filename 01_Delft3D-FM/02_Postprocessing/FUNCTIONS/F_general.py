@@ -81,6 +81,38 @@ def create_terrain_colormap():
 
 terrain_cmap = create_terrain_colormap()
 
+def create_bedlevel_colormap():
+    colors = [
+        (0.00, "#000066"), (0.10, "#0000ff"), (0.30, "#00ffff"),
+        (0.40, "#00ffff"), (0.50, "#ffffcc"), (0.60, "#ffcc00"),
+        (0.75, "#cc6600"), (0.90, "#228B22"), (1.00, "#006400"),
+    ]
+    return LinearSegmentedColormap.from_list("custom_bedlevel", colors)
+
+def create_water_colormap():
+    # Highlights shallow areas (light) to deep channels (dark)
+    colors = [
+        (0.00, "#e0f7fa"), # Very shallow / Shoreline
+        (0.20, "#80deea"), # Shallow water
+        (0.40, "#26c6da"), # Mid-depth
+        (0.60, "#0097a7"), # Deepening
+        (0.80, "#01579b"), # Deep water
+        (1.00, "#001b3d"), # Maximum depth / Abyssal
+    ]
+    return LinearSegmentedColormap.from_list("custom_water", colors)
+
+def create_shear_stress_colormap():
+    # Indicates low energy (cool) to high erosive force (hot/bright)
+    colors = [
+        (0.00, "#f2f2f2"), # Near-zero stress (Light Grey)
+        (0.20, "#33ccff"), # Low stress (Blue)
+        (0.40, "#ffff00"), # Moderate stress (Yellow)
+        (0.60, "#ff9900"), # High stress (Orange)
+        (0.80, "#ff0000"), # Critical stress (Red)
+        (1.00, "#800000"), # Maximum scour potential (Maroon)
+    ]
+    return LinearSegmentedColormap.from_list("custom_shear", colors)
+
 # --- MORPHOLOGICAL TIME SELECTION ---
 def find_timestep_for_target_morphtime(ds, target_morph_years, start_date):
     """
