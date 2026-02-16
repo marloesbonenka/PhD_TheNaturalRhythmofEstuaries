@@ -5,13 +5,13 @@ import sys
 # Add the FUNCTIONS directory to the path
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\01_Model_setup\BOUNDARY_FILES_GENERATION")
 
-from FUNCTIONS.FUNCS_plot_discharge_scenarios import * 
-
+from FUNCTIONS.FUNCS_plot_discharge_scenarios import plot_discharge_scenarios_first_year
+#%%
 
 if __name__ == "__main__":
     # Base directory containing all scenario subfolders
-    base_dir = Path(r"U:\PhDNaturalRhythmEstuaries\Models\CSVfiles_boundaries_50hydroyears")
-    output_base_dir = Path(r"U:\PhDNaturalRhythmEstuaries\Models\CSVfiles_boundaries_50hydroyears\plots_river_bct")
+    base_dir = Path(r"u:\PhDNaturalRhythmEstuaries\Models\0_Model_SetUp_CSVfiles_boundaries_50years")
+    output_base_dir = Path(r"u:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Input\plots_river_bct")
     
     # Find all subfolders that contain boundaryfiles_csv
     scenario_groups = {}  # Group scenarios by discharge value (e.g., 250, 500, 1000)

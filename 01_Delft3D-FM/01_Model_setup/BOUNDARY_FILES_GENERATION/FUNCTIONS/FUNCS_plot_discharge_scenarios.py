@@ -108,9 +108,11 @@ def plot_discharge_scenarios_first_year(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    plt.figure()
+    plt.figure(figsize=(12,6))
     for idx, (scenario_name, df_year) in enumerate(series_data):
-        label_name = get_scenario_label(scenario_name)
+        cv = compute_CV(df_year)
+        flashiness = compute_p90_p10(df_year)
+        label_name = f"{get_scenario_label(scenario_name)}\nCV={cv:.2f}, $p_{{90}}/p_{{10}}$={flashiness:.2f}"
         color = get_scenario_color(scenario_name)
         plt.plot(
             df_year["timestamp"],
@@ -124,7 +126,7 @@ def plot_discharge_scenarios_first_year(
     plt.xlabel("date")
     plt.ylabel("discharge [m³/s]")
     plt.grid(True, alpha=0.3)
-    plt.legend(loc="best", labelcolor="linecolor")
+    plt.legend(loc="center left", bbox_to_anchor=(1, 0.5), labelcolor="linecolor")
 
     ax = plt.gca()
     ax.tick_params(axis="both", which="major")
@@ -135,3 +137,23 @@ def plot_discharge_scenarios_first_year(
     plt.tight_layout()
     plt.savefig(output_dir / output_filename, dpi=300, transparent=True)
     plt.close()
+
+
+def compute_CV(df):
+    """
+    Compute the coefficient of variation (CV) as a measure of flashiness.
+    
+    CV = standard deviation / mean
+    """
+    if df["discharge_m3s"].mean() == 0:
+        return 0.0
+    return df["discharge_m3s"].std() / df["discharge_m3s"].mean()
+
+def compute_p90_p10(df):
+    """
+    Compute the 90th and 10th percentiles of discharge.
+    """
+    p90 = df["discharge_m3s"].quantile(0.9)
+    p10 = df["discharge_m3s"].quantile(0.1)
+    return p90/p10
+
