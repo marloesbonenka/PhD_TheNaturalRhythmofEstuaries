@@ -12,7 +12,6 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from pathlib import Path
 
-
 def cumulative_activity(profiles_time_space: np.ndarray) -> np.ndarray:
     """Compute cumulative activity Σ|Δz| along the time axis.
     
@@ -35,6 +34,21 @@ def cumulative_activity(profiles_time_space: np.ndarray) -> np.ndarray:
     abs_dz0 = np.vstack([zeros, abs_dz])
     return np.cumsum(abs_dz0, axis=0)
 
+def relative_bed_change(profiles_time_space: np.ndarray) -> np.ndarray:
+    """
+    Compute relative change Δz = z_t - z_{t-1} along the time axis.
+    
+    Returns
+    -------
+    np.ndarray
+        Relative change array, same shape (time, space). 
+        The first timestep is padded with zeros.
+    """
+    z = np.asarray(profiles_time_space)
+    dz = np.diff(z, axis=0)
+    # Pad the first row with zeros so the output matches input dimensions
+    zeros = np.zeros((1, z.shape[1]))
+    return np.vstack([zeros, dz])
 
 def morph_years_from_datetimes(times: pd.DatetimeIndex, *, startdate=None, morfac=1.0) -> np.ndarray:
     """Convert datetime series to morphological years.
@@ -139,6 +153,55 @@ def plot_activity_and_first_profile(
 
     plt.tight_layout()
     fig.savefig(outpath, dpi=300, bbox_inches='tight')
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
+
+def plot_bedlevel_evolution(
+    *,
+    dist_m: np.ndarray,
+    bedlevel_stack: np.ndarray,
+    morph_years: np.ndarray,
+    title: str,
+    outpath: Path,
+    cmap,  # Pass the result of create_bedlevel_colormap() here
+    show: bool = False,
+    profile_xlim: tuple = None,
+    vmin: float = -15,
+    vmax: float = 15
+):
+    """Plot heatmap of actual bed levels Z over time."""
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    x_km = dist_m / 1000.0
+    extent = [x_km.min(), x_km.max(), morph_years.min(), morph_years.max()]
+
+    im = ax.imshow(
+        bedlevel_stack,
+        aspect='auto',
+        origin='lower',
+        extent=extent,
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+    )
+
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="3%", pad=0.1)
+    cbar = fig.colorbar(im, cax=cax)
+    cbar.set_label('Bed Level [m]', fontsize=11, fontweight='bold')
+
+    ax.set_title(title, fontsize=12, fontweight='bold')
+    ax.set_xlabel('Cross-section distance [km]', fontsize=11, fontweight='bold')
+    ax.set_ylabel('Morphological time [years]', fontsize=11, fontweight='bold')
+
+    if profile_xlim is not None:
+        ax.set_xlim(profile_xlim)
+
+    plt.tight_layout()
+    fig.savefig(outpath, dpi=300, bbox_inches='tight')
+    
     if show:
         plt.show()
     else:

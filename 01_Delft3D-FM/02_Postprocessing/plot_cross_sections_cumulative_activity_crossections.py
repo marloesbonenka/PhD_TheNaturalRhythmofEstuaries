@@ -26,7 +26,11 @@ from tqdm import tqdm
 # Add path for FUNCTIONS
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
 
-from FUNCTIONS.F_general import get_mf_number
+from FUNCTIONS.F_general import (
+    get_mf_number,
+    create_bedlevel_colormap,
+    create_terrain_colormap
+    )
 from FUNCTIONS.F_cache import (
     DatasetCache,
     get_profile_cache_path, load_profile_cache, save_profile_cache
@@ -36,6 +40,8 @@ from FUNCTIONS.F_morphological_activity import (
     cumulative_activity,
     morph_years_from_datetimes,
     plot_activity_and_first_profile,
+    plot_bedlevel_evolution,
+    relative_bed_change,
 )
 
 
@@ -46,6 +52,10 @@ from FUNCTIONS.F_morphological_activity import (
 # ANALYSIS_MODE: "variability" for river discharge variability scenarios
 #                "morfac" for MORFAC sensitivity analysis
 ANALYSIS_MODE = "variability"
+PLOT_MORPH_ACTIVITY = False
+PLOT_BEDLEVEL = True
+PLOT_BEDLEVEL_DETRENDED = True
+PLOT_RELATIVE_BEDCHANGE = False
 
 if ANALYSIS_MODE == "variability":
     base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
@@ -104,7 +114,7 @@ n_slices = 5
 safety_buffer = 0.20
 
 # Output
-output_dirname = "output_plots_crosssections_cumactivity"
+output_dirname = "output_plots_crosssections_activity"
 
 
 # =============================================================================
@@ -166,8 +176,10 @@ for folder in model_folders:
     if loaded_results:
         # Convert loaded format to our working format (handle key name compatibility)
         for cs_name, data in loaded_results.items():
-            # Handle times vs time_series key name
-            times_data = data.get('times') or data.get('time_series')
+            # Handle times vs time_series key name, avoiding ambiguous truth value for pandas objects
+            times_data = data.get('times')
+            if times_data is None:
+                times_data = data.get('time_series')
             folder_results[cs_name] = {
                 'profiles': data['profiles'],
                 'times': times_data,
@@ -321,7 +333,24 @@ for folder in model_folders:
             dist = data['dist']
             morfac = data.get('morfac', default_morfac)
 
+            # 1. Bed level per timestep at each cross section point (time, space)
             Z = np.vstack([p[None, :] for p in profiles_clean])
+        
+            # Detrend by subtracting the initial bed value at the channel center (middle of cross-section)
+            # Use the geometric center for robustness
+            if hasattr(dist, 'mean'):
+                center_idx = np.argmin(np.abs(dist - dist.mean()))
+            else:
+                center_idx = len(dist) // 2
+            initial_center_value = Z[0, center_idx]
+            Z_detrended = Z - initial_center_value
+            # Mask all land areas (>6m) in the detrended stack
+            Z_detrended[Z > 6.0] = np.nan
+
+            # 2. Relative bed change (Δz) between consecutive timesteps (time-1, space)
+            rel_change = relative_bed_change(Z)
+
+            # 3. Cumulative activity: Σ|Δz| over time at each point (time, space)
             cum = cumulative_activity(Z)
 
             morph_years = morph_years_from_datetimes(
@@ -332,18 +361,63 @@ for folder in model_folders:
             first_profile = Z[0, :]
             final_profile = Z[-1, :]
 
-            outpath = output_dir / f"{folder}_{cs_name}_cumactivity.png"
-            plot_activity_and_first_profile(
-                dist_m=dist,
-                first_profile=first_profile,
-                final_profile=final_profile,
-                cumact=cum,
-                morph_years=morph_years,
-                title=f"{folder}: {cs_name}",
-                outpath=outpath,
-                show=True,
-                profile_xlim=profile_xlim,
-            )
+            if PLOT_MORPH_ACTIVITY:
+                outpath = output_dir / f"{folder}_{cs_name}_cumactivity.png"
+                plot_activity_and_first_profile(
+                    dist_m=dist,
+                    first_profile=first_profile,
+                    final_profile=final_profile,
+                    cumact=cum,
+                    morph_years=morph_years,
+                    title=f"{folder}: {cs_name}",
+                    outpath=outpath,
+                    show=True,
+                    profile_xlim=profile_xlim,
+                )
+
+            if PLOT_BEDLEVEL:
+                outpath = output_dir / f"{folder}_{cs_name}_bedevolution.png"
+                plot_bedlevel_evolution(
+                    dist_m=dist,
+                    bedlevel_stack=Z,
+                    morph_years=morph_years,
+                    title=f"{folder}: {cs_name}",
+                    outpath=outpath,
+                    cmap=create_bedlevel_colormap(),
+                    show=True,
+                    profile_xlim=profile_xlim, 
+                    vmax = 13,
+                    vmin = -15                
+                )
+
+            if PLOT_BEDLEVEL_DETRENDED:
+                outpath = output_dir / f"{folder}_{cs_name}_detrended_bedevolution.png"
+                plot_bedlevel_evolution(
+                    dist_m=dist,
+                    bedlevel_stack=Z_detrended,
+                    morph_years=morph_years,
+                    title=f"{folder}: {cs_name}",
+                    outpath=outpath,
+                    cmap=create_terrain_colormap(),
+                    show=True,
+                    profile_xlim=profile_xlim
+                )
+
+            if PLOT_RELATIVE_BEDCHANGE:
+                outpath = output_dir / f"{folder}_{cs_name}_relative_bedchange.png"
+                plot_bedlevel_evolution(
+                    dist_m=dist,
+                    bedlevel_stack=rel_change,
+                    morph_years=morph_years,
+                    title=f"{folder}: {cs_name} (Relative Bed Change)",
+                    outpath=outpath,
+                    cmap='seismic',
+                    show=True,
+                    profile_xlim=profile_xlim,
+                    vmin=-np.nanmax(np.abs(rel_change)),
+                    vmax=np.nanmax(np.abs(rel_change))
+                )
+
             print(f"  Saved: {outpath}")
 
     except Exception as e:
