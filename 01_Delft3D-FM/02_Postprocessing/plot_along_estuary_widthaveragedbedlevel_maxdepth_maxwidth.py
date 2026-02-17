@@ -137,32 +137,6 @@ for i, folder in enumerate(model_folders):
         from scipy.spatial import cKDTree
         tree = cKDTree(np.vstack([face_x, face_y]).T)
 
-        # 3. BRAIDING ANALYSIS
-        if compare_braiding_index:
-            # 3.1 shear stress method (fixed threshold over entire estuary)
-            if var_tau in ds:
-                print(f"Computing BI for {folder}...")
-                bi_tau, _ = compute_BI_FM(ds, var_tau, x_targets, y_range, threshold=tau_threshold, time_idx=ts_final)
-                
-                # Store Year 50 specifically
-                comparison_results[mf_val]['BI_tau'] = bi_tau[0, :]
-        
-                if plot_braiding_index_individual: 
-                    plt.figure(figsize=(10, 6))
-                    plt.plot(x_targets/1000, bi_tau[ts_final, :], 'o-', label=f'Morph Year {morph_years[ts_final]:.1f}')
-                    plt.xlabel('Distance [km]')
-                    plt.ylabel('Braiding Index')
-                    plt.title(f'BI: {folder}')
-                    plt.grid(True, alpha=0.3)
-                    plt.savefig(os.path.join(save_dir, f'braiding_index_{folder}.png'))
-                    plt.close()
-
-            # 2. NEW METHOD: Water Depth (Relative Threshold)
-            if var_depth in ds:
-                bi_depth, _ = compute_BI_FM(ds, var_depth, x_targets, y_range, 
-                                            threshold=depth_threshold, time_idx=ts_final, method='relative')
-                comparison_results[mf_val]['BI_depth'] = bi_depth[0, :]
-
     # 4. WIDTH-AVERAGED BED LEVEL
     if compare_width_averaged_bedlevel:
         print(f"Computing Bed Level for {folder}...")

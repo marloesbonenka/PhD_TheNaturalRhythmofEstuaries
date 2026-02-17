@@ -4,6 +4,7 @@ Divide estuary in sections based on distance from sea to river,
 extract sediment transport through cross sections at the boundaries of these sections,
 plot the cumulative sediment transport (buffer volume) over time for each section, 
 and also the instantaneous rate of change of the buffer volume to identify periods of rapid erosion or deposition.
+
 """
 #%% IMPORTS 
 import numpy as np
@@ -43,6 +44,9 @@ VARIABILITY_MAP = {
 base_path = Path(base_directory) / config
 if not base_path.exists():
     raise FileNotFoundError(f"Base path not found: {base_path}")
+
+output_dir = base_path / output_dirname
+output_dir.mkdir(exist_ok=True)
 
 timed_out_dir = base_path / "timed-out"
 if not timed_out_dir.exists():
@@ -100,6 +104,7 @@ for scenario_dir, his_file_paths in run_his_paths.items():
 
 #%% --- PLOT ALL SCENARIOS ---
 for scenario_dir, data in scenario_data.items():
+
     km_positions = np.array(data['km_positions'])
     transport = data['discharge']
     time = data['t']
@@ -108,6 +113,8 @@ for scenario_dir, data in scenario_data.items():
         idx_up = np.argmin(np.abs(km_positions - box_start))
         idx_down = np.argmin(np.abs(km_positions - box_end))
         buffer_volumes[(box_start, box_end)] = transport[:, idx_up] - transport[:, idx_down]
+
+    # --- CUMULATIVE BUFFER VOLUME PLOT ---
     plt.figure(figsize=(12, 6))
     for (box_start, box_end), buf in buffer_volumes.items():
         plt.plot(time, buf, label=f'{box_start}-{box_end} km')
@@ -115,9 +122,12 @@ for scenario_dir, data in scenario_data.items():
     plt.ylabel('Buffer Volume (m3)')
     plt.legend()
     plt.title(f'Sediment buffer volumes per section for {scenario_dir}')
-    plt.tight_layout()
     plt.grid()
-    plt.savefig(f"buffer_volumes_{scenario_dir}.png", dpi=300, bbox_inches='tight')
+    plt.tight_layout()
+    scenario_name = Path(scenario_dir).name
+    fig1_path = Path(output_dir) / f"{scenario_name}_sediment_buffer_volume_cumulative.png"
+    plt.savefig(fig1_path, dpi=300, bbox_inches='tight')
+    print(f"Saved cumulative buffer plot to {fig1_path}")
     plt.show()
 
     # --- INSTANTANEOUS RATE OF CHANGE PLOT ---
@@ -134,7 +144,10 @@ for scenario_dir, data in scenario_data.items():
     plt.ylabel('dV/dt (m3/timestep)')
     plt.legend()
     plt.title(f'Instantaneous buffer change per section for {scenario_dir}')
-    plt.tight_layout()
     plt.grid()
+    plt.tight_layout()
+    fig2_path = Path(output_dir) / f"{scenario_name}_sediment_buffer_volume_instantaneous.png"
+    plt.savefig(fig2_path, dpi=300, bbox_inches='tight')
+    print(f"Saved instantaneous buffer plot to {fig2_path}")
     plt.show()
 # %%
