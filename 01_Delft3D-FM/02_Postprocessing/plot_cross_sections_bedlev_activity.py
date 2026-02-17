@@ -204,9 +204,9 @@ for folder in model_folders:
         use_cache = False
         missing_x_coords = selected_x_coords
 
-    # --- 1. RESTART LOGIC (Find all parts) ---
+
+    # --- 1. RESTART LOGIC (Find only the correct timed-out and restart part for each run) ---
     all_run_paths = []
-    
     if ANALYSIS_MODE == "variability":
         scenario_num = folder.split('_')[0]
         if scenario_num in VARIABILITY_MAP and timed_out_dir.exists():
@@ -214,15 +214,15 @@ for folder in model_folders:
             timed_out_path = timed_out_dir / timed_out_folder
             if timed_out_path.exists():
                 all_run_paths.append(timed_out_path)
-                
+        # Always append the current model_location (restart part)
+        all_run_paths.append(model_location)
     elif ANALYSIS_MODE == "morfac":
         if 'restart' in folder.lower() and timed_out_dir.exists():
             mf_prefix = folder.split('_')[0]
             matches = [f.name for f in timed_out_dir.iterdir() if f.name.startswith(mf_prefix)]
             if matches:
                 all_run_paths.append(timed_out_dir / matches[0])
-    
-    all_run_paths.append(model_location)
+        all_run_paths.append(model_location)
 
     # Determine MORFAC
     if use_folder_morfac:

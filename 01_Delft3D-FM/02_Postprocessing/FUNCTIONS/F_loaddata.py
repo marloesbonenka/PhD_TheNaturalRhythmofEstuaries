@@ -47,23 +47,36 @@ def find_mf_run_folder(base_dir, mf_number):
 
 
 def get_his_paths_for_run(base_dir, run_folder):
+
 	"""
 	Return list of HIS files to load. If run folder contains 'restart',
 	include the timed-out part(s) (if available) before the main run.
+	Supports both MF and scenario number-based folder naming.
 	"""
 	base_dir = Path(base_dir)
 	run_folder = Path(run_folder)
 	paths = [run_folder / "output" / "FlowFM_0000_his.nc"]
 	debug_msgs = []
-
-	# Always try to find timed-out parts (including nested timed-out1 folders) for the same MF run.
+	
 	timed_out_dir = base_dir / "timed-out"
+	
+	# Try MF logic first
 	mf_match = re.search(r"MF(\d+(?:\.\d+)?)", run_folder.name)
-	if timed_out_dir.exists() and mf_match:
-		mf_prefix = f"MF{int(float(mf_match.group(1)))}"
-		candidates = [p for p in timed_out_dir.rglob("*")
-						if p.is_dir() and p.name.startswith(mf_prefix + "_")]
-		matching = sorted(candidates, key=lambda p: (p.name, str(p)))
+	scenario_match = re.match(r"(\d+)[^\d]?", run_folder.name)
+	timed_out_candidates = []
+	if timed_out_dir.exists():
+		if mf_match:
+			mf_prefix = f"MF{int(float(mf_match.group(1)))}"
+			timed_out_candidates = [p for p in timed_out_dir.rglob("*")
+									if p.is_dir() and p.name.startswith(mf_prefix + "_")]
+		elif scenario_match:
+			# e.g. 3_Q500_rst_flashy.9094053 → 03_run500_flashy
+			scenario_num = scenario_match.group(1)
+			scenario_num_padded = scenario_num.zfill(2)
+			# Find folders like 03_run500_flashy
+			timed_out_candidates = [p for p in timed_out_dir.iterdir()
+									if p.is_dir() and p.name.startswith(f"{scenario_num_padded}_")]
+		matching = sorted(timed_out_candidates, key=lambda p: (p.name, str(p)))
 		if matching:
 			timed_out_paths = []
 			for timed_out_folder in matching:
@@ -79,7 +92,7 @@ def get_his_paths_for_run(base_dir, run_folder):
 				debug_msgs.append("[DEBUG] Timed-out folder not found for restart run.")
 	else:
 		if "restart" in run_folder.name.lower():
-			debug_msgs.append("[DEBUG] Timed-out dir missing or MF not found; skipping timed-out search.")
+			debug_msgs.append("[DEBUG] Timed-out dir missing or MF/scenario not found; skipping timed-out search.")
 
 	for msg in debug_msgs:
 		print(msg)
@@ -173,9 +186,16 @@ def load_cross_section_data(his_file_path, q_var='cross_section_discharge',
 		if datasets is None:
 			datasets = [ds_first] + [xr.open_dataset(p) for p in his_file_path[1:]]
 		last_time = None
-		for ds_part in datasets:
+		last_q_end = None
+		for i, ds_part in enumerate(datasets):
 			q_part = ds_part[q_var].isel(cross_section=plot_indices)
 			t_part = ds_part['time'].values
+			# Offset cumulative variables for seamless stitching
+			if i > 0 and last_q_end is not None:
+				# Only apply for cumulative variables (assume if 'cumulative' in q_var or user sets flag)
+				if 'cumulative' in q_var or 'bedload_sediment_transport' in q_var or 'suspended_sediment_transport' in q_var:
+					# Add last value of previous part to all of this part (per cross-section)
+					q_part = q_part + last_q_end
 			if last_time is not None and len(t_part) > 1:
 				dt = t_part[1] - t_part[0]
 				offset = (last_time - t_part[0]) + dt
@@ -183,6 +203,9 @@ def load_cross_section_data(his_file_path, q_var='cross_section_discharge',
 			q_list.append(q_part)
 			t_list.append(t_part)
 			last_time = t_part[-1] if len(t_part) else last_time
+			# Store last value for offsetting next part
+			if q_part.shape[0] > 0:
+				last_q_end = q_part[-1].values
 		q_data = xr.concat(q_list, dim='time')
 		times = np.concatenate(t_list)
 		if not use_cache:
@@ -268,6 +291,7 @@ def load_cross_section_data(his_file_path, q_var='cross_section_discharge',
 		'ds': ds,
 		'discharge': q_data,
 		'km_positions': plot_km,
+		't': times, # raw time > timesteps
 		'times': times_selected,
 		'times_datetime': times_datetime,
 		'time_hours': time_hours,
