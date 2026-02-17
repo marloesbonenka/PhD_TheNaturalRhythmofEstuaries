@@ -7,7 +7,6 @@
 
 #%%
 import sys
-import xarray as xr
 import xugrid as xu
 from pathlib import Path
 
@@ -22,21 +21,22 @@ if str(functions_root) not in sys.path:
 
 from FUNCTIONS.F_cache import DatasetCache
 
+
 # --- Settings ---
 ANALYSIS_MODE = "variability"
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
 config = 'Model_Output'
-var_name = "mesh2d_mor_bl"
+# List all variables you want to extract and save
+var_names = ["mesh2d_mor_bl", "mesh2d_s1", "mesh2d_taus"]
 
 # Spatial subset bounds [xmin, ymin, xmax, ymax]
-# Matches your x_targets (20000-44001) and y_range (5000-10000)
 BBOX = [20000, 5000, 45000, 10000]
 
 # Mapping: restart folder prefix -> timed-out folder prefix
 VARIABILITY_MAP = {
-    # '1': '01_baserun500',
-    # '2': '02_run500_seasonal',
-    # '3': '03_run500_flashy',
+    '1': '01_baserun500',
+    '2': '02_run500_seasonal',
+    '3': '03_run500_flashy',
     '4': '04_run500_singlepeak'
 }
 
@@ -60,34 +60,33 @@ ds_cache = DatasetCache()
 
 print(f"Starting extraction for {len(model_folders)} runs...")
 
+
 for folder in model_folders:
     print(f"\n--- Processing Run: {folder.name} ---")
-    
+
     # --- STITCHING LOGIC ---
     all_run_paths = []
     scenario_num = folder.name.split('_')[0]
-    
+
     # 1. Check for timed-out part
     if scenario_num in VARIABILITY_MAP:
         t_out_path = timed_out_dir / VARIABILITY_MAP[scenario_num]
         if t_out_path.exists():
             all_run_paths.append(t_out_path)
             print(f"  Found timed-out part: {t_out_path.name}")
-    
+
     # 2. Add the restart part
     all_run_paths.append(folder)
-    
+
     # --- LOAD & CONCATENATE ---
     datasets = []
     for run_path in all_run_paths:
         file_pattern = str(run_path / "output" / "*_map.nc")
-        
         try:
-            # get_partitioned preserves topology variables automatically 
-            # as long as mesh2d_mor_bl is in variables list
+            # get_partitioned preserves topology variables automatically for all listed variables
             part_ds = ds_cache.get_partitioned(
-                file_pattern, 
-                variables=[var_name],
+                file_pattern,
+                variables=var_names,
                 chunks={'time': 100}
             )
             datasets.append(part_ds)
@@ -104,16 +103,13 @@ for folder in model_folders:
 
     # --- MASKING (XUGRID) ---
     print(f"  Applying spatial mask: {BBOX}...")
-    # Wrap xarray dataset into xugrid
-    # uds = xu.UgridDataset(full_ds)
-    
-    # Select the estuary area
+    # Mask all variables in var_names
     uds_masked = full_ds.ugrid.sel(x=slice(BBOX[0], BBOX[2]), y=slice(BBOX[1], BBOX[3]))
 
     # --- SAVE OUTPUT ---
-    save_filename = f"assessment_{var_name}_{folder.name}.nc"
+    save_filename = f"assessment_multi_{folder.name}.nc"
     save_path = output_dir / save_filename
-    
+
     print(f"  Saving to {save_filename}...")
     uds_masked.to_netcdf(save_path)
     print(f"  Successfully exported.")
@@ -124,3 +120,4 @@ print("\n" + "="*30)
 print("PROCESSING COMPLETE")
 print(f"Files saved in: {output_dir}")
 print("="*30)
+# %%

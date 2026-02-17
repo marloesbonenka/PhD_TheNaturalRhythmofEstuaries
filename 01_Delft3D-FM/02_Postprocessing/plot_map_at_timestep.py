@@ -14,18 +14,21 @@ def select_time(ds):
     return ds
 
 #%% --- 1. SETTINGS & PATHS ---
+# ...existing code...
 base_directory = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Output"
-model_folders = ['1_Q500_rst.9093769',
-                 '2_Q500_rst_seasonal.9093860',
-                 '3_Q500_rst_flashy.9094053',
-                 '4_Q500_rst_singlepeak.9093985']  # Add more folders as needed
+assessment_dir = os.path.join(base_directory, 'assessment_netcdfs')
+model_folders = [
+    '1_Q500_rst.9093769',
+    '2_Q500_rst_seasonal.9093860',
+    '3_Q500_rst_flashy.9094053']
+# ,
+#     '4_Q500_rst_singlepeak.9093985'
+# ]  
 
 # --- Variable selection ---
-# Specify one or more variables to load and plot
-var_names = ['mesh2d_mor_bl', 'mesh2d_s1', 'mesh2d_taus']  # e.g. ['mesh2d_mor_bl'] or all three
+var_names = ['mesh2d_mor_bl']#, 'mesh2d_s1', 'mesh2d_taus']  # e.g. ['mesh2d_mor_bl'] or all three
 time_to_extract = -1
 
-# Configs for each variable
 configs = {
     'mesh2d_mor_bl': {
         'cmap': create_bedlevel_colormap(),
@@ -59,32 +62,56 @@ for folder in model_folders:
     file_pattern = os.path.join(model_location, 'output', '*_map.nc')
     print(f"\nProcessing: {folder}")
 
-    # Load all requested variables at once, memory-efficient for time
-    if time_to_extract is None:
-        ds = dataset_cache.get_partitioned(file_pattern, variables=var_names)
-    else:
-        ds = dataset_cache.get_partitioned(file_pattern, variables=var_names, preprocess=select_time)
 
-    # Now plot each variable present in ds and in var_names
+    # Check for assessment file for mesh2d_mor_bl
+    assessment_file = os.path.join(
+        assessment_dir, f"assessment_mesh2d_mor_bl_{folder}.nc"
+    )
+    ds_assessment = None
+    assessment_used = False
+    if os.path.exists(assessment_file):
+        print(f"Assessment file found for {folder}: {assessment_file}")
+        import xarray as xr
+        ds_assessment = xr.open_dataset(assessment_file)
+        if time_to_extract is not None and 'time' in ds_assessment.dims:
+            ds_assessment = ds_assessment.isel(time=time_to_extract)
+        # If only mesh2d_mor_bl is requested, we can skip loading the partitioned dataset
+        if var_names == ['mesh2d_mor_bl']:
+            assessment_used = True
+
+    # Only load the partitioned dataset if needed
+    ds = None
+    if not assessment_used:
+        if time_to_extract is None:
+            ds = dataset_cache.get_partitioned(file_pattern, variables=var_names)
+        else:
+            ds = dataset_cache.get_partitioned(file_pattern, variables=var_names, preprocess=select_time)
+
     for var_name in var_names:
-        if var_name not in ds:
-            print(f"Skipping {folder}: Variable {var_name} not found.")
-            continue
+        # If mesh2d_mor_bl and assessment file exists, use that
+        if var_name == 'mesh2d_mor_bl' and ds_assessment is not None and var_name in ds_assessment:
+            data_source = ds_assessment
+            print(f"Using assessment file for {var_name} in {folder}")
+        else:
+            if ds is None or var_name not in ds:
+                print(f"Skipping {folder}: Variable {var_name} not found.")
+                continue
+            data_source = ds
         current_cfg = configs[var_name]
         cmap = current_cfg['cmap']
 
         # Extract timing and data
-        if 'time' in ds[var_name].dims:
-            data_to_plot = ds[var_name]
+        if 'time' in data_source[var_name].dims:
+            data_to_plot = data_source[var_name]
             try:
-                raw_time = ds['time'].values
+                raw_time = data_source['time'].values
                 if hasattr(raw_time, '__len__') and len(raw_time) == 1:
                     raw_time = raw_time[0]
                 timestamp_str = str(raw_time).split('.')[0].replace('T', ' ')
             except Exception:
                 timestamp_str = "Unknown time"
         else:
-            data_to_plot = ds[var_name]
+            data_to_plot = data_source[var_name]
             timestamp_str = f"at timestep {time_to_extract}"
 
         # --- 4. PLOTTING ---        
@@ -111,12 +138,6 @@ for folder in model_folders:
         plt.show()
         print(f"Successfully saved: {save_name}")
 
-    save_path = os.path.join(output_plots_dir, save_name)
-
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    plt.show()
-    print(f"Successfully saved: {save_name}")
-    
 dataset_cache.close_all()
 
 print("\nBatch processing complete.")
