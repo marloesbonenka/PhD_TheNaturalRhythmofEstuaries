@@ -9,6 +9,7 @@ and also the instantaneous rate of change of the buffer volume to identify perio
 #%% IMPORTS 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import sys
 from pathlib import Path
 
@@ -20,6 +21,8 @@ from FUNCTIONS.F_loaddata import load_cross_section_data
 # What to analyze?
 var_name = 'cross_section_bedload_sediment_transport'
 output_dirname = "output_plots_his_sedimentbuffer"
+
+mpl.rcParams['figure.figsize'] = (8, 6)     
 
 # Define cross-section km boundaries
 box_edges = np.arange(20, 50, 5)  # [20, 25, 30, 35, 40, 45]
@@ -115,11 +118,12 @@ for scenario_dir, data in scenario_data.items():
         buffer_volumes[(box_start, box_end)] = transport[:, idx_up] - transport[:, idx_down]
 
     # --- CUMULATIVE BUFFER VOLUME PLOT ---
-    plt.figure(figsize=(12, 6))
+    plt.figure()
     for (box_start, box_end), buf in buffer_volumes.items():
         plt.plot(time, buf, label=f'{box_start}-{box_end} km')
     plt.xlabel('Time')
     plt.ylabel('Buffer Volume (m3)')
+    plt.ylim(-0.1, 1.15e11)
     plt.legend()
     plt.title(f'Sediment buffer volumes per section for {scenario_dir}')
     plt.grid()
@@ -131,13 +135,13 @@ for scenario_dir, data in scenario_data.items():
     plt.show()
 
     # --- INSTANTANEOUS RATE OF CHANGE PLOT ---
-    plt.figure(figsize=(12, 6))
+    plt.figure()
     all_d_buffer = []
     spinup_steps = 10  # Number of timesteps to skip for percentile calculation
     for (box_start, box_end), buf in buffer_volumes.items():
         d_buffer = np.diff(buf)
         all_d_buffer.append(d_buffer[spinup_steps:])  # Exclude spin-up
-        plt.plot(100 * time[1:], d_buffer, label=f'{box_start}-{box_end} km')
+        plt.plot(time[1:], d_buffer, label=f'{box_start}-{box_end} km')
     all_d_buffer_flat = np.concatenate(all_d_buffer)
     plt.ylim(-0.25e8, 0.25e8)
     plt.xlabel('hydrodynamic time (x 100 = morphological time)')
@@ -150,4 +154,37 @@ for scenario_dir, data in scenario_data.items():
     plt.savefig(fig2_path, dpi=300, bbox_inches='tight')
     print(f"Saved instantaneous buffer plot to {fig2_path}")
     plt.show()
+
+    # --- TRAPPING EFFICIENCY PLOT ---
+    plt.figure(figsize=(12, 6))
+    
+    for (box_start, box_end), buf in buffer_volumes.items():
+        idx_up = np.argmin(np.abs(km_positions - box_start))
+        
+        # 1. Change in storage during this timestep (dV)
+        dV = np.diff(buf) 
+        
+        # 2. Amount of sediment entering the section during this timestep (dIn)
+        # We take the diff of the cumulative transport at the upstream boundary
+        dIn = np.diff(transport[:, idx_up])
+        
+        # 3. Efficiency = dV / dIn
+        # Add a tiny epsilon to dIn to avoid division by zero during stagnant periods
+        efficiency = dV / (dIn + 1e-9)
+        
+        # 4. Cleaning the data:
+        # High-frequency tidal fluctuations will make this swing wildly.
+        # We use a rolling mean (e.g., 24-hour or tidal cycle window)
+        window = 25 # Adjust based on your timestep frequency
+        eff_smooth = np.convolve(efficiency, np.ones(window)/window, mode='same')
+        
+        plt.plot(time[1:], eff_smooth, label=f'{box_start}-{box_end} km')
+
+    plt.axhline(0, color='black', lw=1, ls='--')
+    plt.axhline(1, color='red', lw=1, ls=':', label='100% Trapping')
+    plt.ylim(-0.5, 1.5) # Focus on the 0 to 1 range
+    plt.ylabel('Instantaneous Trapping Efficiency (-)')
+    plt.title(f'Sediment Trapping Efficiency (Rolling Mean) - {scenario_name}')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
 # %%
