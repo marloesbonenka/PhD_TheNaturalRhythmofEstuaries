@@ -25,10 +25,10 @@ Q_UPPER = 1000
 
 #Selection based on:
 SELECT_T = True
-SELECT_Q = False 
+SELECT_Q = True 
 
 # Whether to save the selected estuaries to a new Excel file
-SAVE_FIG = True
+SAVE_FIG = False
 SAVE_EXCEL = False
 #%%
 df = load_data(csv_file)
