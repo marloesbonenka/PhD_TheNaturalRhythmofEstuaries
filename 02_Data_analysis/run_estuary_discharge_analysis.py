@@ -51,8 +51,8 @@ datetimes = data['datetimes']
 #%%
 # Define estuary coordinates (lat, lon)
 estuary_coords = {
-    'Mississippi': (29.15, -89.25),  # validation of method
-    'Amazon': (-0.1, -50.4),         # validation of method
+    # 'Mississippi': (29.15, -89.25),  # validation of method
+    # 'Amazon': (-0.1, -50.4),         # validation of method
     'Eel': (40.63, -124.31),
     'Klamath': (41.54, -124.08),
     'Cacipore': (3.6, -51.2),
@@ -66,7 +66,13 @@ estuary_coords = {
     'Gironde': (45.58, -1.05),
     'Chao Phraya': (13.55, 100.59),
     'Fly': (-8.62, 143.70),
-    'Rio de la Plata': (-35.00, -56.00)
+    'Rio de la Plata': (-35.00, -56.00),
+    'Mengha (Ganges-Brahmaputra)': (21.47, 91.06),  
+    'Western Scheldt': (51.42, 3.57),
+    'Humber': (53.62, -0.11),
+    'Guayas': (-2.55, -79.88),
+    'Cromary Firth': (57.69, -4.02),
+    'Firth of Tay': (56.45, -2.83)
 }
 
 #%% Plot map of global distribution of deltas, based on mean discharge
