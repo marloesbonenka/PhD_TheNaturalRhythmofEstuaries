@@ -22,7 +22,16 @@ def analyze_discharge_metrics(estuary_discharge_data):
     results = []
     
     for estuary, q in estuary_discharge_data.items():
-        q = np.array(q)
+        # Handle both pd.Series and np.ndarray
+        if hasattr(q, 'values'):
+            q = q.values  # extract numpy array from Series, dropping datetime index
+            q = np.array(q, dtype=float)
+            q = q[~np.isnan(q)]
+        
+        if len(q) == 0:
+            print(f"  WARNING: {estuary} has no valid data. Skipping.")
+            continue
+
         mean_q = np.mean(q)
         max_q = np.max(q)
         min_q = np.min(q)
@@ -212,3 +221,43 @@ def visualize_discharge_metrics(df, output_dir="04_Metrics_per_estuary"):
     plt.tight_layout()
     plt.savefig(str(Path(output_dir) / 'metrics_correlation_heatmap.png'), dpi=300, bbox_inches='tight')
     plt.close()
+
+def visualize_discharge_metrics_comparison(df_raw, df_moving_avg, output_dir):
+    """
+    Compare metrics between raw and moving average discharge data.
+    
+    Parameters:
+        df_raw (pd.DataFrame): Metrics from raw discharge data
+        df_moving_avg (pd.DataFrame): Metrics from moving average discharge data
+        output_dir (str or Path): Directory to save figures
+    """
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    
+    estuaries = df_raw['Estuary'].tolist()
+    x = np.arange(len(estuaries))
+    width = 0.35
+
+    for metric, ylabel, filename in [
+        ('Mean',               'Mean Discharge (m³/s)', 'comparison_mean.png'),
+        ('CV',                 'Coefficient of Variation (-)', 'comparison_cv.png'),
+        ('Flashiness (P90/P10)', 'Flashiness (P90/P10) (-)', 'comparison_flashiness.png'),
+    ]:
+        fig, ax = plt.subplots(figsize=(16, 7))
+        
+        bars1 = ax.bar(x - width/2, df_raw[metric],       width, label='Raw',            color='steelblue')
+        bars2 = ax.bar(x + width/2, df_moving_avg[metric], width, label='Moving Average', color='coral')
+
+        ax.set_xlabel('Estuary', fontsize=12)
+        ax.set_ylabel(ylabel, fontsize=12)
+        ax.set_title(f'{metric}: Raw vs. Moving Average', fontsize=14)
+        ax.set_xticks(x)
+        ax.set_xticklabels(estuaries, rotation=45, ha='right', fontsize=10)
+        ax.legend(fontsize=11)
+        ax.set_ylim(bottom=0)
+        ax.grid(True, axis='y', linestyle='--', alpha=0.5)
+        
+        plt.tight_layout()
+        plt.savefig(Path(output_dir) / filename, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+    print(f"Comparison plots saved to {output_dir}")
