@@ -17,11 +17,13 @@ from FUNCTIONS.F_braiding_index import *
 from FUNCTIONS.F_channelwidth import *
 from FUNCTIONS.F_cache import DatasetCache
 
+
 #%% --- CONFIGURATION ---
 # Model output
-base_directory = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15"
+DISCHARGE = 500  # or 1000, etc.
+base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
 target_year = 400 
-config = f'Test_MORFAC/03_flashy/Tmorph_{target_year}years'
+config = f'Model_Output/Q{DISCHARGE}'
 
 # Braiding index
 tau_threshold = 0.05

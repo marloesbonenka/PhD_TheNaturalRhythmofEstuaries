@@ -51,10 +51,12 @@ from FUNCTIONS.F_T_ratio_hydrodynamic_cycle12h import *
 # MAIN
 # =============================================================================
 
+
 if __name__ == '__main__':
 	# --- SETTINGS ---
+	DISCHARGE = 500  # or 1000, etc.
 	root_dir = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Test_MORFAC")
-	scenario_dir = "03_flashy"
+	scenario_dir = f"03_flashy"
 	tmorph_years = 400
 	base_dir = root_dir / scenario_dir / f"Tmorph_{tmorph_years}years"
 

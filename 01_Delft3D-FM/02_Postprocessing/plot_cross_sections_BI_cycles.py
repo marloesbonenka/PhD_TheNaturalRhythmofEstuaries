@@ -31,15 +31,17 @@ from FUNCTIONS.F_loaddata import *
 #                "morfac" for MORFAC sensitivity analysis
 ANALYSIS_MODE = "variability"
 
+
 if ANALYSIS_MODE == "variability":
+    DISCHARGE = 500  # or 1000, etc.
     base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
-    config = 'Model_Output'
+    config = f'Model_Output/Q{DISCHARGE}'
     default_morfac = 100  # All variability scenarios use MORFAC=100
     VARIABILITY_MAP = {
-        '1': '01_baserun500',
-        '2': '02_run500_seasonal',
-        '3': '03_run500_flashy',
-        '4': '04_run500_singlepeak',
+        '1': f'01_baserun{DISCHARGE}',
+        '2': f'02_run{DISCHARGE}_seasonal',
+        '3': f'03_run{DISCHARGE}_flashy',
+        '4': f'04_run{DISCHARGE}_singlepeak',
     }
     SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']  # e.g., ['1'] for baserun only
 

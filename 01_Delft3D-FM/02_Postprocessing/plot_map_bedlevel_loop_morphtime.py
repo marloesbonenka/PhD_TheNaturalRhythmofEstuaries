@@ -63,14 +63,15 @@ if scenarios_discharge:
     run_startdate = '2001-01-01'
     morfyears = 2000
 
+
 # For variability: 
 if scenarios_variability:
-    base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Output")
-    model_folders = ['1_Q500_rst.9093769']
-                # [p.name for p in base_directory.iterdir()
-                #  if p.is_dir()
-                #  and (p.name.startswith('02_') or p.name.startswith('03_'))]
-                 
+    DISCHARGE = 500  # or 1000, etc.
+    base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Output\Q{DISCHARGE}")
+    model_folders = [f'1_Q{DISCHARGE}_rst.9093769']
+    # [p.name for p in base_directory.iterdir()
+    #  if p.is_dir()
+    #  and (p.name.startswith('02_') or p.name.startswith('03_'))]
     run_startdate = '2024-01-01'
     morfyears = 3000
 

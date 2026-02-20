@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import sys
+import matplotlib.pyplot as plt
 
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\02_Data_analysis")
 
@@ -52,7 +53,7 @@ tif_path           = Path(INPUT_DIR) / TIF_FILE          if TIF_FILE          el
 global_delta_path  = Path(INPUT_DIR) / GLOBAL_DELTA_FILE if GLOBAL_DELTA_FILE else None
 CACHE_FILE         = Path(OUTPUT_DIR) / "estuary_timeseries_cache.xlsx"
 
-window_ma = 7  # Window size for moving average (in days)
+window_ma = 30  # Window size for moving average (in days)
 
 #%% --- ESTUARY COORDINATES ---
 # Format: 'Name': (lat, lon)
@@ -66,24 +67,24 @@ estuary_coords = {
     'Chao Phraya': (13.55, 100.59),         #Thailand
     'Colorado (MX)': (31.83, -114.82),      #Mexico
     'Cacipore': (3.6, -51.2),               #French Guiana
-    # 'Cromary Firth': (57.69, -4.02),        #UK
-    # 'Demerara': (6.79, -58.18),             #Guyana
-    # 'Firth of Tay': (56.45, -2.83),         #UK
-    # 'Fly': (-8.62, 143.70),                 #Papua New Guinea
-    # 'Gironde': (45.58, -1.05),              #France
-    # 'Guayas': (-2.55, -79.88),              #Ecuador
-    # 'Humber': (53.62, -0.11),               #UK
-    # 'Kumbe': (-8.36, 140.23),               #Indonesia
-    # 'Ord': (-15.5, 128.35),                 #Australia
-    # 'Purna': (20.91, 72.78),                #India
-    # 'Sokyosen': (36.9, 126.9),              #South Korea 
-    # 'Sungai Merauke': (-8.47, 140.35),      #Indonesia
-    # 'Suriname': (5.84, -55.11),             #Suriname
-    # 'Taeryong': (39.63, 125.48),            #North Korea
-    # 'Tapi': (21.15, 72.75),                 #India
-    # 'Yangon': (16.52, 96.29),               #Myanmar
-    # 'Wai Bian': (-8.10, 139.97),            #Indonesia   
-    # 'Western Scheldt': (51.42, 3.57),       #Netherlands
+    'Cromary Firth': (57.69, -4.02),        #UK
+    'Demerara': (6.79, -58.18),             #Guyana
+    'Firth of Tay': (56.45, -2.83),         #UK
+    'Fly': (-8.62, 143.70),                 #Papua New Guinea
+    'Gironde': (45.58, -1.05),              #France
+    'Guayas': (-2.55, -79.88),              #Ecuador
+    'Humber': (53.62, -0.11),               #UK
+    'Kumbe': (-8.36, 140.23),               #Indonesia
+    'Ord': (-15.5, 128.35),                 #Australia
+    'Purna': (20.91, 72.78),                #India
+    'Sokyosen': (36.9, 126.9),              #South Korea 
+    'Sungai Merauke': (-8.47, 140.35),      #Indonesia
+    'Suriname': (5.84, -55.11),             #Suriname
+    'Taeryong': (39.63, 125.48),            #North Korea
+    'Tapi': (21.15, 72.75),                 #India
+    'Yangon': (16.52, 96.29),               #Myanmar
+    'Wai Bian': (-8.10, 139.97),            #Indonesia   
+    'Western Scheldt': (51.42, 3.57),       #Netherlands
 
     # #Excluded                                                         because:
     # 'Eel': (40.63, -124.31),                #USA                      - River-dominated
@@ -171,6 +172,11 @@ mean_discharge_values         = {}
 mean_sediment_values          = {}
 estuary_discharge_moving_average = {}
 
+# Assign a unique color to each estuary using a colormap
+colormap = plt.get_cmap('tab20')
+estuary_list = list(estuary_coords.keys())
+estuary_colors = {est: colormap(i % colormap.N) for i, est in enumerate(estuary_list)}
+
 for estuary in estuary_coords:
     print(f"\nProcessing: {estuary}")
 
@@ -228,12 +234,12 @@ if SAVE_DATA:
 
 #%% --- METRICS ---
 
-# Diagnostic check on moving average data
-print("\n--- Moving Average Dictionary Check ---")
-for name, series in estuary_discharge_moving_average.items():
-    vals  = np.array(series, dtype=float)
-    valid = vals[~np.isnan(vals)]
-    print(f"  {name}: {len(valid)} valid values, mean={np.nanmean(vals):.2f}")
+# # Diagnostic check on moving average data
+# print("\n--- Moving Average Dictionary Check ---")
+# for name, series in estuary_discharge_moving_average.items():
+#     vals  = np.array(series, dtype=float)
+#     valid = vals[~np.isnan(vals)]
+#     print(f"  {name}: {len(valid)} valid values, mean={np.nanmean(vals):.2f}")
 
 # Compute metrics
 df_metrics            = analyze_discharge_metrics(estuary_discharge_data)

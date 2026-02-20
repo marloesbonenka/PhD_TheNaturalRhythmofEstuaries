@@ -19,18 +19,20 @@ from FUNCTIONS.F_morphological_activity import cumulative_activity, morph_years_
 
 # ANALYSIS_MODE: "variability" for river discharge variability scenarios
 #                "morfac" for MORFAC sensitivity analysis
+
 ANALYSIS_MODE = "variability"
+DISCHARGE = 500 # Adjust this to match your specific discharge scenario (e.g., 500, 1000, etc.)
 
 if ANALYSIS_MODE == "variability":
     base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
-    config = 'Model_Output'
+    config = f'Model_Output/Q{DISCHARGE}'
     # Mapping: restart folder prefix -> timed-out folder prefix
     # 1 = constant (baserun), 2 = seasonal, 3 = flashy, 4 = singlepeak
     VARIABILITY_MAP = {
-        '1': '01_baserun500',
-        '2': '02_run500_seasonal',
-        '3': '03_run500_flashy',
-        '4': '04_run500_singlepeak',
+        '1': f'01_baserun{DISCHARGE}',
+        '2': f'02_run{DISCHARGE}_seasonal',
+        '3': f'03_run{DISCHARGE}_flashy',
+        '4': f'04_run{DISCHARGE}_singlepeak',
     }
     SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']  # e.g., ['1'] for baserun only, None for all
     use_folder_morfac = False
@@ -39,10 +41,11 @@ if ANALYSIS_MODE == "variability":
 elif ANALYSIS_MODE == "morfac":
     base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
     config = r'TestingBoundaries_and_SensitivityAnalyses\Test_MORFAC\02_seasonal\Tmorph_50years'
-    use_folder_morfac = True  # Extract MORFAC from folder name (MF1, MF2, etc.)
+    use_folder_morfac = True  # Extract MORFAC from folder name (MFoutput_dirname1, MF2, etc.)
     default_morfac = 1.0
 
-timed_out_dir = base_directory / config / "timed-out"
+base_path = base_directory / config
+timed_out_dir = base_path / "timed-out"
 
 var_name = "mesh2d_mor_bl"
 
@@ -76,7 +79,10 @@ show_plots = True
 run_startdate = None  # e.g. "2025-01-01", or None to use first timestamp
 
 # Output
-output_dirname = "output_plots_cumulative_activity"
+
+output_dirname = Path("output_plots") / "plots_cumulative_activity"
+output_dir = base_path / output_dirname
+output_dir.mkdir(parents=True, exist_ok=True)
 
 # =============================================================================
 # Search & Sort Folders
@@ -99,9 +105,9 @@ elif ANALYSIS_MODE == "morfac":
 
 print(f"Found {len(model_folders)} run folders in: {base_path}")
 
-output_dir = base_path / output_dirname
-output_dir.mkdir(parents=True, exist_ok=True)
-cache_path = output_dir / "cached_results_widthavg.pkl"
+cache_dir = base_path / "cached_data"
+cache_dir.mkdir(parents=True, exist_ok=True)    
+cache_path = cache_dir / "cached_results_widthavg.pkl"
 
 results = {}
 run_names = {}

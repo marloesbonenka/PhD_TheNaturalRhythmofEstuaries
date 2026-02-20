@@ -13,17 +13,15 @@ def select_time(ds):
         return ds.isel(time=time_to_extract)
     return ds
 
+
 #%% --- 1. SETTINGS & PATHS ---
-# ...existing code...
-base_directory = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Output"
-assessment_dir = os.path.join(base_directory, 'assessment_netcdfs')
+DISCHARGE = 500  # or 1000, etc.
+base_directory = f"U:\\PhDNaturalRhythmEstuaries\\Models\\1_RiverDischargeVariability_domain45x15\\Model_Output\\Q{DISCHARGE}"
+assessment_dir = os.path.join(base_directory, 'cached_data', 'assessment_netcdfs')
 model_folders = [
-    '1_Q500_rst.9093769',
-    '2_Q500_rst_seasonal.9093860',
-    '3_Q500_rst_flashy.9094053']
-# ,
-#     '4_Q500_rst_singlepeak.9093985'
-# ]  
+    f'1_Q{DISCHARGE}_rst.9093769',
+    f'2_Q{DISCHARGE}_rst_seasonal.9093860',
+    f'3_Q{DISCHARGE}_rst_flashy.9094053']
 
 # --- Variable selection ---
 var_names = ['mesh2d_mor_bl']#, 'mesh2d_s1', 'mesh2d_taus']  # e.g. ['mesh2d_mor_bl'] or all three

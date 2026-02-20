@@ -275,9 +275,8 @@ def plot_estuary_timeseries(estuary_name, discharge_series, sed_series, datetime
     mean_sediment  = np.mean(sed_series)
     fac_label = f"  [fac={scaling_factor:.3f}]" if scaling_factor != 1.0 else ""
 
-    # --- Discharge plot ---
     plt.figure(figsize=(10, 6))
-    plt.plot(datetimes, discharge_series, label=estuary_name)
+    plt.plot(datetimes, discharge_series, label=estuary_name, color='tab:blue')
     plt.axhline(mean_discharge, linestyle='dashed', color='orange',
                 label=f'mean = {mean_discharge:.2f}')
     plt.xlabel('Time')
@@ -364,7 +363,8 @@ def plot_estuary_timeseries(estuary_name, discharge_series, sed_series, datetime
     if savefig and outdir:
         save_path_ma = outdir / '05_Moving_Average_Discharge'
         save_path_ma.mkdir(parents=True, exist_ok=True)
-        plt.savefig(save_path_ma / f'Trend_{estuary_name}.png', dpi=200, bbox_inches='tight')
+        plt.savefig(save_path_ma / f'Trend_{estuary_name}_MA{window_ma}.png', dpi=200, bbox_inches='tight')
+    
     plt.show()
 
     return mean_discharge, mean_sediment, moving_avg

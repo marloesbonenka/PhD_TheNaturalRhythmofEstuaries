@@ -23,9 +23,13 @@ from FUNCTIONS.F_cache import DatasetCache
 
 
 # --- Settings ---
+
 ANALYSIS_MODE = "variability"
+DISCHARGE = 500 # Adjust this to match your specific discharge scenario (e.g., 500, 1000, etc.)
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
-config = 'Model_Output'
+config = f'Model_Output/Q{DISCHARGE}'
+base_path = base_directory / config
+timed_out_dir = base_path / "timed-out"
 # List all variables you want to extract and save
 var_names = ["mesh2d_mor_bl", "mesh2d_s1", "mesh2d_taus"]
 
@@ -34,16 +38,15 @@ BBOX = [20000, 5000, 45000, 10000]
 
 # Mapping: restart folder prefix -> timed-out folder prefix
 VARIABILITY_MAP = {
-    '1': '01_baserun500',
-    '2': '02_run500_seasonal',
-    '3': '03_run500_flashy',
-    '4': '04_run500_singlepeak'
+    '1': '01_baserun{DISCHARGE}',
+    '2': '02_run{DISCHARGE}_seasonal',
+    '3': '03_run{DISCHARGE}_flashy',
+    '4': '04_run{DISCHARGE}_singlepeak'
 }
 
+
 # Directories
-base_path = base_directory / config
-timed_out_dir = base_path / "timed-out"
-output_dir = base_path / "assessment_netcdfs"
+output_dir = base_path / 'cached_data' / "assessment_netcdfs"
 output_dir.mkdir(parents=True, exist_ok=True)
 
 # =============================================================================

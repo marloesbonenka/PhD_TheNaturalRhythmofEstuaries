@@ -81,7 +81,9 @@ def visualize_discharge_metrics(df, output_dir="04_Metrics_per_estuary"):
     
     # Create a custom color palette for consistent estuary colors across plots
     num_estuaries = len(df)
-    colors = plt.cm.tab10(np.linspace(0, 1, num_estuaries))
+    # Use tab20 for up to 20 unique colors, repeat if more
+    base_cmap = plt.cm.get_cmap('tab20')
+    colors = [base_cmap(i % base_cmap.N) for i in range(num_estuaries)]
     estuary_colors = dict(zip(df['Estuary'], colors))
     
     # 1. Bar Chart for Mean Discharge

@@ -17,8 +17,8 @@ from FUNCTIONS.F_cache import DatasetCache
 
 # --- SETTINGS ---
 # Point this to your specific MF50 his file example
-his_file_path = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Output\1_Q500_rst.9093769\output\FlowFM_0000_his.nc")
-map_file_pattern = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Output\1_Q500_rst.9093769\output\*_map.nc")
+his_file_path = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Output\Q500\1_Q500_rst.9093769\output\FlowFM_0000_his.nc")
+map_file_pattern = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Output\Q500\1_Q500_rst.9093769\output\*_map.nc")
 
 print(f"Opening history file: {his_file_path.name}")
 
