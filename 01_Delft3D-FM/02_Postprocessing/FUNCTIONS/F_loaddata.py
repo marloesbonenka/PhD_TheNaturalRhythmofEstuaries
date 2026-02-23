@@ -487,12 +487,8 @@ def split_by_hydrodynamic_cycle(times, values, cycle_days=365.25):
     
     return cycles
 
-def load_and_cache_scenario(scenario_dir, his_file_paths, cache_dir, boxes, var_name, DISCHARGE):
+def load_and_cache_scenario(scenario_dir, his_file_paths, cache_file, boxes, var_name):
     """Load one scenario from cache or HIS files, compute buffer volumes, save cache."""
-    scenario_name = Path(scenario_dir).name
-    scenario_num = scenario_dir.split('_')[0]
-    run_id = scenario_name.split('_')[-1] if '_' in scenario_name else scenario_name
-    cache_file = cache_dir / f"full_timeseries_{scenario_num}_Q{DISCHARGE}_{run_id}.nc"
 
     if cache_file.exists():
         print(f"Loading from cache: {cache_file}")

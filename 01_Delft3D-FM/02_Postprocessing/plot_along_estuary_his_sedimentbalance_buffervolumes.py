@@ -72,8 +72,8 @@ model_folders.sort(key=lambda x: int(x.split('_')[0]))
 
 print(f"Found {len(model_folders)} run folders in: {base_path}")
 
-#%% For testing: process only the second folder 
-# model_folders=[model_folders[0]] 
+#%% For testing: process only the specified folder 
+model_folders=[model_folders[0]] 
 
 #%%
 # --- 1. For each run, find only the correct timed-out and restart part ---
@@ -137,17 +137,20 @@ else:
 #%% --- LOAD AND STITCH ALL DATA FIRST ---
 scenario_data = {}
 for scenario_dir, his_file_paths in run_his_paths.items():
+    scenario_name = Path(scenario_dir).name
+    scenario_num = scenario_dir.split('_')[0]
+    run_id = '_'.join(scenario_name.split('_')[1:])
+    cache_file = cache_dir / f"sedtransport_timeseries_{scenario_num}_{run_id}.nc"
+    
     scenario_dir, result = load_and_cache_scenario(
-        scenario_dir, his_file_paths, cache_dir, boxes, var_name, DISCHARGE
+        scenario_dir, his_file_paths, cache_file, boxes, var_name
     )
+    result['cache_file'] = cache_file  # store alongside result
     scenario_data[scenario_dir] = result
 
 #%% --- PLOT ALL SCENARIOS & CACHE ---
 for scenario_dir, data in scenario_data.items():
-    scenario_name = Path(scenario_dir).name
-    scenario_num = scenario_dir.split('_')[0]
-    run_id = '_'.join(scenario_name.split('_')[1:])
-    cache_file = cache_dir / f"full_timeseries_{scenario_num}_{run_id}.nc"
+    cache_file = data['cache_file'] 
 
     # If data was loaded from cache, buffer_volumes is already computed
     if 'buffer_volumes' in data:
