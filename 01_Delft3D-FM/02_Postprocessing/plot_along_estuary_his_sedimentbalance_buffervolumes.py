@@ -11,11 +11,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import sys
+import xarray as xr
 from pathlib import Path
+import re
 
 # Add the current working directory (where FUNCTIONS is located)
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
-from FUNCTIONS.F_loaddata import load_cross_section_data
+
+from FUNCTIONS.F_loaddata import load_cross_section_data, load_and_cache_scenario  
 
 #%% --- CONFIGURATION ---
 # What to analyze?
@@ -30,13 +33,17 @@ boxes = [(box_edges[i], box_edges[i+1]) for i in range(len(box_edges)-1)]
 
 # Which scenarios to process (set to None or empty list for all)
 SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']  # Use all scenarios
-
+DISCHARGE = 500  # or 1000, etc.
+ANALYZE_NOISY = False  # Set to True to analyze noisy scenarios
 
 #%% --- PATHS ---  
-DISCHARGE = 500  # or 1000, etc.
+
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
-config = f'Model_Output/Q{DISCHARGE}'
-base_path = base_directory / config
+config = f"Model_Output/Q{DISCHARGE}"
+if ANALYZE_NOISY:
+    base_path = base_directory / config / f"0_Noise_Q{DISCHARGE}"
+else:
+    base_path = base_directory / config
 output_dir = base_path / output_dirname
 output_dir.mkdir(parents=True, exist_ok=True)
 timed_out_dir = base_path / "timed-out"
@@ -54,9 +61,9 @@ VARIABILITY_MAP = {
     '4': f'04_run{DISCHARGE}_singlepeak',
 }
 
-# Find restart folders: start with digit and contain "_rst"
+# Find all run folders: start with digit (with or without '_rst')
 model_folders = [f.name for f in base_path.iterdir() 
-                    if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
+                    if f.is_dir() and f.name[0].isdigit()]
 # Filter by SCENARIOS_TO_PROCESS if specified
 if SCENARIOS_TO_PROCESS:
     model_folders = [f for f in model_folders if f.split('_')[0] in SCENARIOS_TO_PROCESS]
@@ -65,21 +72,45 @@ model_folders.sort(key=lambda x: int(x.split('_')[0]))
 
 print(f"Found {len(model_folders)} run folders in: {base_path}")
 
+#%% For testing: process only the second folder 
+# model_folders=[model_folders[0]] 
+
 #%%
 # --- 1. For each run, find only the correct timed-out and restart part ---
-all_run_paths = []
+all_run_paths = {}
 run_his_paths = {}
 
 for folder in model_folders:
+
     model_location = base_path / folder
-    scenario_num = folder.split('_')[0]
     his_paths = []
-    if scenario_num in VARIABILITY_MAP and timed_out_dir.exists():
-        timed_out_folder = VARIABILITY_MAP[scenario_num]
+    scenario_num = folder.split('_')[0]
+    # For noisy scenarios, match timed-out folder by noisy{integer} substring
+    if ANALYZE_NOISY:
+        match = re.search(r'noisy(\d+)', folder)
+        timed_out_folder = None
+        if match:
+            noisy_id = match.group(0)
+            print(f"[DEBUG] noisy_id: {noisy_id}")
+            print(f"[DEBUG] timed_out_dir contents: {[f.name for f in timed_out_dir.iterdir()]}")
+            for f in timed_out_dir.iterdir():
+                if f.is_dir() and noisy_id in f.name:
+                    timed_out_folder = f.name
+                    break
+        if timed_out_folder:
+            timed_out_path = timed_out_dir / timed_out_folder / "output" / "FlowFM_0000_his.nc"
+            print(f"[DEBUG] Checking for timed-out file: {timed_out_path}")
+            if timed_out_path.exists():
+                print(f"[DEBUG] Found timed-out file: {timed_out_path}")
+                his_paths.append(timed_out_path)
+            else:
+                print(f"[DEBUG] Timed-out file does NOT exist: {timed_out_path}")
+    else:
+        timed_out_folder = VARIABILITY_MAP.get(scenario_num, folder)
         timed_out_path = timed_out_dir / timed_out_folder / "output" / "FlowFM_0000_his.nc"
         if timed_out_path.exists():
             his_paths.append(timed_out_path)
-    # Always append the main/restart part
+            
     main_his_path = model_location / "output" / "FlowFM_0000_his.nc"
     if main_his_path.exists():
         his_paths.append(main_his_path)
@@ -90,31 +121,67 @@ for folder in model_folders:
 
 print(f"Found {len(model_folders)} run folders in: {base_path}")
 
-#%% --- LOOP OVER SCENARIOS AND PLOT ---
+#%% --- CACHE DIR SETUP ---
+cache_dir = base_path / "cached_data"
+if cache_dir.exists():
+    if not cache_dir.is_dir():
+        raise RuntimeError(f"[ERROR] {cache_dir} exists but is not a directory. Please remove or rename it.")
+    else:
+        try:
+            _ = list(cache_dir.iterdir())
+        except Exception as e:
+            raise RuntimeError(f"[ERROR] {cache_dir} exists but is not available: {e}")
+else:
+    cache_dir.mkdir(exist_ok=True)
+
 #%% --- LOAD AND STITCH ALL DATA FIRST ---
 scenario_data = {}
 for scenario_dir, his_file_paths in run_his_paths.items():
-    print(f"\nLoading scenario: {scenario_dir}")
-    data = load_cross_section_data(
-        his_file_path=his_file_paths,
-        q_var=var_name,
-        estuary_only=True,
-        km_range=(20, 45),
-        select_cycles_hydrodynamic=False
+    scenario_dir, result = load_and_cache_scenario(
+        scenario_dir, his_file_paths, cache_dir, boxes, var_name, DISCHARGE
     )
-    scenario_data[scenario_dir] = data
+    scenario_data[scenario_dir] = result
 
-#%% --- PLOT ALL SCENARIOS ---
+#%% --- PLOT ALL SCENARIOS & CACHE ---
 for scenario_dir, data in scenario_data.items():
+    scenario_name = Path(scenario_dir).name
+    scenario_num = scenario_dir.split('_')[0]
+    run_id = '_'.join(scenario_name.split('_')[1:])
+    cache_file = cache_dir / f"full_timeseries_{scenario_num}_{run_id}.nc"
 
-    km_positions = np.array(data['km_positions'])
-    transport = data['discharge']
-    time = data['t']
-    buffer_volumes = {}
-    for box_start, box_end in boxes:
-        idx_up = np.argmin(np.abs(km_positions - box_start))
-        idx_down = np.argmin(np.abs(km_positions - box_end))
-        buffer_volumes[(box_start, box_end)] = transport[:, idx_up] - transport[:, idx_down]
+    # If data was loaded from cache, buffer_volumes is already computed
+    if 'buffer_volumes' in data:
+        km_positions = data['km_positions']
+        transport = data['discharge']
+        time = data['t']
+        buffer_volumes = data['buffer_volumes']
+    else:
+        # Compute buffer volumes from freshly loaded HIS data
+        km_positions = np.array(data['km_positions'])
+        transport = data['discharge']
+        time = data['t']
+        buffer_volumes = {}
+        for box_start, box_end in boxes:
+            idx_up = np.argmin(np.abs(km_positions - box_start))
+            idx_down = np.argmin(np.abs(km_positions - box_end))
+            buffer_volumes[(box_start, box_end)] = transport[:, idx_up] - transport[:, idx_down]
+
+        # --- SAVE FULL TIMESERIES TO CACHE ---
+        t_vals = time.astype(str) if np.issubdtype(time.dtype, np.datetime64) else time.astype(float)
+        buffer_dict = {
+            f'buffer_{int(box_start)}_{int(box_end)}': (['time'], np.array(buf))
+            for (box_start, box_end), buf in buffer_volumes.items()
+        }
+        ds = xr.Dataset({
+            'km_positions': (['km'], km_positions),
+            'discharge': (['time', 'km'], np.array(transport)),
+            't': (['time'], t_vals),
+            **buffer_dict
+        })
+        comp = dict(zlib=True, complevel=4)
+        encoding = {var: comp for var in ds.data_vars}
+        ds.to_netcdf(cache_file, encoding=encoding)
+        print(f"Saved full timeseries cache to {cache_file}")
 
     # --- CUMULATIVE BUFFER VOLUME PLOT ---
     plt.figure()
@@ -127,7 +194,6 @@ for scenario_dir, data in scenario_data.items():
     plt.title(f'Sediment buffer volumes per section for {scenario_dir}')
     plt.grid()
     plt.tight_layout()
-    scenario_name = Path(scenario_dir).name
     fig1_path = Path(output_dir) / f"{scenario_name}_sediment_buffer_volume_cumulative.png"
     plt.savefig(fig1_path, dpi=300, bbox_inches='tight')
     print(f"Saved cumulative buffer plot to {fig1_path}")
@@ -135,13 +201,10 @@ for scenario_dir, data in scenario_data.items():
 
     # --- INSTANTANEOUS RATE OF CHANGE PLOT ---
     plt.figure()
-    all_d_buffer = []
-    spinup_steps = 10  # Number of timesteps to skip for percentile calculation
+    spinup_steps = 10
     for (box_start, box_end), buf in buffer_volumes.items():
         d_buffer = np.diff(buf)
-        all_d_buffer.append(d_buffer[spinup_steps:])  # Exclude spin-up
         plt.plot(time[1:], d_buffer, label=f'{box_start}-{box_end} km')
-    all_d_buffer_flat = np.concatenate(all_d_buffer)
     plt.ylim(-0.25e8, 0.25e8)
     plt.xlabel('hydrodynamic time (x 100 = morphological time)')
     plt.ylabel('dV/dt (m3/timestep)')
@@ -154,36 +217,36 @@ for scenario_dir, data in scenario_data.items():
     print(f"Saved instantaneous buffer plot to {fig2_path}")
     plt.show()
 
-    # --- TRAPPING EFFICIENCY PLOT ---
-    plt.figure(figsize=(12, 6))
+    # # --- TRAPPING EFFICIENCY PLOT ---
+    # plt.figure(figsize=(12, 6))
     
-    for (box_start, box_end), buf in buffer_volumes.items():
-        idx_up = np.argmin(np.abs(km_positions - box_start))
+    # for (box_start, box_end), buf in buffer_volumes.items():
+    #     idx_up = np.argmin(np.abs(km_positions - box_start))
         
-        # 1. Change in storage during this timestep (dV)
-        dV = np.diff(buf) 
+    #     # 1. Change in storage during this timestep (dV)
+    #     dV = np.diff(buf) 
         
-        # 2. Amount of sediment entering the section during this timestep (dIn)
-        # We take the diff of the cumulative transport at the upstream boundary
-        dIn = np.diff(transport[:, idx_up])
+    #     # 2. Amount of sediment entering the section during this timestep (dIn)
+    #     # We take the diff of the cumulative transport at the upstream boundary
+    #     dIn = np.diff(transport[:, idx_up])
         
-        # 3. Efficiency = dV / dIn
-        # Add a tiny epsilon to dIn to avoid division by zero during stagnant periods
-        efficiency = dV / (dIn + 1e-9)
+    #     # 3. Efficiency = dV / dIn
+    #     # Add a tiny epsilon to dIn to avoid division by zero during stagnant periods
+    #     efficiency = dV / (dIn + 1e-9)
         
-        # 4. Cleaning the data:
-        # High-frequency tidal fluctuations will make this swing wildly.
-        # We use a rolling mean (e.g., 24-hour or tidal cycle window)
-        window = 25 # Adjust based on your timestep frequency
-        eff_smooth = np.convolve(efficiency, np.ones(window)/window, mode='same')
+    #     # 4. Cleaning the data:
+    #     # High-frequency tidal fluctuations will make this swing wildly.
+    #     # We use a rolling mean (e.g., 24-hour or tidal cycle window)
+    #     window = 25 # Adjust based on your timestep frequency
+    #     eff_smooth = np.convolve(efficiency, np.ones(window)/window, mode='same')
         
-        plt.plot(time[1:], eff_smooth, label=f'{box_start}-{box_end} km')
+    #     plt.plot(time[1:], eff_smooth, label=f'{box_start}-{box_end} km')
 
-    plt.axhline(0, color='black', lw=1, ls='--')
-    plt.axhline(1, color='red', lw=1, ls=':', label='100% Trapping')
-    plt.ylim(-0.5, 1.5) # Focus on the 0 to 1 range
-    plt.ylabel('Instantaneous Trapping Efficiency (-)')
-    plt.title(f'Sediment Trapping Efficiency (Rolling Mean) - {scenario_name}')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
+    # plt.axhline(0, color='black', lw=1, ls='--')
+    # plt.axhline(1, color='red', lw=1, ls=':', label='100% Trapping')
+    # plt.ylim(-0.5, 1.5) # Focus on the 0 to 1 range
+    # plt.ylabel('Instantaneous Trapping Efficiency (-)')
+    # plt.title(f'Sediment Trapping Efficiency (Rolling Mean) - {scenario_name}')
+    # plt.legend()
+    # plt.grid(True, alpha=0.3)
 # %%

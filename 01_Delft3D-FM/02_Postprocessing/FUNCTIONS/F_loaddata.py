@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from tqdm import tqdm
+import time as timer
 
 from FUNCTIONS.F_tidalriverdominance import *
 from FUNCTIONS.F_cache import *
@@ -485,3 +486,83 @@ def split_by_hydrodynamic_cycle(times, values, cycle_days=365.25):
         })
     
     return cycles
+
+def load_and_cache_scenario(scenario_dir, his_file_paths, cache_dir, boxes, var_name, DISCHARGE):
+    """Load one scenario from cache or HIS files, compute buffer volumes, save cache."""
+    scenario_name = Path(scenario_dir).name
+    scenario_num = scenario_dir.split('_')[0]
+    run_id = scenario_name.split('_')[-1] if '_' in scenario_name else scenario_name
+    cache_file = cache_dir / f"full_timeseries_{scenario_num}_Q{DISCHARGE}_{run_id}.nc"
+
+    if cache_file.exists():
+        print(f"Loading from cache: {cache_file}")
+        ds = xr.open_dataset(cache_file)
+        result = {
+            'km_positions': ds['km_positions'].values,
+            'discharge': ds['discharge'].values,
+            't': ds['t'].values,
+            'buffer_volumes': {
+                (box_start, box_end): ds[f'buffer_{int(box_start)}_{int(box_end)}'].values
+                for box_start, box_end in boxes
+                if f'buffer_{int(box_start)}_{int(box_end)}' in ds
+            }
+        }
+        ds.close()
+        return scenario_dir, result
+
+    # Load from HIS
+    print(f"Loading from HIS files: {scenario_dir}")
+    data = load_cross_section_data(
+        his_file_path=his_file_paths,
+        q_var=var_name,
+        estuary_only=True,
+        km_range=(20, 45),
+        select_cycles_hydrodynamic=False
+    )
+
+    km_positions = np.array(data['km_positions'])
+    time = data['t']
+
+    print(f"  Reading transport data into memory...")
+
+	# t0 = timer.time()
+
+    transport = data['discharge'].values  # triggers actual file read
+	
+	# print(f"  Data read in {timer.time() - t0:.1f} seconds")
+
+    if 'ds' in data and data['ds'] is not None:
+        try:
+            data['ds'].close()
+        except Exception:
+            pass
+
+    # Compute buffer volumes
+    buffer_volumes = {}
+    for box_start, box_end in boxes:
+        idx_up = np.argmin(np.abs(km_positions - box_start))
+        idx_down = np.argmin(np.abs(km_positions - box_end))
+        buffer_volumes[(box_start, box_end)] = transport[:, idx_up] - transport[:, idx_down]
+
+    # Save to cache
+    buffer_dict = {
+        f'buffer_{int(box_start)}_{int(box_end)}': (['time'], buf)
+        for (box_start, box_end), buf in buffer_volumes.items()
+    }
+    ds = xr.Dataset({
+        'km_positions': (['km'], km_positions),
+        'discharge': (['time', 'km'], transport),
+        't': (['time'], time),
+        **buffer_dict
+    })
+    comp = dict(zlib=True, complevel=4)
+    encoding = {var: comp for var in ds.data_vars}
+    ds.to_netcdf(cache_file, encoding=encoding)
+    print(f"  Saved cache: {cache_file}")
+
+    return scenario_dir, {
+        'km_positions': km_positions,
+        'discharge': transport,
+        't': time,
+        'buffer_volumes': buffer_volumes
+    }
