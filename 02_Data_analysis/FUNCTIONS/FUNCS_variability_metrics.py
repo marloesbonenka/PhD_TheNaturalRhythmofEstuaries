@@ -50,6 +50,10 @@ def analyze_discharge_metrics(estuary_discharge_data):
         p10 = np.percentile(q, 10)
         flashiness = p90 / p10 if p10 != 0 else np.nan
 
+        # New metric: peak relative to mean
+        p95 = np.percentile(q, 95)
+        peak_to_mean = p95 / mean_q if mean_q != 0 else np.nan
+
         results.append({
             'Estuary': estuary,
             'Mean': mean_q,
@@ -59,9 +63,11 @@ def analyze_discharge_metrics(estuary_discharge_data):
             'CV': cv,
             'Zero-Flow Intermittency': zero_flow_intermittency,
             'Relative Zero-Flow Intermittency (Q < Q5)': relative_zero_flow_intermittency,
+            'P95': p95, 
             'P90': p90,
             'P10': p10,
-            'Flashiness (P90/P10)': flashiness
+            'Flashiness (P90/P10)': flashiness,
+            'Peak-to-Mean (P95/Mean)': peak_to_mean
         })
     
     return pd.DataFrame(results)
@@ -154,7 +160,7 @@ def visualize_discharge_metrics(df, output_dir="04_Metrics_per_estuary"):
     plt.savefig(str(Path(output_dir) / 'cv_bar.png'), dpi=300, bbox_inches='tight')
     plt.close()
 
-    # 4. Bar Chart for Flashiness (P90/P10)
+    # 4a. Bar Chart for Flashiness (P90/P10)
     plt.figure(figsize=(14, 8))
     bars = plt.bar(df['Estuary'], df['Flashiness (P90/P10)'], 
                   color=[estuary_colors[e] for e in df['Estuary']])
@@ -174,6 +180,26 @@ def visualize_discharge_metrics(df, output_dir="04_Metrics_per_estuary"):
     plt.savefig(str(Path(output_dir) / 'flashiness_bar.png'), dpi=300, bbox_inches='tight')
     plt.close()
     
+    # 4b. Bar Chart for peak to mean (P95/Mean)
+    plt.figure(figsize=(14, 8))
+    bars = plt.bar(df['Estuary'], df['Peak-to-Mean (P95/Mean)'], 
+                  color=[estuary_colors[e] for e in df['Estuary']])
+    plt.xlabel('Estuary', fontsize=12)
+    plt.ylabel('Peak-to-Mean (P95/Mean)', fontsize=12)
+    plt.title('Peak-to-Mean Ratio by Estuary', fontsize=14)
+    plt.xticks(rotation=45, ha='right', fontsize=10)
+    plt.ylim(bottom=0)  # Ensure y-axis starts at zero
+    
+    # Add values on top of the bars
+    for bar in bars:
+        height = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2., height + 1,
+                 f'{height:.1f}', ha='center', va='bottom', fontsize=9)
+    
+    plt.subplots_adjust(bottom=0.2, top=0.9)
+    plt.savefig(str(Path(output_dir) / 'peak_to_mean_bar.png'), dpi=300, bbox_inches='tight')
+    plt.close()
+
     # 5. Scatter Plot: Mean vs. Flashiness with estuary labels
     plt.figure(figsize=(12, 10))
     for estuary in df['Estuary']:

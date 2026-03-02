@@ -67,7 +67,7 @@ def plot_global_delta_distribution(rm_lon, rm_lat, mean_discharge=None, savefig=
 def extract_discharge_timeseries(estuary_coords, rm_lon, rm_lat, discharge_series, sed_series,
                                   gd_rm_lon=None, gd_rm_lat=None, gd_basin_area=None,
                                   basin_area_raster=None, lat_grid=None, lon_grid=None,
-                                  dist_threshold=1):
+                                  dist_threshold=0.5):
     """
     Extracts discharge and sediment time series for each estuary using the same
     logic as the original MATLAB get_Qriver_timeseries function:
@@ -172,7 +172,7 @@ def extract_discharge_timeseries(estuary_coords, rm_lon, rm_lat, discharge_serie
             # Handle NaN basin areas from raster
             basin_term = np.nan_to_num(basin_term, nan=np.inf)
             
-            hard_penalty = np.where(geo_dist > 2, 10, 0)
+            hard_penalty = np.where(geo_dist > 1, 10, 0)
             
             cost = geo_dist + basin_term + hard_penalty
             best_index = np.argmin(cost)
