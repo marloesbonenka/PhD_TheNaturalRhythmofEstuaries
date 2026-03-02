@@ -125,19 +125,23 @@ else:
 
     rm_lat           = data['rm_lat']
     rm_lon           = data['rm_lon']
+    lat_grid         = data['lat_grid']
+    lon_grid         = data['lon_grid']
     discharge_series = data['discharge_series']
     sed_series       = data['sed_series']
     datetimes        = data['datetimes']
 
-    gd_rm_lon    = data.get('gd_rm_lon')
-    gd_rm_lat    = data.get('gd_rm_lat')
-    gd_basin_area = data.get('gd_basin_area')
+    gd_rm_lon         = data.get('gd_rm_lon')
+    gd_rm_lat         = data.get('gd_rm_lat')
+    gd_basin_area     = data.get('gd_basin_area')
+    basin_area_raster = data.get('basin_area_raster')
 
     print("\nExtracting discharge time series with basin area correction...")
     estuary_discharge_data, estuary_rm_coords, estuary_sed_data, estuary_scaling_factors = \
         extract_discharge_timeseries(
             estuary_coords, rm_lon, rm_lat, discharge_series, sed_series,
-            gd_rm_lon=gd_rm_lon, gd_rm_lat=gd_rm_lat, gd_basin_area=gd_basin_area
+            gd_rm_lon=gd_rm_lon, gd_rm_lat=gd_rm_lat, gd_basin_area=gd_basin_area,
+            basin_area_raster=basin_area_raster, lat_grid=lat_grid, lon_grid=lon_grid
         )
 
     # --- Save cache ---

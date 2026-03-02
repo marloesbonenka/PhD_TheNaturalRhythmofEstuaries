@@ -20,7 +20,7 @@ def transform_coordinates(lon, lat, return_indices=False, lon_convention='180'):
     """
     # Normalize to -180:180 if needed
     if lon_convention == '360':
-        lon = lon - 360 if lon > 180 else lon
+        lon = np.where(lon > 180, lon - 360, lon)
 
     # Calculate rm coordinates
     rm_lon_val = (lon + 180) * 10

@@ -66,28 +66,33 @@ def plot_global_delta_distribution(rm_lon, rm_lat, mean_discharge=None, savefig=
 
 def extract_discharge_timeseries(estuary_coords, rm_lon, rm_lat, discharge_series, sed_series,
                                   gd_rm_lon=None, gd_rm_lat=None, gd_basin_area=None,
-                                  search_radius=0.2):
+                                  basin_area_raster=None, lat_grid=None, lon_grid=None,
+                                  dist_threshold=1):
     """
     Extracts discharge and sediment time series for each estuary using the same
     logic as the original MATLAB get_Qriver_timeseries function:
 
-      1. Find the best-matching WBMsed grid point using a cost function that
-         combines geographic distance AND basin area similarity (if available).
-      2. Compute a scaling factor: fac = WBMsed_basin_area / estuary_basin_area
-      3. Scale the extracted discharge and sediment series by fac.
+      1. Look up target estuary basin area from GlobalDeltaData 
+      2. Find the best-matching WBMsed grid point using a cost function that
+         combines geographic distance AND basin area similarity
+      3. Compute a scaling factor: fac = WBMsed_basin_area / estuary_basin_area
+      4. Scale the extracted discharge and sediment series by fac.
 
     Parameters:
         estuary_coords (dict): {name: (lat, lon, basin_area_km2)} 
-                               basin_area_km2 is optional; if not provided, no scaling is applied.
+                               basin_area_km2 is optional; if not provided, looked up from GlobalDeltaData.
                                Accepts both (lat, lon) and (lat, lon, basin_area) tuples.
-        rm_lon (np.ndarray): WBMsed grid longitude coordinates (rm space)
-        rm_lat (np.ndarray): WBMsed grid latitude coordinates (rm space)
+        rm_lon (np.ndarray): WBMsed grid longitude indices (1-based, like MATLAB)
+        rm_lat (np.ndarray): WBMsed grid latitude indices (1-based, like MATLAB)
         discharge_series (np.ndarray): Discharge array (n_points x n_timesteps)
         sed_series (np.ndarray): Sediment array (n_points x n_timesteps)
         gd_rm_lon (np.ndarray, optional): GlobalDeltaData mouth longitudes in rm space
         gd_rm_lat (np.ndarray, optional): GlobalDeltaData mouth latitudes in rm space
         gd_basin_area (np.ndarray, optional): GlobalDeltaData basin areas in km²
-        search_radius (float): Search radius in rm units (1 unit = 0.1 degree)
+        basin_area_raster (np.ndarray, optional): 2D basin area array from bqart_a.tif
+        lat_grid (np.ndarray, optional): Latitude grid values for converting indices to degrees
+        lon_grid (np.ndarray, optional): Longitude grid values for converting indices to degrees
+        dist_threshold (float): Maximum distance in degrees to accept GlobalDeltaData match
 
     Returns:
         tuple: (estuary_discharge_timeseries, estuary_rm_coords, estuary_sed_timeseries, estuary_scaling_factors)
@@ -100,6 +105,27 @@ def extract_discharge_timeseries(estuary_coords, rm_lon, rm_lat, discharge_serie
     has_global_delta = (gd_rm_lon is not None and 
                         gd_rm_lat is not None and 
                         gd_basin_area is not None)
+    
+    has_raster = (basin_area_raster is not None and 
+                  lat_grid is not None and 
+                  lon_grid is not None)
+
+    # Pre-compute WBM basin areas from TIF raster (like MATLAB: wbm_basinarea = a(sub2ind(...)))
+    if has_raster:
+        # rm_lat and rm_lon are 1-based indices; Python uses 0-based, so subtract 1
+        wbm_basin_areas = basin_area_raster[rm_lat.astype(int) - 1, rm_lon.astype(int) - 1]
+        # Get actual lat/lon in degrees for each WBM point
+        wbm_lat_deg = lat_grid[rm_lat.astype(int) - 1]
+        wbm_lon_deg = lon_grid[rm_lon.astype(int) - 1]
+    else:
+        wbm_basin_areas = None
+        wbm_lat_deg = None
+        wbm_lon_deg = None
+
+    # Convert GlobalDeltaData from rm space to degrees for distance calculation
+    if has_global_delta:
+        gd_lon_deg = (gd_rm_lon / 10) - 180
+        gd_lat_deg = (gd_rm_lat / 10) - 90
 
     for estuary, coords in estuary_coords.items():
         # Unpack coords — support both (lat, lon) and (lat, lon, basin_area)
@@ -109,101 +135,74 @@ def extract_discharge_timeseries(estuary_coords, rm_lon, rm_lat, discharge_serie
             lat, lon = coords
             estuary_basin_area = None
 
-        # --- Step 1: Convert estuary coords to rm space ---
-        target_rm_lon, target_rm_lat = transform_coordinates(lon, lat)
-
-        # --- Step 2: Find basin area for this estuary from GlobalDeltaData ---
-        # Look up the nearest GlobalDeltaData entry to get its basin area,
-        # which we use to find the best-matching WBMsed grid point.
+        # --- Step 1: Look up basin area from GlobalDeltaData (if not provided) ---
         if estuary_basin_area is None and has_global_delta:
-            gd_dist = np.sqrt((gd_rm_lon - target_rm_lon)**2 + 
-                              (gd_rm_lat - target_rm_lat)**2)
+            # Adjust search longitude to match GlobalDeltaData convention (0-360)
+            search_lon = lon + 360 if lon < 0 else lon
+            
+            # Find closest delta in GlobalDeltaData (in degree space)
+            gd_search_lon = gd_lon_deg + 360  # Convert to 0-360 for comparison
+            gd_search_lon = np.where(gd_search_lon > 360, gd_search_lon - 360, gd_search_lon)
+            
+            gd_dist = np.sqrt((gd_search_lon - search_lon)**2 + (gd_lat_deg - lat)**2)
             nearest_gd = np.argmin(gd_dist)
-            if gd_dist[nearest_gd] < 10:  # within 1 degree
+            
+            if gd_dist[nearest_gd] <= dist_threshold:
                 estuary_basin_area = gd_basin_area[nearest_gd]
                 print(f"  {estuary}: basin area looked up from GlobalDeltaData = "
-                      f"{estuary_basin_area:.1f} km² (dist={gd_dist[nearest_gd]:.2f} rm units)")
+                      f"{estuary_basin_area:.1f} km² (dist={gd_dist[nearest_gd]:.3f} deg)")
             else:
-                print(f"  {estuary}: WARNING - no GlobalDeltaData match within 1 degree. "
-                      f"No basin area scaling applied.")
+                print(f"  {estuary}: WARNING - no GlobalDeltaData match within {dist_threshold} deg "
+                      f"(closest: {gd_dist[nearest_gd]:.2f} deg). No basin area scaling applied.")
 
-        # --- Step 3: Find best WBMsed grid point ---
-        # Geographic distance in rm space
-        geo_dist = np.sqrt((rm_lon - target_rm_lon)**2 + (rm_lat - target_rm_lat)**2)
-
-        if estuary_basin_area is not None and estuary_basin_area > 0:
-            # Replicate MATLAB cost function:
-            # cost = geo_dist 
-            #      + |( wbm_basin_area - target_basin_area ) / target_basin_area| * log10(target_basin_area)
-            #      + 10 * (geo_dist > 8)   <- hard penalty for points > 0.8 degrees away
-
-            # Get mean discharge as proxy for WBMsed basin area at each point
-            # (We use GlobalDeltaData to find WBMsed basin area at candidate points)
-            if has_global_delta:
-                # For each WBMsed candidate, find its basin area from GlobalDeltaData
-                wbm_basin_areas = np.full(len(rm_lon), np.nan)
-                within_radius = np.where(geo_dist <= (search_radius * 10))[0]
-
-                if len(within_radius) == 0:
-                    within_radius = np.array([np.argmin(geo_dist)])
-
-                for idx in within_radius:
-                    gd_dist_to_wbm = np.sqrt((gd_rm_lon - rm_lon[idx])**2 + 
-                                             (gd_rm_lat - rm_lat[idx])**2)
-                    nearest = np.argmin(gd_dist_to_wbm)
-                    if gd_dist_to_wbm[nearest] < 5:
-                        wbm_basin_areas[idx] = gd_basin_area[nearest]
-
-                # Compute MATLAB-style cost for candidates within radius
-                candidate_costs = np.full(len(rm_lon), np.inf)
-                for idx in within_radius:
-                    wba = wbm_basin_areas[idx]
-                    if np.isnan(wba) or wba <= 0:
-                        basin_term = 0  # can't compute, ignore basin area term
-                    else:
-                        basin_term = (abs(wba - estuary_basin_area) / 
-                                      estuary_basin_area * 
-                                      np.log10(estuary_basin_area))
-                    hard_penalty = 10 if geo_dist[idx] > 8 else 0
-                    candidate_costs[idx] = geo_dist[idx] + basin_term + hard_penalty
-
-                best_index = np.argmin(candidate_costs)
-
-            else:
-                # No GlobalDeltaData: fall back to distance-weighted discharge score
-                within_radius = np.where(geo_dist <= (search_radius * 10))[0]
-                if len(within_radius) == 0:
-                    best_index = np.argmin(geo_dist)
-                else:
-                    candidate_means = np.mean(discharge_series[within_radius, :], axis=1)
-                    candidate_dists = geo_dist[within_radius]
-                    scores = candidate_means / (candidate_dists + 0.01)
-                    best_index = within_radius[np.argmax(scores)]
-
-        else:
-            # No basin area available: distance + discharge score only
-            within_radius = np.where(geo_dist <= (search_radius * 10))[0]
-            if len(within_radius) == 0:
-                best_index = np.argmin(geo_dist)
-            else:
-                candidate_means = np.mean(discharge_series[within_radius, :], axis=1)
-                candidate_dists = geo_dist[within_radius]
-                scores = candidate_means / (candidate_dists + 0.01)
-                best_index = within_radius[np.argmax(scores)]
-
-        # --- Step 4: Compute scaling factor (fac = WBMsed_basin / estuary_basin) ---
-        fac = 1.0  # default: no scaling
-        if estuary_basin_area is not None and estuary_basin_area > 0 and has_global_delta:
+        # --- Step 2: Find best WBMsed grid point using MATLAB cost function ---
+        if estuary_basin_area is not None and estuary_basin_area > 0 and has_raster:
+            # MATLAB: delta_coor = rm_lat + 1i * rm_lon (using actual lat/lon degrees)
+            # MATLAB: wbm_coor = lat_grid(wbm_lat) + 1i * lon_grid(wbm_lon)
+            # Geographic distance in degrees (abs of complex difference)
+            geo_dist = np.sqrt((wbm_lat_deg - lat)**2 + (wbm_lon_deg - lon)**2)
+            
+            # MATLAB cost function:
+            # blub = abs(wbm_coor - delta_coor) + 
+            #        abs((wbm_basinarea - basinarea) / basinarea * log10(basinarea)) +
+            #        (abs(wbm_coor - delta_coor) > 8) * 10
+            basin_term = np.abs((wbm_basin_areas - estuary_basin_area) / 
+                               estuary_basin_area * 
+                               np.log10(estuary_basin_area))
+            # Handle NaN basin areas from raster
+            basin_term = np.nan_to_num(basin_term, nan=np.inf)
+            
+            hard_penalty = np.where(geo_dist > 2, 10, 0)
+            
+            cost = geo_dist + basin_term + hard_penalty
+            best_index = np.argmin(cost)
+            
+            # Compute scaling factor: fac = WBMsed_basin / estuary_basin
             wbm_basin_area_best = wbm_basin_areas[best_index]
+            matched_dist = geo_dist[best_index]
             if not np.isnan(wbm_basin_area_best) and wbm_basin_area_best > 0:
                 fac = wbm_basin_area_best / estuary_basin_area
                 print(f"  {estuary}: WBMsed basin={wbm_basin_area_best:.1f} km², "
-                      f"estuary basin={estuary_basin_area:.1f} km², fac={fac:.4f}")
+                      f"estuary basin={estuary_basin_area:.1f} km², fac={fac:.4f}, "
+                      f"dist={matched_dist:.3f}°")
             else:
+                fac = 1.0
                 print(f"  {estuary}: Could not determine WBMsed basin area for best point. "
                       f"fac=1.0 (no scaling).")
+        else:
+            # No basin area available: use simple distance-based selection
+            if has_raster:
+                geo_dist = np.sqrt((wbm_lat_deg - lat)**2 + (wbm_lon_deg - lon)**2)
+            else:
+                # Fall back to rm-space distance
+                target_rm_lon, target_rm_lat = transform_coordinates(lon, lat)
+                geo_dist = np.sqrt((rm_lon - target_rm_lon)**2 + (rm_lat - target_rm_lat)**2)
+            
+            best_index = np.argmin(geo_dist)
+            fac = 1.0
+            print(f"  {estuary}: No basin area available, using closest WBM point (fac=1.0)")
 
-        # --- Step 5: Extract, clean, and scale ---
+        # --- Step 3: Extract, clean, and scale ---
         q_data = np.maximum(np.nan_to_num(discharge_series[best_index, :]), 0) * fac
         s_data = np.maximum(np.nan_to_num(sed_series[best_index, :]),       0) * fac
 
