@@ -32,9 +32,9 @@ box_edges = np.arange(20, 50, 5)  # [20, 25, 30, 35, 40, 45]
 boxes = [(box_edges[i], box_edges[i+1]) for i in range(len(box_edges)-1)]
 
 # Which scenarios to process (set to None or empty list for all)
-SCENARIOS_TO_PROCESS = ['1', '2']#, '2', '3', '4']  # Use all scenarios
-DISCHARGE = 1000  # or 1000, etc.
-ANALYZE_NOISY = False  # Set to True to analyze noisy scenarios
+SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']  # Use all scenarios
+DISCHARGE = 500                    # or 1000, etc.
+ANALYZE_NOISY = False               # Set to True to analyze noisy scenarios
 
 #%% --- PATHS ---  
 
@@ -154,57 +154,33 @@ for scenario_dir, his_file_paths in run_his_paths.items():
     scenario_name = Path(scenario_dir).name
     scenario_num = scenario_dir.split('_')[0]
     run_id = '_'.join(scenario_name.split('_')[1:])
-    cache_file = cache_dir / f"sedtransport_timeseries_{int(scenario_num)}_{run_id}.nc"
     
-    scenario_dir, result = load_and_cache_scenario(
-        scenario_dir, his_file_paths, cache_file, boxes, var_name
-    )
-    result['cache_file'] = cache_file  # store alongside result
-    scenario_data[scenario_dir] = result
+    # Generic cache name — one file per scenario, all variables appended inside
+    cache_file = cache_dir / f"hisoutput_{int(scenario_num)}_{run_id}.nc"
 
+    _, result = load_and_cache_scenario(
+        scenario_dir=scenario_dir,
+        his_file_paths=his_file_paths,
+        cache_file=cache_file,
+        boxes=boxes,
+        var_name=var_name,
+    )
+
+    scenario_data[scenario_dir] = result
+    
 #%% --- PLOT ALL SCENARIOS & CACHE ---
 for scenario_dir, data in scenario_data.items():
-    cache_file = data['cache_file'] 
-
-    # If data was loaded from cache, buffer_volumes is already computed
-    if 'buffer_volumes' in data:
-        km_positions = data['km_positions']
-        transport = data['discharge']
-        time = data['t']
-        buffer_volumes = data['buffer_volumes']
-    else:
-        # Compute buffer volumes from freshly loaded HIS data
-        km_positions = np.array(data['km_positions'])
-        transport = data['discharge']
-        time = data['t']
-        buffer_volumes = {}
-        for box_start, box_end in boxes:
-            idx_up = np.argmin(np.abs(km_positions - box_start))
-            idx_down = np.argmin(np.abs(km_positions - box_end))
-            buffer_volumes[(box_start, box_end)] = transport[:, idx_up] - transport[:, idx_down]
-
-        # --- SAVE FULL TIMESERIES TO CACHE ---
-        t_vals = time.astype(str) if np.issubdtype(time.dtype, np.datetime64) else time.astype(float)
-        buffer_dict = {
-            f'buffer_{int(box_start)}_{int(box_end)}': (['time'], np.array(buf))
-            for (box_start, box_end), buf in buffer_volumes.items()
-        }
-        ds = xr.Dataset({
-            'km_positions': (['km'], km_positions),
-            'discharge': (['time', 'km'], np.array(transport)),
-            't': (['time'], t_vals),
-            **buffer_dict
-        })
-        comp = dict(zlib=True, complevel=4)
-        encoding = {var: comp for var in ds.data_vars}
-        ds.to_netcdf(cache_file, encoding=encoding)
-        print(f"Saved full timeseries cache to {cache_file}")
+    km_positions = data['km_positions']
+    transport = data[var_name]   # dynamic variable name
+    time = data['t']
+    buffer_volumes = data['buffer_volumes']
 
     # --- CUMULATIVE BUFFER VOLUME PLOT ---
     plt.figure()
     for (box_start, box_end), buf in buffer_volumes.items():
         plt.plot(time, buf, label=f'{box_start}-{box_end} km')
-    plt.xlabel('Time')
+
+    plt.xlabel('hydrodynamic time (x 100 = morphological time)')
     plt.ylabel('Buffer Volume (m3)')
     plt.ylim(-0.1, 1.15e11)
     plt.legend()
@@ -218,7 +194,6 @@ for scenario_dir, data in scenario_data.items():
 
     # --- INSTANTANEOUS RATE OF CHANGE PLOT ---
     plt.figure()
-    spinup_steps = 10
     for (box_start, box_end), buf in buffer_volumes.items():
         d_buffer = np.diff(buf)
         plt.plot(time[1:], d_buffer, label=f'{box_start}-{box_end} km')
@@ -234,36 +209,82 @@ for scenario_dir, data in scenario_data.items():
     print(f"Saved instantaneous buffer plot to {fig2_path}")
     plt.show()
 
-    # # --- TRAPPING EFFICIENCY PLOT ---
-    # plt.figure(figsize=(12, 6))
-    
-    # for (box_start, box_end), buf in buffer_volumes.items():
-    #     idx_up = np.argmin(np.abs(km_positions - box_start))
-        
-    #     # 1. Change in storage during this timestep (dV)
-    #     dV = np.diff(buf) 
-        
-    #     # 2. Amount of sediment entering the section during this timestep (dIn)
-    #     # We take the diff of the cumulative transport at the upstream boundary
-    #     dIn = np.diff(transport[:, idx_up])
-        
-    #     # 3. Efficiency = dV / dIn
-    #     # Add a tiny epsilon to dIn to avoid division by zero during stagnant periods
-    #     efficiency = dV / (dIn + 1e-9)
-        
-    #     # 4. Cleaning the data:
-    #     # High-frequency tidal fluctuations will make this swing wildly.
-    #     # We use a rolling mean (e.g., 24-hour or tidal cycle window)
-    #     window = 25 # Adjust based on your timestep frequency
-    #     eff_smooth = np.convolve(efficiency, np.ones(window)/window, mode='same')
-        
-    #     plt.plot(time[1:], eff_smooth, label=f'{box_start}-{box_end} km')
+    # --- TIDAL AVERAGE (RESIDUAL) RATE OF CHANGE ---
+    plt.figure(figsize=(12, 6))
 
-    # plt.axhline(0, color='black', lw=1, ls='--')
-    # plt.axhline(1, color='red', lw=1, ls=':', label='100% Trapping')
-    # plt.ylim(-0.5, 1.5) # Focus on the 0 to 1 range
-    # plt.ylabel('Instantaneous Trapping Efficiency (-)')
-    # plt.title(f'Sediment Trapping Efficiency (Rolling Mean) - {scenario_name}')
-    # plt.legend()
-    # plt.grid(True, alpha=0.3)
+    # Define your tidal window (e.g., 25 hours if timestep is 1h)
+    # In Delft3D-FM, check your output interval! 
+    window = 25 
+
+    for (box_start, box_end), buf in buffer_volumes.items():
+        # 1. Calculate Instantaneous dV (m3 per output timestep)
+        # Using np.diff gives us the change between samples
+        d_buffer = np.diff(buf)
+        
+        # 2. Apply a centered moving average (Tidal Filter)
+        # This extracts the "Residual" transport (the long-term trend)
+        if len(d_buffer) >= window:
+            d_buffer_smooth = np.convolve(d_buffer, np.ones(window)/window, mode='same')
+            
+            # We plot the smoothed line
+            plt.plot(time[1:], d_buffer_smooth, 
+                    label=f'Residual: {box_start}-{box_end} km', 
+                    linewidth=2)
+            
+            # Optional: Plot the raw instantaneous data in the background with low alpha
+            # plt.plot(time[1:], d_buffer, alpha=0.15, color='gray', zorder=1)
+        else:
+            print(f"Warning: Simulation too short for window {window} at {box_start}km")
+
+    plt.axhline(0, color='black', lw=1.5, ls='--') # The "Equilibrium" line
+    plt.ylim(-0.25e7, 0.25e7)
+    plt.xlabel('hydrodynamic time (x 100 = morphological time)')
+    plt.ylabel('Tidal Avg dV/dt (m³/timestep)')
+    plt.title(f'Residual (Tidal-Averaged) Sediment Storage Rate\nScenario: {scenario_name}')
+    plt.legend()
+    plt.grid(True, which='both', alpha=0.3)
+    plt.tight_layout()
+
+    # Save the plot
+    fig_residual_path = Path(output_dir) / f"{scenario_name}_residual_buffer_change.png"
+    plt.savefig(fig_residual_path, dpi=300)
+    plt.show()
+
+    # --- STABLE ESTUARINE TRAPPING EFFICIENCY ---
+    plt.figure(figsize=(12, 6))
+
+    window = 25 # 25 hours for a tidal cycle
+
+    for (box_start, box_end), buf in buffer_volumes.items():
+        idx_up = np.argmin(np.abs(km_positions - box_start))
+        
+        # 1. Instantaneous Net Change (The Numerator)
+        # This is the same as dV/dt
+        dV = np.diff(buf) 
+        
+        # 2. Instantaneous Gross Inflow (The Denominator)
+        # We take the absolute value of the flux at the upstream gate
+        # This represents the "Total Activity" at that boundary
+        dIn_gross = np.abs(np.diff(transport[:, idx_up]))
+        
+        # 3. Tidal Averaging (Summing over 25 hours)
+        # We sum the numerator and denominator SEPARATELY before dividing
+        net_change_tidal = np.convolve(dV, np.ones(window), mode='same')
+        gross_flux_tidal = np.convolve(dIn_gross, np.ones(window), mode='same')
+        
+        # 4. Calculate Efficiency
+        # Adding epsilon to avoid 0/0 during totally stagnant scenarios
+        efficiency = net_change_tidal / (gross_flux_tidal + 1e-6)
+        
+        plt.plot(time[1:], efficiency, label=f'Efficiency: {box_start}-{box_end} km')
+
+    plt.axhline(0, color='black', lw=1, ls='--')
+    plt.axhline(1, color='red', lw=1, ls=':', label='Total Trap')
+    plt.ylim(-1.1, 1.1) 
+    plt.xlabel('hydrodynamic time (x 100 = morphological time)')
+    plt.ylabel('Tidal-Averaged Efficiency (-)')
+    plt.title(f'Sediment Trapping Efficiency (Gross Flux Method)\nScenario: {scenario_name}')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.show()
 # %%

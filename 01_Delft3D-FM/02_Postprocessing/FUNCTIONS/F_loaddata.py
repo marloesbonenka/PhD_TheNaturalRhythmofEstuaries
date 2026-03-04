@@ -115,8 +115,201 @@ def open_his_dataset(his_paths):
 		raise ValueError("Use manual append in load_cross_section_data for multiple HIS files")
 	return xr.open_dataset(his_paths)
 
-
 def load_cross_section_data(his_file_path, q_var='cross_section_discharge',
+                            estuary_only=True, km_range=(20, 45),
+                            select_cycles_hydrodynamic=True, n_periods=3,
+                            select_max_flood=False, flood_sign=-1,
+                            select_max_flood_per_cycle=False,
+                            exclude_last_timestep=False,
+                            exclude_last_n_days=0,
+                            selected_time_indices=None,
+                            dataset_cache=None):
+    """
+    Load data from HIS file(s) and extract cross-section information.
+
+    Parameters
+    ----------
+    q_var : str
+        Variable name to extract (e.g. 'cross_section_discharge',
+        'cross_section_bedload_sediment_transport').
+    dataset_cache : DatasetCache, optional
+        A DatasetCache instance for caching datasets. If None, datasets are opened
+        without caching and caller is responsible for closing them.
+    """
+    use_cache = dataset_cache is not None
+
+    if isinstance(his_file_path, (list, tuple)) and len(his_file_path) > 1:
+        if use_cache:
+            datasets = [dataset_cache.get_xr(p) for p in his_file_path]
+            ds_first = datasets[0]
+            ds_for_coords = ds_first
+        else:
+            ds_first = xr.open_dataset(his_file_path[0])
+            ds_for_coords = ds_first
+            datasets = None
+    else:
+        ds_first = None
+        if use_cache:
+            ds_for_coords = dataset_cache.get_xr(
+                his_file_path if not isinstance(his_file_path, (list, tuple)) else his_file_path[0]
+            )
+        else:
+            ds_for_coords = open_his_dataset(his_file_path)
+
+    cs_coords = ds_for_coords['cross_section_geom_node_coordx'].values
+    cs_count = ds_for_coords['cross_section_geom_node_count'].values
+
+    km_list = []
+    idx_list = []
+    x_start = 0
+
+    for cs_idx, count in enumerate(cs_count):
+        x_coords = cs_coords[x_start:x_start + int(count)]
+        if len(x_coords) > 0:
+            mean_x = np.mean(x_coords)
+            km_pos = mean_x / 1000.0
+
+            if estuary_only:
+                if km_range[0] <= km_pos <= km_range[1]:
+                    km_list.append(km_pos)
+                    idx_list.append(cs_idx)
+            else:
+                km_list.append(km_pos)
+                idx_list.append(cs_idx)
+        x_start += int(count)
+
+    if len(km_list) > 0:
+        sorted_order = np.argsort(km_list)
+        plot_km = np.array(km_list)[sorted_order]
+        plot_indices = np.array(idx_list)[sorted_order]
+    else:
+        raise ValueError("No cross-sections found matching the specified criteria")
+
+    # --- Load variable data across file parts ---
+    if isinstance(his_file_path, (list, tuple)) and len(his_file_path) > 1:
+        var_list = []
+        t_list = []
+        if datasets is None:
+            datasets = [ds_first] + [xr.open_dataset(p) for p in his_file_path[1:]]
+        last_time = None
+        last_var_end = None
+        for i, ds_part in enumerate(datasets):
+            var_part = ds_part[q_var].isel(cross_section=plot_indices)
+            t_part = ds_part['time'].values
+            # Offset cumulative variables for seamless stitching
+            if i > 0 and last_var_end is not None:
+                if 'cumulative' in q_var or 'bedload_sediment_transport' in q_var or 'suspended_sediment_transport' in q_var:
+                    var_part = var_part + last_var_end
+            if last_time is not None and len(t_part) > 1:
+                dt = t_part[1] - t_part[0]
+                offset = (last_time - t_part[0]) + dt
+                t_part = t_part + offset
+            var_list.append(var_part)
+            t_list.append(t_part)
+            last_time = t_part[-1] if len(t_part) else last_time
+            if var_part.shape[0] > 0:
+                last_var_end = var_part[-1].values
+        var_data = xr.concat(var_list, dim='time')
+        times = np.concatenate(t_list)
+        if not use_cache:
+            for ds_part in datasets:
+                ds_part.close()
+        ds = ds_for_coords
+    else:
+        ds = ds_for_coords
+        var_data = ds[q_var].isel(cross_section=plot_indices)
+        times = ds['time'].values
+
+    if exclude_last_timestep and len(times) > 1:
+        var_data = var_data.isel(time=slice(0, -1))
+        times = times[:-1]
+
+    if exclude_last_n_days and len(times) > 1:
+        dt = times[1] - times[0]
+        dt_seconds = dt / np.timedelta64(1, 's')
+        timesteps_per_day = int(np.round(24 * 3600 / dt_seconds))
+        drop_steps = int(exclude_last_n_days) * timesteps_per_day
+        if drop_steps > 0 and len(times) > drop_steps:
+            var_data = var_data.isel(time=slice(0, -drop_steps))
+            times = times[:-drop_steps]
+
+    max_flood_km = None
+    flood_sign_used = flood_sign
+
+    def _flip_sign(sign):
+        return 1 if sign == -1 else -1
+
+    if selected_time_indices is not None:
+        selected_time_indices = np.asarray(selected_time_indices, dtype=int)
+        var_data = var_data.isel(time=selected_time_indices)
+        times_selected = times[selected_time_indices]
+        n_timesteps_original = len(times)
+        selection_mode = 'external'
+    elif select_max_flood_per_cycle:
+        print("  Selecting max flood timestep for each cycle...")
+        selected_time_indices = select_max_flood_indices_per_cycle(times, var_data, plot_km, flood_sign=flood_sign)
+        if len(selected_time_indices) == 0:
+            alt_sign = _flip_sign(flood_sign)
+            alt_indices = select_max_flood_indices_per_cycle(times, var_data, plot_km, flood_sign=alt_sign)
+            if len(alt_indices) > 0:
+                selected_time_indices = alt_indices
+                flood_sign_used = alt_sign
+        var_data = var_data.isel(time=selected_time_indices)
+        times_selected = times[selected_time_indices]
+        n_timesteps_original = len(times)
+        selection_mode = 'max_flood_per_cycle'
+    elif select_max_flood:
+        print("  Selecting maximum flood penetration timestep...")
+        try:
+            t_idx, max_flood_km = select_max_flood_timestep(var_data, plot_km, flood_sign=flood_sign)
+        except ValueError:
+            alt_sign = _flip_sign(flood_sign)
+            t_idx, max_flood_km = select_max_flood_timestep(var_data, plot_km, flood_sign=alt_sign)
+            flood_sign_used = alt_sign
+        var_data = var_data.isel(time=[t_idx])
+        times_selected = np.array([times[t_idx]])
+        selected_time_indices = np.array([t_idx])
+        n_timesteps_original = len(times)
+        selection_mode = 'max_flood'
+    elif select_cycles_hydrodynamic:
+        print("  Selecting one hydrodynamic day from each period...")
+        selected_time_indices = select_representative_days(times, n_periods=n_periods)
+        dt = times[1] - times[0]
+        dt_seconds = dt / np.timedelta64(1, 's')
+        timesteps_per_day = int(np.round(24 * 3600 / dt_seconds))
+        print(f"  Timesteps per day: {timesteps_per_day}")
+        print(f"  Selecting {len(selected_time_indices)} total timesteps (~{len(selected_time_indices) // timesteps_per_day} complete days)")
+        var_data = var_data.isel(time=selected_time_indices)
+        times_selected = times[selected_time_indices]
+        n_timesteps_original = len(times)
+        selection_mode = 'representative_days'
+    else:
+        times_selected = times
+        selected_time_indices = np.arange(len(times))
+        n_timesteps_original = len(times)
+        selection_mode = 'all'
+
+    time_hours = (times_selected - times[0]) / np.timedelta64(1, 'h')
+    times_datetime = pd.to_datetime(times_selected)
+
+    return {
+        'ds': ds,
+        q_var: var_data,              # keyed by actual variable name
+        'km_positions': plot_km,
+        't': times,
+        'times': times_selected,
+        'times_datetime': times_datetime,
+        'time_hours': time_hours,
+        'n_timesteps': len(times_selected),
+        'n_timesteps_original': n_timesteps_original,
+        'selected_indices': selected_time_indices,
+        'cross_section_indices': plot_indices,
+        'selection_mode': selection_mode,
+        'max_flood_km': max_flood_km,
+        'flood_sign_used': flood_sign_used,
+    }
+
+def load_cross_section_data_old(his_file_path, q_var='cross_section_discharge',
 							estuary_only=True, km_range=(20, 45),
 							select_cycles_hydrodynamic=True, n_periods=3,
 							select_max_flood=False, flood_sign=-1,
@@ -488,6 +681,119 @@ def split_by_hydrodynamic_cycle(times, values, cycle_days=365.25):
     return cycles
 
 def load_and_cache_scenario(scenario_dir, his_file_paths, cache_file, boxes, var_name):
+    """
+    Load one scenario variable from cache or HIS files, and optionally compute
+    buffer volumes (only for cumulative transport variables).
+    """
+    
+    BUFFER_VOLUME_VARS = {'cross_section_bedload_sediment_transport'}
+    
+    compute_buffers = var_name in BUFFER_VOLUME_VARS
+
+    # --- Check if this variable is already cached ---
+    var_cached = False
+    if cache_file.exists():
+        with xr.open_dataset(cache_file) as ds_check:
+            var_cached = var_name in ds_check
+
+    if var_cached:
+        print(f"Loading '{var_name}' from cache: {cache_file}")
+        ds = xr.open_dataset(cache_file)
+        km_positions = ds['km_positions'].values
+        variable_data = ds[var_name].values
+        time = ds['t'].values
+        buffer_volumes = {}
+        if compute_buffers:
+            buffer_volumes = {
+                (box_start, box_end): ds[f'buffer_{var_name}_{int(box_start)}_{int(box_end)}'].values
+                for box_start, box_end in boxes
+                if f'buffer_{var_name}_{int(box_start)}_{int(box_end)}' in ds
+            }
+        ds.close()
+        return scenario_dir, {
+            'km_positions': km_positions,
+            var_name: variable_data,
+            't': time,
+            'buffer_volumes': buffer_volumes,
+        }
+
+    # --- Load from HIS files ---
+    print(f"Loading '{var_name}' from HIS files: {scenario_dir}")
+    data = load_cross_section_data(
+        his_file_path=his_file_paths,
+        q_var=var_name,
+        estuary_only=True,
+        km_range=(20, 45),
+        select_cycles_hydrodynamic=False,
+    )
+
+    km_positions = np.array(data['km_positions'])
+    time = data['t']
+
+    print(f"  Reading '{var_name}' data into memory...")
+    variable_data = data[var_name].values  # shape: (time, km)
+
+    if 'ds' in data and data['ds'] is not None:
+        try:
+            data['ds'].close()
+        except Exception:
+            pass
+
+    # --- Compute buffer volumes (cumulative transport vars only) ---
+    # For a box [box_start, box_end] km:
+    #   buffer = transport_upstream - transport_downstream
+    # i.e. cumulative sediment that entered the box minus what left it.
+    buffer_volumes = {}
+    buffer_vars = {}
+    if compute_buffers:
+        for box_start, box_end in boxes:
+            idx_up   = np.argmin(np.abs(km_positions - box_start))
+            idx_down = np.argmin(np.abs(km_positions - box_end))
+            buf = variable_data[:, idx_up] - variable_data[:, idx_down]
+            buffer_volumes[(box_start, box_end)] = buf
+            buffer_vars[f'buffer_{var_name}_{int(box_start)}_{int(box_end)}'] = (['time'], buf)
+
+    # --- Append to (or create) cache ---
+    new_vars = {
+        var_name: (['time', 'km'], variable_data),
+        **{
+            f'buffer_{var_name}_{int(box_start)}_{int(box_end)}': (['time'], buf)
+            for (box_start, box_end), buf in buffer_volumes.items()
+        },
+    }
+
+    if cache_file.exists():
+        # Merge new variables into the existing dataset
+        with xr.open_dataset(cache_file) as ds_existing:
+            ds_existing = ds_existing.load()  # load into memory before closing
+        ds_new = xr.Dataset(
+            {**{v: ds_existing[v] for v in ds_existing.data_vars}, **new_vars},
+            coords={'km': km_positions, 'time': time},
+        )
+        # Preserve coordinate variables that may already exist
+        if 'km_positions' not in ds_new:
+            ds_new['km_positions'] = (['km'], km_positions)
+        if 't' not in ds_new:
+            ds_new['t'] = (['time'], time)
+    else:
+        ds_new = xr.Dataset(
+            {'km_positions': (['km'], km_positions), 't': (['time'], time), **new_vars},
+            coords={'km': km_positions, 'time': time},
+        )
+
+    comp = dict(zlib=True, complevel=4)
+    encoding = {v: comp for v in ds_new.data_vars}
+    ds_new.to_netcdf(cache_file, encoding=encoding)
+    print(f"  Saved/updated cache: {cache_file}")
+
+    return scenario_dir, {
+        'km_positions': km_positions,
+        var_name: variable_data,
+        't': time,
+        'buffer_volumes': buffer_volumes,
+    }
+
+def load_and_cache_scenario_old(scenario_dir, his_file_paths, cache_file, boxes, var_name):
     """Load one scenario from cache or HIS files, compute buffer volumes, save cache."""
 
     if cache_file.exists():

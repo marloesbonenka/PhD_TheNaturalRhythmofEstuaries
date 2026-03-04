@@ -28,7 +28,7 @@ mpl.rcParams['figure.figsize'] = (10, 5)
 box_edges = np.arange(20, 50, 5)  # [20, 25, 30, 35, 40, 45]
 boxes = [(box_edges[i], box_edges[i+1]) for i in range(len(box_edges)-1)]
 
-DISCHARGE = 1000
+DISCHARGE = 500
 BASE_SCENARIO = '1'
 
 # --- PLOT MODE ---
@@ -65,6 +65,7 @@ if PLOT_MODE == 'noise_only':
     output_dir = noisy_base_path / output_dirname
 else:
     output_dir = variability_base_path / output_dirname
+    
 output_dir.mkdir(parents=True, exist_ok=True)
 print(f"Output dir: {output_dir}")
 
