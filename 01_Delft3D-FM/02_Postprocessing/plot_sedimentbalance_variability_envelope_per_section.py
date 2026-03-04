@@ -20,7 +20,7 @@ from FUNCTIONS.F_loaddata import load_cross_section_data, load_and_cache_scenari
 
 #%% --- CONFIGURATION ---
 var_name = 'cross_section_bedload_sediment_transport'
-output_dirname = "plots_his_sedimentbuffer_envelope"
+output_dirname = Path("output_plots") / "plots_his_sedimentbuffer_envelope"
 
 mpl.rcParams['figure.figsize'] = (10, 5)
 
