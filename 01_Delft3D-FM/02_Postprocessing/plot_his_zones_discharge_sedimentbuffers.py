@@ -37,10 +37,10 @@ boxes = [(box_edges[i], box_edges[i + 1]) for i in range(len(box_edges) - 1)]
 RIVER_KM = 44
 
 # Tidal averaging window (hours) — one tidal cycle
-TIDAL_WINDOW_HOURS = 25
+TIDAL_WINDOW_HOURS = 24
 
 # Maximum lag for cross-correlation recovery plot (days)
-MAX_LAG_DAYS = 60
+MAX_LAG_DAYS = 365
 
 # Output timestep of the HIS file (hours) — adjust if not 1h
 DT_HOURS = 1                        #3600 seconds = 1 hour
@@ -416,115 +416,87 @@ for (box_start, box_end) in boxes:
     plt.show()
 
 # %% ============================================================
-#    COMBINED PLOTS (all scenarios overlaid)
+#    FINAL PLOT: THE SPATIAL STORYBOARD (Corrected)
+#    One Figure per Scenario | Top: Q-Signal | Bottom: Row of Section Lags
 # ===============================================================
 
-# # Colour per scenario for consistent styling across combined plots
-# scenario_list  = list(scenario_data.keys())
-# cmap           = plt.get_cmap('tab10')
-# scenario_colors = {sd: cmap(i) for i, sd in enumerate(scenario_list)}
+for scenario_key, d in processed.items():
+    num_boxes = len(boxes)
+    # Create a grid: Row 0 for Discharge, Row 1 for Lags (per box)
+    fig = plt.figure(figsize=(5 * num_boxes, 10))
+    gs = fig.add_gridspec(2, num_boxes, height_ratios=[1, 2])
+    
+    # 1. TOP AXIS: River Discharge (Span all columns)
+    ax_q = fig.add_subplot(gs[0, :])
+    
+    # ALIGNMENT FIX: Ensure time and Q_river match length
+    q_val = d['Q_river']
+    t_val = d['time'][:len(q_val)] 
+    
+    ax_q.plot(t_val, q_val, color='black', lw=1.2)
+    ax_q.fill_between(t_val, q_val, color=d['color'], alpha=0.2)
+    ax_corr.set_ylabel(r'Correlation $Q \rightarrow dV/dt$', fontweight='bold')
+    ax_q.set_title(f"SCENARIO: {d['label']} - Spatial Propagation & Recovery", fontsize=16, pad=20)
+    ax_q.grid(alpha=0.3)
 
-# # ── COMBINED SENSITIVITY ─────────────────────────────────────
-# # One subplot per box section, all scenarios overlaid per panel.
-# n_boxes = len(boxes)
-# fig, axes = plt.subplots(1, n_boxes, figsize=(5 * n_boxes, 5), sharey=True)
-# if n_boxes == 1:
-#     axes = [axes]
+    # 2. BOTTOM AXES: One subplot per section
+    for i, (box_start, box_end) in enumerate(boxes):
+        ax_corr = fig.add_subplot(gs[1, i])
+        
+        # Data Selection
+        buf = d['buffer_volumes_trimmed'][(box_start, box_end)]
+        Q_river = d['Q_river']
+        
+        # Correlation Calculation
+        Q_smooth = tidal_avg(Q_river, window)
+        Q_anom = Q_smooth - Q_smooth.mean()
+        
+        # dV_dt is 1 element shorter than buf
+        dV_dt = np.diff(buf)
+        dV_smooth = tidal_avg(dV_dt, window)
+        dV_anom = dV_smooth - dV_smooth.mean()
 
-# for ax, (box_start, box_end) in zip(axes, boxes):
-#     for scenario_dir, data in scenario_data.items():
-#         scenario_num   = scenario_dir.split('_')[0]
-#         label          = SCENARIO_LABELS.get(str(int(scenario_num)), scenario_dir)
-#         color          = scenario_colors[scenario_dir]
-#         km_positions   = data['km_positions']
-#         idx_river      = np.argmin(np.abs(km_positions - RIVER_KM))
-#         Q_river        = data[dis_var][:, idx_river]
-#         Q_plot         = Q_river[:-1]
-#         buf            = data['buffer_volumes'].get((box_start, box_end))
-#         if buf is None:
-#             continue
-#         dV_dt = np.diff(buf)
-#         ax.scatter(Q_plot, dV_dt, alpha=0.15, s=6, color=color)
-#         z  = np.polyfit(Q_plot, dV_dt, 2)
-#         xp = np.linspace(Q_plot.min(), Q_plot.max(), 200)
-#         ax.plot(xp, np.poly1d(z)(xp), '--', color=color, linewidth=2, label=label)
-#     ax.axhline(0, color='black', lw=0.8, ls='--')
-#     ax.axvline(0, color='black', lw=0.8, ls='--')
-#     ax.set_title(f'Section {box_start}–{box_end} km')
-#     ax.set_xlabel(f'Q at {RIVER_KM} km (m³/s)')
-#     ax.grid(alpha=0.2)
+        # Aligining lengths for the correlate function
+        n = min(len(Q_anom), len(dV_anom))
+        corr = signal.correlate(dV_anom[:n], Q_anom[:n], mode='full')
+        
+        # Normalization
+        std_prod = np.std(dV_anom[:n]) * np.std(Q_anom[:n]) * n
+        if std_prod > 0:
+            corr /= std_prod
+        
+        lags = signal.correlation_lags(n, n, mode='full')
 
-# axes[0].set_ylabel('dV/dt (kg/timestep)')
-# handles, labels = axes[0].get_legend_handles_labels()
-# fig.legend(handles, labels, loc='lower center', ncol=len(scenario_list),
-#            bbox_to_anchor=(0.5, -0.05))
-# fig.suptitle('System Sensitivity: morphological response vs. river forcing\n(all scenarios)',
-#              fontsize=13)
-# fig.tight_layout()
-# fig.savefig(output_dir / "combined_sensitivity_dVdt_vs_Q.png", dpi=300, bbox_inches='tight')
-# plt.show()
+        # Limit to 365 days
+        max_lag_idx = int(365 * 24 / DT_HOURS)
+        mask = (lags >= 0) & (lags <= max_lag_idx)
+        lags_days = lags[mask] * DT_HOURS / 24
+        corr_plot = corr[mask]
+        
+        # Peak finding
+        peak_idx = np.argmax(np.abs(corr_plot))
+        peak_lag = lags_days[peak_idx]
 
-# # ── COMBINED RECOVERY ────────────────────────────────────────
-# # One subplot per box section, all scenarios overlaid per panel.
-# fig, axes = plt.subplots(1, n_boxes, figsize=(5 * n_boxes, 5), sharey=True)
-# if n_boxes == 1:
-#     axes = [axes]
+        # Plotting the lag
+        ax_corr.plot(lags_days, corr_plot, linewidth=2, color=d['color'])
+        ax_corr.axvline(peak_lag, color='red', ls='--', alpha=0.8)
+        
+        # Dynamic text positioning
+        y_max = np.max(np.abs(corr_plot)) if len(corr_plot) > 0 else 0.5
+        ax_corr.text(peak_lag + 5, y_max * 0.9, f'Lag: {peak_lag:.1f}d', 
+                     color='red', fontweight='bold')
 
-# for ax, (box_start, box_end) in zip(axes, boxes):
-#     for scenario_dir, data in scenario_data.items():
-#         scenario_num  = scenario_dir.split('_')[0]
-#         label         = SCENARIO_LABELS.get(str(int(scenario_num)), scenario_dir)
-#         color         = scenario_colors[scenario_dir]
-#         km_positions  = data['km_positions']
-#         idx_river     = np.argmin(np.abs(km_positions - RIVER_KM))
-#         Q_river       = data[dis_var][:, idx_river]
-#         buf           = data['buffer_volumes'].get((box_start, box_end))
-#         if buf is None:
-#             continue
+        # Formatting
+        ax_corr.axhline(0, color='black', lw=0.8)
+        ax_corr.set_title(f"Section {box_start}-{box_end} km", fontsize=13)
+        ax_corr.set_xlabel('Lag (days)')
+        if i == 0:
+            ax_corr.set_ylabel(r'Correlation $Q \rightarrow dV/dt$', fontweight='bold')
+        ax_corr.set_xlim(0, 365)
+        ax_corr.set_ylim(-0.7, 0.7) 
+        ax_corr.grid(alpha=0.2)
 
-#         window        = int(TIDAL_WINDOW_HOURS / DT_HOURS)
-#         max_lag_steps = int(MAX_LAG_DAYS * 24 / DT_HOURS)
-
-#         Q_smooth  = tidal_avg(Q_river, window)
-#         Q_anom    = Q_smooth - Q_smooth.mean()
-#         dV_dt     = np.diff(buf)
-#         dV_smooth = tidal_avg(dV_dt, window)
-#         dV_anom   = dV_smooth - dV_smooth.mean()
-
-#         n    = min(len(Q_anom), len(dV_anom))
-#         corr = signal.correlate(dV_anom[:n], Q_anom[:n], mode='full')
-#         corr /= (np.std(dV_anom[:n]) * np.std(Q_anom[:n]) * n + 1e-10)
-#         lags  = signal.correlation_lags(n, n, mode='full')
-
-#         mask      = (lags >= 0) & (lags <= max_lag_steps)
-#         lags_days = lags[mask] * DT_HOURS / 24
-#         corr_plot = corr[mask]
-#         peak_lag  = lags_days[np.argmax(np.abs(corr_plot))]
-
-#         ax.plot(lags_days, corr_plot, color=color, linewidth=2,
-#                 label=f'{label}  (peak: {peak_lag:.1f} d)')
-
-#     ax.axhline(0, color='black', lw=0.8, ls='--')
-#     ax.set_title(f'Section {box_start}–{box_end} km')
-#     ax.set_xlabel('Lag (days)')
-#     ax.grid(alpha=0.2)
-
-# axes[0].set_ylabel('Normalised cross-correlation (–)')
-# handles, labels_leg = axes[0].get_legend_handles_labels()
-# # Collect handles from all axes in case some scenarios only appear in later panels
-# all_handles, all_labels = [], []
-# for ax in axes:
-#     h, l = ax.get_legend_handles_labels()
-#     for handle, lbl in zip(h, l):
-#         if lbl not in all_labels:
-#             all_handles.append(handle)
-#             all_labels.append(lbl)
-# fig.legend(all_handles, all_labels, loc='lower center', ncol=len(scenario_list),
-#            bbox_to_anchor=(0.5, -0.05))
-# fig.suptitle('Recovery time: Q_river → dV/dt cross-correlation\n(all scenarios)', fontsize=13)
-# fig.tight_layout()
-# fig.savefig(output_dir / "combined_recovery_crosscorr.png", dpi=300, bbox_inches='tight')
-# plt.show()
-
-# print(f"\nAll plots saved to: {output_dir}")
+    plt.tight_layout()
+    fig.savefig(output_dir / f"spatial_storyboard_{scenario_key}.png", dpi=300)
+    plt.show()
 # %%
