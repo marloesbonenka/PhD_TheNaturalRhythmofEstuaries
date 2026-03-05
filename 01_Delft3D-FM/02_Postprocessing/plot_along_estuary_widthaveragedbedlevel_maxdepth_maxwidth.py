@@ -1,7 +1,7 @@
 """"Post-process multiple """
 
 #%% IMPORTS
-import os
+from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 import dfm_tools as dfmt
@@ -15,7 +15,7 @@ sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Post
 from FUNCTIONS.F_general import *
 from FUNCTIONS.F_braiding_index import *
 from FUNCTIONS.F_channelwidth import *
-from FUNCTIONS.F_cache import DatasetCache
+from FUNCTIONS.F_map_cache import cache_tag_from_bbox, load_or_update_map_cache_multi
 
 
 #%% --- CONFIGURATION ---
@@ -48,6 +48,11 @@ start_date = np.datetime64('2025-01-01')
 x_targets = np.arange(20000, 44001, 1000)
 y_range = (5000, 10000)
 
+CACHE_BBOX = [x_targets[0], y_range[0], x_targets[-1], y_range[1]]
+CACHE_TAG = None
+APPEND_TIMESTEPS = True
+APPEND_VARIABLES = True
+
 #%% --- SETTINGS ---
 apply_detrending = False  # Subtract initial bed level to see changes
 reference_time_idx = 0   # Time index to use as reference (0 = first timestep)
@@ -68,20 +73,33 @@ compare_channel_width = True
 plot_channel_width_individual = False
 
 #%% --- SEARCH & SORT FOLDERS ---
-model_folders = [f for f in os.listdir(os.path.join(base_directory, config)) if f.startswith('MF')]
+base_path = base_directory / config
+model_folders = [f.name for f in base_path.iterdir() if f.is_dir() and f.name.startswith('MF')]
 model_folders.sort(key=get_mf_number)
 
-dataset_cache = DatasetCache()
+assessment_dir = base_path / 'cached_data'
+assessment_dir.mkdir(parents=True, exist_ok=True)
 # --- OPTIONAL: GLOBAL REFERENCE FROM MF50 ---
 reference_bed_MF50 = None
 if apply_detrending and use_mf50_reference:
     mf50_folder = [f for f in model_folders if get_mf_number(f) == 50]
     if len(mf50_folder) == 1:
         mf50_folder = mf50_folder[0]
-        mf50_location = os.path.join(base_directory, config, mf50_folder)
-        mf50_pattern = os.path.join(mf50_location, 'output', '*_map.nc')
-        ds_mf50 = dataset_cache.get_partitioned(mf50_pattern)
-        reference_bed_MF50 = ds_mf50['mesh2d_mor_bl'].isel(time=reference_time_idx).values.copy()
+        mf50_location = base_path / mf50_folder
+        cache_tag = cache_tag_from_bbox(CACHE_BBOX, CACHE_TAG)
+        ds_mf50 = load_or_update_map_cache_multi(
+            cache_dir=assessment_dir,
+            folder_name=mf50_folder,
+            run_paths=[mf50_location],
+            var_names=['mesh2d_mor_bl'],
+            bbox=CACHE_BBOX,
+            append_time=APPEND_TIMESTEPS,
+            append_vars=APPEND_VARIABLES,
+            cache_tag=cache_tag,
+        )
+        if ds_mf50 is not None:
+            reference_bed_MF50 = ds_mf50['mesh2d_mor_bl'].isel(time=reference_time_idx).values.copy()
+            ds_mf50.close()
     else:
         # Fallback: no MF50 found, keep run-specific behavior
         use_mf50_reference = False
@@ -91,16 +109,27 @@ comparison_results = {}
 
 # --- COMPUTE MAP RESULTS FOR EACH RUN ---
 for i, folder in enumerate(model_folders):
-    model_location = os.path.join(base_directory, config, folder)
-    file_pattern = os.path.join(model_location, 'output', '*_map.nc')
-
-    save_dir = os.path.join(model_location, 'output_plots')
-    os.makedirs(save_dir, exist_ok=True)
+    model_location = base_path / folder
+    save_dir = model_location / 'output_plots'
+    save_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\nProcessing: {folder}")
     
-    # 1. LOAD FM DATA
-    ds = dataset_cache.get_partitioned(file_pattern)
+    # 1. LOAD FM DATA (cached)
+    cache_tag = cache_tag_from_bbox(CACHE_BBOX, CACHE_TAG)
+    ds = load_or_update_map_cache_multi(
+        cache_dir=assessment_dir,
+        folder_name=folder,
+        run_paths=[model_location],
+        var_names=['mesh2d_mor_bl', 'mesh2d_face_x', 'mesh2d_face_y'],
+        bbox=CACHE_BBOX,
+        append_time=APPEND_TIMESTEPS,
+        append_vars=APPEND_VARIABLES,
+        cache_tag=cache_tag,
+    )
+    if ds is None:
+        print(f"  No cached data for {folder}, skipping.")
+        continue
 
     # 2. MORPHOLOGICAL TIME LOGIC (Robust to restarts)
     mf_val = get_mf_number(folder)
@@ -229,7 +258,7 @@ for i, folder in enumerate(model_folders):
             plt.ylabel(f'{depth_percentile}th Percentile {depth_label} [m]{detrend_label}')
             plt.title(f'Maximum Channel Depth: {folder}')
             plt.grid(True, alpha=0.3)
-            plt.savefig(os.path.join(save_dir, f'max_depth_{folder}.png'))
+            plt.savefig(save_dir / f'max_depth_{folder}.png')
             plt.close()
 
     # 6. CHANNEL WIDTH ANALYSIS
@@ -264,7 +293,7 @@ for i, folder in enumerate(model_folders):
             detrend_label = ' (Detrended)' if apply_detrending else ''
             plt.title(f'Maximum Channel Width: {folder}{detrend_label}')
             plt.grid(True, alpha=0.3)
-            plt.savefig(os.path.join(save_dir, f'channel_width_{folder}.png'))
+            plt.savefig(save_dir / f'channel_width_{folder}.png')
             plt.close()
 
     ds.close()
@@ -362,13 +391,11 @@ else:
     plt.tight_layout()
 
     if apply_detrending:
-        plt.savefig(os.path.join(base_directory, config, f'sensitivity_MF_detrended_along_estuary_Tmorph_{target_year}years.png'), dpi=300)
+        plt.savefig(base_path / f'sensitivity_MF_detrended_along_estuary_Tmorph_{target_year}years.png', dpi=300)
     else:
-        plt.savefig(os.path.join(base_directory, config, f'sensitivity_MF_along_estuary_Tmorph_{target_year}years.png'), dpi=300)
+        plt.savefig(base_path / f'sensitivity_MF_along_estuary_Tmorph_{target_year}years.png', dpi=300)
     plt.show()
     
-    print(f'Saved comparison plot at {os.path.join(base_directory, config)}')
-
-dataset_cache.close_all()
+    print(f'Saved comparison plot at {base_path}')
 
 print("\nAll FM processing complete.")

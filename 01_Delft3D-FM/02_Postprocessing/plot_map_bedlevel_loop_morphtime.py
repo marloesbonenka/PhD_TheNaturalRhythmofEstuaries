@@ -79,7 +79,7 @@ print(f"Found {len(model_folders)} folders to process.")
 
 dataset_cache = DatasetCache()
 cache_dir = base_directory / "output_plots" / "_cache"
-cache_path = cache_dir / f"bedlevel_cache_{var_name}.pkl"
+cache_path = cache_dir / f"bedlevel_cache_{var_name}.nc"
 try:
     # Determine if reference t = 0 from a run with no restart (only for the MORFAC scenario)
     if scenarios_morfac:

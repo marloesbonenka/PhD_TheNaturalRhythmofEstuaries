@@ -19,7 +19,7 @@ sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Post
 from FUNCTIONS.F_loaddata import load_cross_section_data, load_and_cache_scenario
 
 #%% --- CONFIGURATION ---
-var_name = 'cross_section_bedload_sediment_transport'
+var_name = 'cross_section_bedload_sediment_transport' # cumulative bed load sediment transport [kg]
 output_dirname = Path("output_plots") / "plots_his_sedimentbuffer_envelope"
 
 mpl.rcParams['figure.figsize'] = (10, 5)

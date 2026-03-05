@@ -12,7 +12,8 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
 
 from FUNCTIONS.F_general import get_mf_number
-from FUNCTIONS.F_cache import DatasetCache, load_results_cache, save_results_cache
+from FUNCTIONS.F_cache import load_results_cache, save_results_cache
+from FUNCTIONS.F_map_cache import cache_tag_from_bbox, load_or_update_map_cache_multi
 from FUNCTIONS.F_morphological_activity import cumulative_activity, morph_years_from_datetimes
 
 #%% --- SETTINGS & PATHS ---
@@ -53,6 +54,11 @@ var_name = "mesh2d_mor_bl"
 x_targets = np.arange(20000, 44001, 1000)
 y_range = (5000, 10000)
 dx = int(np.diff(x_targets).min())
+
+CACHE_BBOX = [x_targets[0], y_range[0], x_targets[-1], y_range[1]]
+CACHE_TAG = None
+APPEND_TIMESTEPS = True
+APPEND_VARIABLES = True
 
 # Spatial binning for width-averaged profiles
 x_bin_size = dx  # meters
@@ -107,7 +113,9 @@ print(f"Found {len(model_folders)} run folders in: {base_path}")
 
 cache_dir = base_path / "cached_data"
 cache_dir.mkdir(parents=True, exist_ok=True)    
-cache_path = cache_dir / "cached_results_widthavg.pkl"
+cache_path = cache_dir / "cached_results_widthavg.nc"
+assessment_dir = base_path / "cached_data"
+assessment_dir.mkdir(parents=True, exist_ok=True)
 
 results = {}
 run_names = {}
@@ -151,9 +159,6 @@ if not force_recompute:
 
 #%% --- LOOP THROUGH RUNS ---
 if force_recompute or not results:
-    dataset_cache = DatasetCache()
-
-
     for folder in model_folders:
         model_location = base_path / folder
         print(f"\nProcessing: {folder}")
@@ -184,44 +189,28 @@ if force_recompute or not results:
         else:
             morfac = default_morfac
 
-        # --- LOAD & STITCH all run parts ---
-        all_bedlev = []   # list of 2-D arrays  (n_time_part, n_faces)
-        all_times = []    # list of datetime arrays
+        cache_tag = cache_tag_from_bbox(CACHE_BBOX, CACHE_TAG)
+        ds = load_or_update_map_cache_multi(
+            cache_dir=assessment_dir,
+            folder_name=folder,
+            run_paths=all_run_paths,
+            var_names=['mesh2d_mor_bl', 'mesh2d_face_x', 'mesh2d_face_y'],
+            bbox=CACHE_BBOX,
+            append_time=APPEND_TIMESTEPS,
+            append_vars=APPEND_VARIABLES,
+            cache_tag=cache_tag,
+        )
 
-        for run_path in all_run_paths:
-            file_pattern = str(run_path / "output" / "*_map.nc")
-            
-            ds = dataset_cache.get_partitioned(
-                file_pattern,
-                variables=['mesh2d_mor_bl', 'mesh2d_face_x', 'mesh2d_face_y'],
-                chunks={'time': 200},
-            )
-            
-            if var_name not in ds:
-                print(f"  Skipping {run_path.name}: Variable {var_name} not found.")
-                continue
-
-            part_times = pd.to_datetime(ds["time"].values)
-            # Load bedlevel lazily per chunk to avoid huge memory spike
-            bedlev_da = ds[var_name]
-            print(f"  Loading {run_path.name}: {bedlev_da.sizes['time']} timesteps...")
-            all_times.append(part_times)
-            all_bedlev.append(bedlev_da.values)  # (n_time, n_faces)
-            # Face coords are the same for all parts
-            face_x = ds["mesh2d_face_x"].values
-            face_y = ds["mesh2d_face_y"].values
-
-        if not all_bedlev:
-            print(f"  No valid data for {folder}, skipping.")
+        if ds is None or var_name not in ds:
+            print(f"  No cached data for {folder}, skipping.")
             continue
 
-        # Concatenate parts along time
-        if len(all_bedlev) > 1:
-            bedlev_full = np.concatenate(all_bedlev, axis=0)
-            times_full = np.concatenate(all_times)
-        else:
-            bedlev_full = all_bedlev[0]
-            times_full = all_times[0]
+        times_full = pd.to_datetime(ds["time"].values)
+        bedlev_da = ds[var_name]
+        print(f"  Loading {folder}: {bedlev_da.sizes['time']} timesteps...")
+        bedlev_full = bedlev_da.values
+        face_x = ds["mesh2d_face_x"].values
+        face_y = ds["mesh2d_face_y"].values
 
         # Optional detrending (reference bed)
         reference_bed = None

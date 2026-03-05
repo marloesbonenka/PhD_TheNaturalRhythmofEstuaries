@@ -7,8 +7,11 @@
 
 #%%
 import sys
-import xugrid as xu
 from pathlib import Path
+from FUNCTIONS.F_map_cache import (
+    cache_tag_from_bbox,
+    load_or_update_map_cache_multi,
+)
 
 # =============================================================================
 # 1. SETUP & PATHS
@@ -19,10 +22,7 @@ functions_root = Path(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\0
 if str(functions_root) not in sys.path:
     sys.path.append(str(functions_root))
 
-from FUNCTIONS.F_cache import DatasetCache
-
-
-# --- Settings ---
+# --- SETTINGS ---
 
 ANALYSIS_MODE = "variability"
 DISCHARGE = 500 # Adjust this to match your specific discharge scenario (e.g., 500, 1000, etc.)
@@ -36,6 +36,11 @@ var_names = ["mesh2d_mor_bl", "mesh2d_s1", "mesh2d_taus"]
 # Spatial subset bounds [xmin, ymin, xmax, ymax]
 BBOX = [20000, 5000, 45000, 10000]
 
+# Cache behavior
+APPEND_TIMESTEPS = True
+APPEND_VARIABLES = True
+CACHE_TAG = None  # Set to "full" for full domain or custom tag
+
 # Mapping: restart folder prefix -> timed-out folder prefix
 VARIABILITY_MAP = {
     '1': '01_baserun{DISCHARGE}',
@@ -46,7 +51,7 @@ VARIABILITY_MAP = {
 
 
 # Directories
-output_dir = base_path / 'cached_data' / "assessment_netcdfs"
+output_dir = base_path / 'cached_data'
 output_dir.mkdir(parents=True, exist_ok=True)
 
 # =============================================================================
@@ -57,9 +62,6 @@ output_dir.mkdir(parents=True, exist_ok=True)
 model_folders = [f for f in base_path.iterdir() 
                  if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
 model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
-
-# Initialize the imported cache
-ds_cache = DatasetCache()
 
 print(f"Starting extraction for {len(model_folders)} runs...")
 
@@ -81,44 +83,24 @@ for folder in model_folders:
     # 2. Add the restart part
     all_run_paths.append(folder)
 
-    # --- LOAD & CONCATENATE ---
-    datasets = []
-    for run_path in all_run_paths:
-        file_pattern = str(run_path / "output" / "*_map.nc")
-        try:
-            # get_partitioned preserves topology variables automatically for all listed variables
-            part_ds = ds_cache.get_partitioned(
-                file_pattern,
-                variables=var_names,
-                chunks={'time': 100}
-            )
-            datasets.append(part_ds)
-            print(f"  Stitched {run_path.name}")
-        except Exception as e:
-            print(f"  Warning: Could not load {run_path.name}. Error: {e}")
+    cache_tag = cache_tag_from_bbox(BBOX, CACHE_TAG)
+    print(f"  Updating cache(s) for {folder.name}")
+    ds_out = load_or_update_map_cache_multi(
+        cache_dir=output_dir,
+        folder_name=folder.name,
+        run_paths=all_run_paths,
+        var_names=var_names,
+        bbox=BBOX,
+        append_time=APPEND_TIMESTEPS,
+        append_vars=APPEND_VARIABLES,
+        cache_tag=cache_tag,
+    )
 
-    if not datasets:
-        continue
+    if ds_out is None:
+        print(f"  No data to cache for {folder.name}")
+    else:
+        print(f"  Successfully cached mapoutput_* for {folder.name}")
 
-    # Combine parts along the time dimension
-    print("  Combining parts into full timeline...")
-    full_ds = xu.concat(datasets, dim="time")
-
-    # --- MASKING (XUGRID) ---
-    print(f"  Applying spatial mask: {BBOX}...")
-    # Mask all variables in var_names
-    uds_masked = full_ds.ugrid.sel(x=slice(BBOX[0], BBOX[2]), y=slice(BBOX[1], BBOX[3]))
-
-    # --- SAVE OUTPUT ---
-    save_filename = f"assessment_multi_{folder.name}.nc"
-    save_path = output_dir / save_filename
-
-    print(f"  Saving to {save_filename}...")
-    uds_masked.to_netcdf(save_path)
-    print(f"  Successfully exported.")
-
-# Close all opened NetCDFs
-ds_cache.close_all()
 print("\n" + "="*30)
 print("PROCESSING COMPLETE")
 print(f"Files saved in: {output_dir}")

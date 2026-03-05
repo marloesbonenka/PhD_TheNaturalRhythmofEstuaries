@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-import pickle
+import json
 from typing import Any, Hashable, Iterable, Tuple
 
+import numpy as np
+import pandas as pd
 import xarray as xr
 import dfm_tools as dfmt
+from netCDF4 import Dataset as NcDataset
 
 
 def _normalize_path(path: Any) -> Hashable:
@@ -32,17 +35,58 @@ def _kwargs_key(kwargs: dict) -> Hashable:
         return repr(kwargs)
 
 
-def _save_pickle(cache_path: Path, payload: dict) -> None:
-    """Internal: save dict to pickle file."""
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    with cache_path.open('wb') as f:
-        pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
+def _to_jsonable(obj: Any) -> Any:
+    if isinstance(obj, np.ndarray):
+        if obj.dtype.kind in ('M', 'm'):
+            data = obj.astype('datetime64[ns]').astype(str).tolist()
+            return {'__type__': 'ndarray_datetime', 'data': data}
+        return {'__type__': 'ndarray', 'dtype': str(obj.dtype), 'shape': list(obj.shape), 'data': obj.tolist()}
+    if isinstance(obj, np.generic):
+        return obj.item()
+    if isinstance(obj, pd.DataFrame):
+        data = obj.to_dict(orient='list')
+        return {'__type__': 'dataframe', 'data': _to_jsonable(data)}
+    if isinstance(obj, pd.Series):
+        data = obj.to_dict()
+        return {'__type__': 'series', 'data': _to_jsonable(data)}
+    if isinstance(obj, dict):
+        return {str(k): _to_jsonable(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_jsonable(v) for v in obj]
+    if isinstance(obj, Path):
+        return str(obj)
+    if isinstance(obj, (np.datetime64, np.timedelta64)):
+        return str(obj)
+    return obj
 
 
-def _load_pickle(cache_path: Path) -> dict:
-    """Internal: load dict from pickle file."""
-    with cache_path.open('rb') as f:
-        return pickle.load(f)
+def _from_jsonable(obj: Any) -> Any:
+    if isinstance(obj, dict) and '__type__' in obj:
+        obj_type = obj['__type__']
+        if obj_type == 'ndarray':
+            arr = np.array(obj['data'], dtype=obj.get('dtype', None))
+            return arr
+        if obj_type == 'ndarray_datetime':
+            return np.array(obj['data'], dtype='datetime64[ns]')
+        if obj_type == 'dataframe':
+            return pd.DataFrame(obj['data'])
+        if obj_type == 'series':
+            return pd.Series(obj['data'])
+    if isinstance(obj, dict):
+        return {k: _from_jsonable(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_from_jsonable(v) for v in obj]
+    return obj
+
+
+def _encode_attrs(payload: dict) -> str:
+    return json.dumps(_to_jsonable(payload), ensure_ascii=True)
+
+
+def _decode_attrs(payload: str | None) -> dict:
+    if not payload:
+        return {}
+    return _from_jsonable(json.loads(payload))
 
 
 class DatasetCache:
@@ -145,7 +189,48 @@ class DatasetCache:
 
 def get_profile_cache_path(model_location: Path, folder: str) -> Path:
     """Get the standard cache path for cross-section profiles."""
-    return model_location / f"cache_profiles_{folder}.pkl"
+    return model_location / f"cache_profiles_{folder}.nc"
+
+
+def _list_groups(cache_path: Path, root: str) -> list[str]:
+    if not cache_path.exists():
+        return []
+    with NcDataset(cache_path) as nc:
+        if root not in nc.groups:
+            return []
+        return list(nc.groups[root].groups.keys())
+
+
+def _profiles_to_dataset(data: dict) -> xr.Dataset:
+    profiles = np.asarray(data.get('profiles'))
+    times = np.asarray(data.get('times') or data.get('time_series'))
+    dist = np.asarray(data.get('dist'))
+    morfac = data.get('morfac')
+
+    ds = xr.Dataset(
+        data_vars={
+            'profiles': (['time', 'dist'], profiles),
+        },
+        coords={
+            'time': times,
+            'dist': dist,
+        },
+    )
+    if morfac is not None:
+        ds['morfac'] = morfac
+    ds.attrs['result_type'] = 'profile'
+    return ds
+
+
+def _dataset_to_profile(ds: xr.Dataset) -> dict:
+    result = {
+        'profiles': ds['profiles'].values,
+        'times': ds['time'].values,
+        'dist': ds['dist'].values,
+    }
+    if 'morfac' in ds:
+        result['morfac'] = ds['morfac'].values.item() if ds['morfac'].size == 1 else ds['morfac'].values
+    return result
 
 
 def load_profile_cache(
@@ -175,21 +260,25 @@ def load_profile_cache(
         return {}, required_x_coords
     
     try:
-        cached = _load_pickle(cache_path)
-        results = cached.get('results', {})
-        
         found = {}
         missing = []
-        
+
         for x_coord in required_x_coords:
             cs_name = f"km{int(x_coord / 1000)}"
-            if cs_name in results:
-                found[cs_name] = results[cs_name]
+            group_path = f"profiles/{cs_name}"
+            try:
+                ds = xr.open_dataset(cache_path, group=group_path)
+            except Exception:
+                ds = None
+
+            if ds is not None and 'profiles' in ds:
+                found[cs_name] = _dataset_to_profile(ds)
+                ds.close()
             else:
                 missing.append(x_coord)
-        
+
         return found, missing
-        
+
     except Exception as e:
         print(f"  Warning: Could not load cache {cache_path}: {e}")
         return {}, required_x_coords
@@ -210,21 +299,21 @@ def save_profile_cache(cache_path: Path, results: dict, settings: dict = None) -
     # Load existing cache if present (to merge)
     existing = {}
     if cache_path.exists():
-        try:
-            cached = _load_pickle(cache_path)
-            existing = cached.get('results', {})
-        except:
-            pass
-    
+        for cs_name in _list_groups(cache_path, 'profiles'):
+            ds = xr.open_dataset(cache_path, group=f"profiles/{cs_name}")
+            existing[cs_name] = _dataset_to_profile(ds)
+            ds.close()
+
     # Merge: new results overwrite existing for same cross-sections
     merged = {**existing, **results}
-    
-    _save_pickle(cache_path, {
-        'results': merged,
-        'metadata': {
-            'settings': settings or {},
-        },
-    })
+
+    root_ds = xr.Dataset()
+    root_ds.attrs['settings_json'] = _encode_attrs(settings or {})
+    root_ds.to_netcdf(cache_path, mode='w', engine='netcdf4')
+
+    for cs_name, data in merged.items():
+        ds = _profiles_to_dataset(data)
+        ds.to_netcdf(cache_path, mode='a', group=f"profiles/{cs_name}", engine='netcdf4')
 
 
 # =============================================================================
@@ -254,20 +343,37 @@ def load_results_cache(
     """
     if not cache_path.exists():
         return None, None
-    
+
     try:
-        cached = _load_pickle(cache_path)
-        results = cached.get('results', {})
-        metadata = cached.get('metadata', {})
-        
+        with NcDataset(cache_path) as nc:
+            metadata = _decode_attrs(getattr(nc, 'metadata_json', None))
+            cached_settings = _decode_attrs(getattr(nc, 'settings_json', None))
+
         if validate_settings and settings is not None:
-            cached_settings = metadata.get('settings', {})
-            if cached_settings != settings:
+            normalized_settings = _from_jsonable(_to_jsonable(settings))
+            if cached_settings != normalized_settings:
                 print(f"  Cache settings differ; will recompute.")
                 return None, None
-        
+
+        results = {}
+        for group_name in _list_groups(cache_path, 'results'):
+            ds = xr.open_dataset(cache_path, group=f"results/{group_name}")
+            result_type = ds.attrs.get('result_type', 'dataset')
+            if result_type == 'dataframe':
+                df = ds.to_dataframe().reset_index()
+                results[group_name] = df
+            elif result_type == 'array':
+                results[group_name] = ds['value'].values
+            elif result_type == 'dict':
+                results[group_name] = {k: ds[k].values for k in ds.data_vars}
+            else:
+                results[group_name] = ds
+            ds.close()
+
+        metadata = metadata or {}
+        metadata['settings'] = cached_settings
         return results, metadata
-        
+
     except Exception as e:
         print(f"  Warning: Could not load cache {cache_path}: {e}")
         return None, None
@@ -298,19 +404,32 @@ def save_results_cache(
     # Load existing cache if merging
     existing = {}
     if merge and cache_path.exists():
-        try:
-            cached = _load_pickle(cache_path)
-            existing = cached.get('results', {})
-        except:
-            pass
-    
+        existing, _ = load_results_cache(cache_path, validate_settings=False)
+        if existing is None:
+            existing = {}
+
     # Merge: new results overwrite existing for same keys
     merged = {**existing, **results}
-    
+
     full_metadata = metadata.copy() if metadata else {}
-    full_metadata['settings'] = settings or {}
-    
-    _save_pickle(cache_path, {
-        'results': merged,
-        'metadata': full_metadata,
-    })
+
+    root_ds = xr.Dataset()
+    root_ds.attrs['metadata_json'] = _encode_attrs(full_metadata)
+    root_ds.attrs['settings_json'] = _encode_attrs(settings or {})
+    root_ds.to_netcdf(cache_path, mode='w', engine='netcdf4')
+
+    for key, value in merged.items():
+        group_name = str(key)
+        if isinstance(value, pd.DataFrame):
+            ds = value.to_xarray()
+            ds.attrs['result_type'] = 'dataframe'
+        elif isinstance(value, dict):
+            ds = xr.Dataset({k: xr.DataArray(v) for k, v in value.items()})
+            ds.attrs['result_type'] = 'dict'
+        else:
+            arr = np.asarray(value)
+            dims = [f"dim_{i}" for i in range(arr.ndim)]
+            ds = xr.Dataset({'value': (dims, arr)})
+            ds.attrs['result_type'] = 'array'
+
+        ds.to_netcdf(cache_path, mode='a', group=f"results/{group_name}", engine='netcdf4')

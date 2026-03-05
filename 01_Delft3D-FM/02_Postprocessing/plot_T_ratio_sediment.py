@@ -289,7 +289,7 @@ if __name__ == '__main__':
 
 	output_dir = base_dir / "output_plots_T_ratio_sediment"
 	output_dir.mkdir(parents=True, exist_ok=True)
-	cache_path = output_dir / "cached_results.pkl"
+	cache_path = output_dir / "cached_results.nc"
 
 	compute = False
 	show_plots = True

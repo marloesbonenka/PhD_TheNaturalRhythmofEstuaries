@@ -18,11 +18,12 @@ import re
 # Add the current working directory (where FUNCTIONS is located)
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
 
-from FUNCTIONS.F_loaddata import load_cross_section_data, load_and_cache_scenario  
+from FUNCTIONS.F_loaddata import load_and_cache_scenario  
 
 #%% --- CONFIGURATION ---
 # What to analyze?
-var_name = 'cross_section_bedload_sediment_transport'
+var_name = 'cross_section_sand' # 'cross_section_bedload_sediment_transport' # cumulative bed load sediment transport [kg] #'cross_section_sand' # flux based on upwind cell [kg/s]
+
 output_dirname = "plots_his_sedimentbuffer"
 
 mpl.rcParams['figure.figsize'] = (8, 6)     
@@ -170,10 +171,25 @@ for scenario_dir, his_file_paths in run_his_paths.items():
     
 #%% --- PLOT ALL SCENARIOS & CACHE ---
 for scenario_dir, data in scenario_data.items():
+
     km_positions = data['km_positions']
     transport = data[var_name]   # dynamic variable name
     time = data['t']
     buffer_volumes = data['buffer_volumes']
+
+    # # --- DIAGNOSTIC: Print stats for transport variable ---
+    # print(f"\n[DIAGNOSTIC] Scenario: {scenario_dir} - Variable: {var_name}")
+    # try:
+    #     arr = np.array(transport)
+    #     print(f"  Type: {type(transport)}")
+    #     print(f"  Shape: {arr.shape}")
+    #     print(f"  Min: {arr.min()}")
+    #     print(f"  Max: {arr.max()}")
+    #     print(f"  Mean: {arr.mean()}")
+    #     print(f"  Nonzero count: {(arr != 0).sum()}")
+    #     print(f"  Sample values: {arr.flatten()[:10]}")
+    # except Exception as e:
+    #     print(f"  Could not compute stats: {e}")
 
     # --- CUMULATIVE BUFFER VOLUME PLOT ---
     plt.figure()

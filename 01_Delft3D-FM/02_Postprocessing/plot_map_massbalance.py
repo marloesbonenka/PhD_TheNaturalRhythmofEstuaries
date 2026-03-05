@@ -3,7 +3,6 @@ This script processes multiple Delft3D-FM model runs with different MORFAC setti
 #%%
 from pathlib import Path
 import matplotlib.pyplot as plt
-import dfm_tools as dfmt
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -15,7 +14,7 @@ sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\Delft3D-FM\Postproces
 
 from FUNCTIONS.F_general import *
 from FUNCTIONS.F_braiding_index import *
-from FUNCTIONS.F_cache import DatasetCache
+from FUNCTIONS.F_map_cache import cache_tag_from_bbox, load_or_update_map_cache_multi
 
 #%%
 # --- SETTINGS ---
@@ -43,7 +42,6 @@ variables_checked = False
 # DATA LOADING SECTION
 # ============================================================
 
-dataset_cache = DatasetCache()
 try:
     for morfyears in load_tmorph_periods:
         tmorph_period = f'Tmorph_{morfyears}years'
@@ -52,13 +50,14 @@ try:
         print(f"{'='*60}")
         
         base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Test_MORFAC") / discharge_type / tmorph_period
-        timed_out_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Test_MORFAC") / discharge_type / tmorph_period / 'timed-out'
+        timed_out_directory = base_directory / 'timed-out'
+        assessment_dir = base_directory / 'cached_data'
+        assessment_dir.mkdir(parents=True, exist_ok=True)
         all_folders = [f.name for f in base_directory.iterdir() if f.name.startswith('MF') and f.is_dir()]
         run_startdate = '2025-01-01'
 
         for folder in all_folders:
             model_location = base_directory / folder
-            file_pattern = str(model_location / 'output' / '*_map.nc')
             
             # 1. Get Morfac for this run (extract MF number)
             mf_match = re.search(r'MF(\d+(?:\.\d+)?)', folder)
@@ -69,14 +68,13 @@ try:
             
             # Match timed-out folder by MF number only (ignoring run ID after underscore)
             mf_prefix = f"MF{int(current_mf)}"  # e.g., "MF1", "MF10"
-            timed_out_pattern = None
+            timed_out_location = None
             if timed_out_directory.exists():
                 # Find folder in timed-out that starts with the same MF number
                 matching_folders = [f for f in timed_out_directory.iterdir() 
                                 if f.is_dir() and f.name.startswith(mf_prefix + '_')]
                 if matching_folders:
                     timed_out_location = matching_folders[0]
-                    timed_out_pattern = str(timed_out_location / 'output' / '*_map.nc')
             
             try:
                 # Initialize arrays to store temporal data
@@ -85,10 +83,22 @@ try:
                 ds_timed_out = None
                 
                 # Process timed-out dataset first (if it exists)
-                if timed_out_pattern:
+                if timed_out_location is not None:
                     try:
                         print(f"\n  Loading timed-out data for {mf_prefix}...")
-                        ds_timed_out = dataset_cache.get_partitioned(timed_out_pattern)
+                        cache_tag = cache_tag_from_bbox(None, "full")
+                        ds_timed_out = load_or_update_map_cache_multi(
+                            cache_dir=assessment_dir,
+                            folder_name=timed_out_location.name,
+                            run_paths=[timed_out_location],
+                            var_names=[var_name, area_name, 'morfac'],
+                            bbox=None,
+                            append_time=True,
+                            append_vars=True,
+                            cache_tag=cache_tag,
+                        )
+                        if ds_timed_out is None:
+                            raise RuntimeError("Timed-out cache returned no data")
                         
                         # Check available variables on first dataset (timed-out)
                         if check_vars and not variables_checked:
@@ -129,7 +139,20 @@ try:
                 
                 # Process main dataset
                 print(f"  Loading main data for {mf_prefix}...")
-                ds = dataset_cache.get_partitioned(file_pattern)
+                cache_tag = cache_tag_from_bbox(None, "full")
+                ds = load_or_update_map_cache_multi(
+                    cache_dir=assessment_dir,
+                    folder_name=folder,
+                    run_paths=[model_location],
+                    var_names=[var_name, area_name, 'morfac'],
+                    bbox=None,
+                    append_time=True,
+                    append_vars=True,
+                    cache_tag=cache_tag,
+                )
+                if ds is None:
+                    print(f"  Warning: No cached data for {folder}, skipping.")
+                    continue
                 
                 # Check available variables on first dataset (main, if not checked from timed-out)
                 if check_vars and not variables_checked:
@@ -200,7 +223,7 @@ try:
             except Exception as e:
                 print(f"Error processing {folder}: {e}")
 finally:
-    dataset_cache.close_all()
+    pass
 
 #%%
 # ============================================================
