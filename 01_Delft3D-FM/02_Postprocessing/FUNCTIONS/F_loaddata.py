@@ -12,6 +12,109 @@ from FUNCTIONS.F_tidalriverdominance import *
 from FUNCTIONS.F_cache import *
 
 
+def get_stitched_run_parts(base_path, folder_name, timed_out_dir=None, variability_map=None, analyze_noisy=False):
+    """
+    Return run-part folders in stitch order: timed-out part first (if found),
+    then the main run folder.
+
+    This is shared logic for both HIS and map workflows.
+    """
+    base_path = Path(base_path)
+    folder_path = Path(folder_name)
+    folder_label = folder_path.name
+    run_folder = folder_path if folder_path.is_absolute() else (base_path / folder_label)
+    if timed_out_dir is None:
+        timed_out_dir = base_path / "timed-out"
+    else:
+        timed_out_dir = Path(timed_out_dir)
+
+    parts = []
+
+    if timed_out_dir.exists():
+        timed_out_folder = None
+
+        if analyze_noisy:
+            match = re.search(r'noisy(\d+)', folder_label)
+            if match:
+                noisy_id = match.group(0)
+                for candidate in timed_out_dir.iterdir():
+                    if candidate.is_dir() and noisy_id in candidate.name:
+                        timed_out_folder = candidate
+                        break
+        else:
+            scenario_num = folder_label.split('_')[0]
+            try:
+                scenario_key = str(int(scenario_num))
+            except Exception:
+                scenario_key = scenario_num
+
+            mf_match = re.search(r"MF(\d+(?:\.\d+)?)", folder_label)
+            if mf_match:
+                mf_prefix = f"MF{int(float(mf_match.group(1)))}"
+                matching = [
+                    p for p in timed_out_dir.iterdir()
+                    if p.is_dir() and p.name.startswith(mf_prefix + '_')
+                ]
+                if matching:
+                    timed_out_folder = sorted(matching, key=lambda p: p.name)[0]
+
+            if variability_map is not None:
+                timed_out_name = variability_map.get(scenario_key, folder_label)
+                timed_out_candidate = timed_out_dir / timed_out_name
+                if timed_out_folder is None and timed_out_candidate.exists() and timed_out_candidate.is_dir():
+                    timed_out_folder = timed_out_candidate
+
+        if timed_out_folder is not None:
+            parts.append(timed_out_folder)
+
+    if run_folder.exists() and run_folder.is_dir():
+        parts.append(run_folder)
+
+    unique_parts = []
+    seen = set()
+    for part in parts:
+        part_resolved = part.resolve()
+        if part_resolved not in seen:
+            unique_parts.append(part)
+            seen.add(part_resolved)
+
+    return unique_parts
+
+
+def get_stitched_his_paths(base_path, folder_name, timed_out_dir=None, variability_map=None, analyze_noisy=False):
+    """Return stitched HIS file paths (timed-out first, main second if present)."""
+    parts = get_stitched_run_parts(
+        base_path=base_path,
+        folder_name=folder_name,
+        timed_out_dir=timed_out_dir,
+        variability_map=variability_map,
+        analyze_noisy=analyze_noisy,
+    )
+    paths = []
+    for part in parts:
+        his_path = part / "output" / "FlowFM_0000_his.nc"
+        if his_path.exists():
+            paths.append(his_path)
+    return paths
+
+
+def get_stitched_map_run_paths(base_path, folder_name, timed_out_dir=None, variability_map=None, analyze_noisy=False):
+    """Return stitched run folders that contain partitioned map output (timed-out first)."""
+    parts = get_stitched_run_parts(
+        base_path=base_path,
+        folder_name=folder_name,
+        timed_out_dir=timed_out_dir,
+        variability_map=variability_map,
+        analyze_noisy=analyze_noisy,
+    )
+    run_paths = []
+    for part in parts:
+        output_dir = part / "output"
+        if output_dir.exists() and any(output_dir.glob("*_map.nc")):
+            run_paths.append(part)
+    return run_paths
+
+
 def select_representative_days(times, n_periods=3):
 	"""Select one hydrodynamic day from each period of the simulation."""
 	n_total = len(times)
@@ -105,7 +208,6 @@ def get_his_paths_for_run(base_dir, run_folder):
 			unique_paths.append(p)
 			seen.add(p)
 	return unique_paths
-
 
 def open_his_dataset(his_paths):
 	"""Open a single HIS file as dataset."""

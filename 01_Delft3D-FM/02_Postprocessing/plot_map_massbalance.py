@@ -15,6 +15,7 @@ sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\Delft3D-FM\Postproces
 from FUNCTIONS.F_general import *
 from FUNCTIONS.F_braiding_index import *
 from FUNCTIONS.F_map_cache import cache_tag_from_bbox, load_or_update_map_cache_multi
+from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
 #%%
 # --- SETTINGS ---
@@ -68,13 +69,14 @@ try:
             
             # Match timed-out folder by MF number only (ignoring run ID after underscore)
             mf_prefix = f"MF{int(current_mf)}"  # e.g., "MF1", "MF10"
-            timed_out_location = None
-            if timed_out_directory.exists():
-                # Find folder in timed-out that starts with the same MF number
-                matching_folders = [f for f in timed_out_directory.iterdir() 
-                                if f.is_dir() and f.name.startswith(mf_prefix + '_')]
-                if matching_folders:
-                    timed_out_location = matching_folders[0]
+            stitched_paths = get_stitched_map_run_paths(
+                base_path=base_directory,
+                folder_name=folder,
+                timed_out_dir=timed_out_directory,
+                variability_map=None,
+                analyze_noisy=False,
+            )
+            timed_out_location = stitched_paths[0] if len(stitched_paths) > 1 else None
             
             try:
                 # Initialize arrays to store temporal data

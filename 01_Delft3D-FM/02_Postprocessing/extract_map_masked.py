@@ -12,6 +12,7 @@ from FUNCTIONS.F_map_cache import (
     cache_tag_from_bbox,
     load_or_update_map_cache_multi,
 )
+from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
 # =============================================================================
 # 1. SETUP & PATHS
@@ -34,7 +35,7 @@ timed_out_dir = base_path / "timed-out"
 var_names = ["mesh2d_mor_bl", "mesh2d_s1", "mesh2d_taus"]
 
 # Spatial subset bounds [xmin, ymin, xmax, ymax]
-BBOX = [20000, 5000, 45000, 10000]
+BBOX = [1, 1, 45000, 15000]
 
 # Cache behavior
 APPEND_TIMESTEPS = True
@@ -43,10 +44,10 @@ CACHE_TAG = None  # Set to "full" for full domain or custom tag
 
 # Mapping: restart folder prefix -> timed-out folder prefix
 VARIABILITY_MAP = {
-    '1': '01_baserun{DISCHARGE}',
-    '2': '02_run{DISCHARGE}_seasonal',
-    '3': '03_run{DISCHARGE}_flashy',
-    '4': '04_run{DISCHARGE}_singlepeak'
+    '1': f'01_baserun{DISCHARGE}',
+    '2': f'02_run{DISCHARGE}_seasonal',
+    '3': f'03_run{DISCHARGE}_flashy',
+    '4': f'04_run{DISCHARGE}_singlepeak'
 }
 
 
@@ -69,19 +70,19 @@ print(f"Starting extraction for {len(model_folders)} runs...")
 for folder in model_folders:
     print(f"\n--- Processing Run: {folder.name} ---")
 
-    # --- STITCHING LOGIC ---
-    all_run_paths = []
-    scenario_num = folder.name.split('_')[0]
+    all_run_paths = get_stitched_map_run_paths(
+        base_path=base_path,
+        folder_name=folder.name,
+        timed_out_dir=timed_out_dir,
+        variability_map=VARIABILITY_MAP,
+        analyze_noisy=False,
+    )
+    if not all_run_paths:
+        all_run_paths = [folder]
 
-    # 1. Check for timed-out part
-    if scenario_num in VARIABILITY_MAP:
-        t_out_path = timed_out_dir / VARIABILITY_MAP[scenario_num]
-        if t_out_path.exists():
-            all_run_paths.append(t_out_path)
-            print(f"  Found timed-out part: {t_out_path.name}")
-
-    # 2. Add the restart part
-    all_run_paths.append(folder)
+    for p in all_run_paths:
+        if p != folder:
+            print(f"  Found timed-out part: {p.name}")
 
     cache_tag = cache_tag_from_bbox(BBOX, CACHE_TAG)
     print(f"  Updating cache(s) for {folder.name}")

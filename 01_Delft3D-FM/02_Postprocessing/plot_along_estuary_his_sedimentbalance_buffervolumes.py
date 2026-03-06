@@ -13,12 +13,11 @@ import matplotlib as mpl
 import sys
 import xarray as xr
 from pathlib import Path
-import re
 
 # Add the current working directory (where FUNCTIONS is located)
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
 
-from FUNCTIONS.F_loaddata import load_and_cache_scenario  
+from FUNCTIONS.F_loaddata import load_and_cache_scenario, get_stitched_his_paths
 
 #%% --- CONFIGURATION ---
 # What to analyze?
@@ -89,46 +88,18 @@ all_run_paths = {}
 run_his_paths = {}
 
 for folder in model_folders:
+    his_paths = get_stitched_his_paths(
+        base_path=base_path,
+        folder_name=folder,
+        timed_out_dir=timed_out_dir,
+        variability_map=VARIABILITY_MAP,
+        analyze_noisy=ANALYZE_NOISY,
+    )
 
-    model_location = base_path / folder
-    his_paths = []
-    scenario_num = folder.split('_')[0]
-    # Normalize scenario number (handles '01' and '1')
-    try:
-        scenario_key = str(int(scenario_num))
-    except Exception:
-        scenario_key = scenario_num
-    # For noisy scenarios, match timed-out folder by noisy{integer} substring
-    if ANALYZE_NOISY:
-        match = re.search(r'noisy(\d+)', folder)
-        timed_out_folder = None
-        if timed_out_dir is None:
-            print('[WARNING] Timed-out directory not available; skipping timed-out noisy runs.')
-        elif match:
-            noisy_id = match.group(0)
-            print(f"[DEBUG] noisy_id: {noisy_id}")
-            print(f"[DEBUG] timed_out_dir contents: {[f.name for f in timed_out_dir.iterdir()]}")
-            for f in timed_out_dir.iterdir():
-                if f.is_dir() and noisy_id in f.name:
-                    timed_out_folder = f.name
-                    break
-        if timed_out_folder:
-            timed_out_path = timed_out_dir / timed_out_folder / "output" / "FlowFM_0000_his.nc"
-            print(f"[DEBUG] Checking for timed-out file: {timed_out_path}")
-            if timed_out_path.exists():
-                print(f"[DEBUG] Found timed-out file: {timed_out_path}")
-                his_paths.append(timed_out_path)
-            else:
-                print(f"[DEBUG] Timed-out file does NOT exist: {timed_out_path}")
-    else:
-        if timed_out_dir is not None:
-            timed_out_folder = VARIABILITY_MAP.get(scenario_key, folder)
-            timed_out_path = timed_out_dir / timed_out_folder / "output" / "FlowFM_0000_his.nc"
-            if timed_out_path.exists():
-                his_paths.append(timed_out_path)
-    main_his_path = model_location / "output" / "FlowFM_0000_his.nc"
-    if main_his_path.exists():
-        his_paths.append(main_his_path)
+    if his_paths:
+        print(f"[HIS-stitch] {folder}: {len(his_paths)} part(s)")
+        for p in his_paths:
+            print(f"[HIS-stitch]   {p}")
     if his_paths:
         run_his_paths[folder] = his_paths
     else:

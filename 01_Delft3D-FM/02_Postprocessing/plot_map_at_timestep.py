@@ -1,19 +1,22 @@
 """Plot map output at a certain timestep"""
 #%% 
 from pathlib import Path
+import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from FUNCTIONS.F_general import create_bedlevel_colormap, create_water_colormap, create_shear_stress_colormap
 from FUNCTIONS.F_map_cache import cache_tag_from_bbox, load_or_update_map_cache_multi
+from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
 #%% --- 1. SETTINGS ---
 # Which scenarios to process (set to None or empty list for all)
-SCENARIOS_TO_PROCESS = ['1', '2']#, '2', '3', '4']  # Use all scenarios
-DISCHARGE = 1000
+SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']  # Use all scenarios
+DISCHARGE = 500
 # --- Variable selection ---
 var_names = ['mesh2d_mor_bl', 'mesh2d_s1', 'mesh2d_taus']  # e.g. ['mesh2d_mor_bl'] or all three
-time_to_extract = -1
+time_to_extract = None
+target_hydrodynamic_date = '2055-12-31' # e.g. '2055-12-31'; when set, nearest timestep is used per run
 
 # Cache settings
 CACHE_BBOX = None  # None = full domain
@@ -95,13 +98,15 @@ for folder in model_folders:
     output_plots_dir.mkdir(parents=True, exist_ok=True)
     print(f"\nProcessing: {folder}")
 
-    run_paths = []
-    scenario_num = folder.split('_')[0]
-    if timed_out_dir is not None and scenario_num in VARIABILITY_MAP:
-        timed_out_path = timed_out_dir / VARIABILITY_MAP[scenario_num]
-        if timed_out_path.exists():
-            run_paths.append(timed_out_path)
-    run_paths.append(model_location)
+    run_paths = get_stitched_map_run_paths(
+        base_path=base_path,
+        folder_name=folder,
+        timed_out_dir=timed_out_dir,
+        variability_map=VARIABILITY_MAP,
+        analyze_noisy=False,
+    )
+    if not run_paths:
+        run_paths = [model_location]
 
     cache_tag = cache_tag_from_bbox(CACHE_BBOX, CACHE_TAG)
     ds = load_or_update_map_cache_multi(
@@ -119,8 +124,41 @@ for folder in model_folders:
         print(f"Skipping {folder}: no data cached.")
         continue
 
-    if time_to_extract is not None and 'time' in ds.dims:
-        ds = ds.isel(time=time_to_extract)
+    selected_time_label = "Unknown time"
+    selected_time_tag = "unknown_time"
+
+    if 'time' in ds.dims and len(ds.time) > 0:
+        time_values = np.asarray(ds.time.values).astype('datetime64[ns]')
+        print("\n[i] Time dimension:")
+        print(f"  - Number of timesteps: {len(time_values)}")
+        print(f"  - First time: {time_values[0]}")
+        print(f"  - Last time: {time_values[-1]}")
+
+        if target_hydrodynamic_date is not None:
+            target_dt = np.datetime64(target_hydrodynamic_date).astype('datetime64[ns]')
+            idx = int(np.argmin(np.abs(time_values.astype('int64') - target_dt.astype('int64'))))
+        elif time_to_extract is not None:
+            idx = int(time_to_extract)
+            if idx < 0:
+                idx = len(time_values) + idx
+            idx = max(0, min(idx, len(time_values) - 1))
+        else:
+            idx = len(time_values) - 1
+
+        actual_dt = np.datetime64(time_values[idx], 'ns')
+        actual_label = str(np.datetime_as_string(actual_dt, unit='s')).replace('T', ' ')
+        actual_tag = str(np.datetime_as_string(actual_dt, unit='D'))
+
+        if target_hydrodynamic_date is not None:
+            target_label = str(np.datetime_as_string(np.datetime64(target_hydrodynamic_date), unit='D'))
+            selected_time_label = f"{actual_label} (target {target_label})"
+        else:
+            selected_time_label = actual_label
+        selected_time_tag = actual_tag
+
+        print(f"  - Selected timestep index: {idx}")
+        print(f"  - Selected actual time: {selected_time_label}")
+        ds = ds.isel(time=idx)
 
     for var_name in var_names:
         if var_name not in ds:
@@ -130,19 +168,8 @@ for folder in model_folders:
         current_cfg = configs[var_name]
         cmap = current_cfg['cmap']
 
-        # Extract timing and data
-        if 'time' in data_source[var_name].dims:
-            data_to_plot = data_source[var_name]
-            try:
-                raw_time = data_source['time'].values
-                if hasattr(raw_time, '__len__') and len(raw_time) == 1:
-                    raw_time = raw_time[0]
-                timestamp_str = str(raw_time).split('.')[0].replace('T', ' ')
-            except Exception:
-                timestamp_str = "Unknown time"
-        else:
-            data_to_plot = data_source[var_name]
-            timestamp_str = f"at timestep {time_to_extract}"
+        data_to_plot = data_source[var_name]
+        timestamp_str = selected_time_label
 
         # --- 4. PLOTTING ---        
         fig, ax = plt.subplots(figsize=(12, 8))
@@ -162,7 +189,7 @@ for folder in model_folders:
         cbar = plt.colorbar(pc, cax=cax)
         cbar.set_label(current_cfg['label'])
         plt.tight_layout()
-        save_name = f"{current_cfg['file_tag']}_{folder}.png"
+        save_name = f"{current_cfg['file_tag']}_{selected_time_tag}_{folder}.png"
         save_path = output_plots_dir / save_name
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.show()

@@ -27,7 +27,9 @@ def check_available_variables_xarray(ds):
 
 # --- EXTRACT MORFAC FROM FOLDER NAME ---
 def get_mf_number(folder_name):
-    match = re.search(r'MF_?(\d+)', folder_name)
+    # Accept both pathlib.Path and plain string inputs.
+    folder_str = os.fspath(folder_name)
+    match = re.search(r'MF_?(\d+)', folder_str)
     return int(match.group(1)) if match else 999
 
 # --- EXTRACT COMPUTATION TIME FROM .dia FILE ---

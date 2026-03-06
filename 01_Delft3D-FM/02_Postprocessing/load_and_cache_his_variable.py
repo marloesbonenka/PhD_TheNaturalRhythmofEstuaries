@@ -14,10 +14,9 @@ import sys
 import numpy as np
 import xarray as xr
 from pathlib import Path
-import re
 
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
-from FUNCTIONS.F_loaddata import load_and_cache_scenario
+from FUNCTIONS.F_loaddata import load_and_cache_scenario, get_stitched_his_paths
 
 # %% --- CONFIGURATION ---
 
@@ -74,34 +73,13 @@ print(f"Found {len(model_folders)} run folders in: {base_path}")
 # %% --- BUILD HIS FILE PATHS (same logic as analysis script) ---
 run_his_paths = {}
 for folder in model_folders:
-    model_location = base_path / folder
-    his_paths = []
-    scenario_num = folder.split('_')[0]
-    try:
-        scenario_key = str(int(scenario_num))
-    except Exception:
-        scenario_key = scenario_num
-
-    if ANALYZE_NOISY:
-        match = re.search(r'noisy(\d+)', folder)
-        if timed_out_dir is not None and match:
-            noisy_id = match.group(0)
-            for f in timed_out_dir.iterdir():
-                if f.is_dir() and noisy_id in f.name:
-                    timed_out_path = timed_out_dir / f.name / "output" / "FlowFM_0000_his.nc"
-                    if timed_out_path.exists():
-                        his_paths.append(timed_out_path)
-                    break
-    else:
-        if timed_out_dir is not None:
-            timed_out_folder = VARIABILITY_MAP.get(scenario_key, folder)
-            timed_out_path = timed_out_dir / timed_out_folder / "output" / "FlowFM_0000_his.nc"
-            if timed_out_path.exists():
-                his_paths.append(timed_out_path)
-
-    main_his_path = model_location / "output" / "FlowFM_0000_his.nc"
-    if main_his_path.exists():
-        his_paths.append(main_his_path)
+    his_paths = get_stitched_his_paths(
+        base_path=base_path,
+        folder_name=folder,
+        timed_out_dir=timed_out_dir,
+        variability_map=VARIABILITY_MAP,
+        analyze_noisy=ANALYZE_NOISY,
+    )
 
     if his_paths:
         run_his_paths[folder] = his_paths

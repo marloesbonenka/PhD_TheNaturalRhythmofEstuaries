@@ -1,11 +1,10 @@
-""""Post-process multiple """
+""""Post-process multiple scenarios map output, 
+plot overall morphological characteristics along the estuary (bed level, max depth, channel width)"""
 
 #%% IMPORTS
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
-import dfm_tools as dfmt
-import xarray as xr
 import sys
 
 #%%
@@ -16,13 +15,13 @@ from FUNCTIONS.F_general import *
 from FUNCTIONS.F_braiding_index import *
 from FUNCTIONS.F_channelwidth import *
 from FUNCTIONS.F_map_cache import cache_tag_from_bbox, load_or_update_map_cache_multi
+from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
 
 #%% --- CONFIGURATION ---
 # Model output
 DISCHARGE = 500  # or 1000, etc.
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
-target_year = 400 
 config = f'Model_Output/Q{DISCHARGE}'
 
 # Braiding index
@@ -41,6 +40,7 @@ special_base = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability
 special_config = 'Test_MORFAC/03_flashy/Tmorph_50years'
 use_mf50_reference = (base_directory == special_base) and (config == special_config)
 
+#%% --- SETTINGS ---
 var_tau = 'mesh2d_tausmax'
 var_depth = 'mesh2d_waterdepth'
 
@@ -53,10 +53,14 @@ CACHE_TAG = None
 APPEND_TIMESTEPS = True
 APPEND_VARIABLES = True
 
-#%% --- SETTINGS ---
 apply_detrending = False  # Subtract initial bed level to see changes
 reference_time_idx = 0   # Time index to use as reference (0 = first timestep)
 use_absolute_depth = True  # Use absolute depth values (positive = deep)
+
+# Snapshot settings (hydrodynamic dates)
+SNAPSHOT_TARGET_DATES = None  # e.g. ['2027-01-01', '2035-01-01']; None -> equally spaced in SNAPSHOT_DATE_RANGE
+SNAPSHOT_DATE_RANGE = (np.datetime64('2025-01-01'), np.datetime64('2055-12-31'))
+SNAPSHOT_COUNT = 4
 
 check_variables = False
 
@@ -64,33 +68,96 @@ compare_braiding_index = False
 plot_braiding_index_individual = False
 
 compare_width_averaged_bedlevel = True
-plot_width_averaged_bedlevel_individual = False
+plot_width_averaged_bedlevel_individual = True
 
 compare_max_depth = True  
-plot_max_depth_individual = False
+plot_max_depth_individual = True
 
 compare_channel_width = True 
-plot_channel_width_individual = False
+plot_channel_width_individual = True
+
+
+def _date_to_filename_tag(dt64):
+    return str(np.datetime_as_string(dt64, unit='D')).replace('-', '')
+
+
+def _date_to_label(dt64):
+    return str(np.datetime_as_string(dt64, unit='D'))
+
+
+def get_target_snapshot_dates(count=4, explicit_dates=None, date_range=None):
+    if explicit_dates:
+        return [np.datetime64(d).astype('datetime64[ns]') for d in explicit_dates]
+
+    count = max(2, int(count))
+    if date_range is None:
+        start_dt = np.datetime64('2025-01-01').astype('datetime64[ns]')
+        end_dt = np.datetime64('2055-12-31').astype('datetime64[ns]')
+    else:
+        start_dt = np.datetime64(date_range[0]).astype('datetime64[ns]')
+        end_dt = np.datetime64(date_range[1]).astype('datetime64[ns]')
+
+    # Build an even spacing in nanoseconds to avoid index-based alignment.
+    ns_grid = np.linspace(start_dt.astype('int64'), end_dt.astype('int64'), count)
+    return [np.datetime64(int(ns), 'ns') for ns in ns_grid]
+
+
+def get_snapshot_matches_by_target_dates(time_values, target_dates):
+    if len(time_values) == 0:
+        return []
+
+    time_ns = np.asarray(time_values).astype('datetime64[ns]').astype('int64')
+    matches = []
+    for target_dt in target_dates:
+        target_ns = np.datetime64(target_dt).astype('datetime64[ns]').astype('int64')
+        ts_idx = int(np.argmin(np.abs(time_ns - target_ns)))
+        actual_dt = np.datetime64(time_ns[ts_idx], 'ns')
+        matches.append((target_dt, ts_idx, actual_dt))
+    return matches
 
 #%% --- SEARCH & SORT FOLDERS ---
 base_path = base_directory / config
-model_folders = [f.name for f in base_path.iterdir() if f.is_dir() and f.name.startswith('MF')]
-model_folders.sort(key=get_mf_number)
 
+# Mapping: restart folder prefix -> timed-out folder prefix
+VARIABILITY_MAP = {
+    '1': f'01_baserun{DISCHARGE}',
+    '2': f'02_run{DISCHARGE}_seasonal',
+    '3': f'03_run{DISCHARGE}_flashy',
+    '4': f'04_run{DISCHARGE}_singlepeak'
+}
+
+# Directories
 assessment_dir = base_path / 'cached_data'
 assessment_dir.mkdir(parents=True, exist_ok=True)
+timed_out_dir = base_path / 'timed-out'
+summary_output_dir = base_path / 'output_plots'
+summary_output_dir.mkdir(parents=True, exist_ok=True)
+
+# Find run folders starting with a digit (e.g. 1_rst, 2_rst)
+model_folders = [f for f in base_path.iterdir()
+                 if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
+model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
+
 # --- OPTIONAL: GLOBAL REFERENCE FROM MF50 ---
 reference_bed_MF50 = None
 if apply_detrending and use_mf50_reference:
     mf50_folder = [f for f in model_folders if get_mf_number(f) == 50]
     if len(mf50_folder) == 1:
         mf50_folder = mf50_folder[0]
-        mf50_location = base_path / mf50_folder
+        mf50_run_paths = get_stitched_map_run_paths(
+            base_path=base_path,
+            folder_name=mf50_folder,
+            timed_out_dir=timed_out_dir,
+            variability_map=VARIABILITY_MAP,
+            analyze_noisy=False,
+        )
+        if not mf50_run_paths:
+            mf50_run_paths = [base_path / mf50_folder]
         cache_tag = cache_tag_from_bbox(CACHE_BBOX, CACHE_TAG)
         ds_mf50 = load_or_update_map_cache_multi(
             cache_dir=assessment_dir,
             folder_name=mf50_folder,
-            run_paths=[mf50_location],
+            run_paths=mf50_run_paths,
             var_names=['mesh2d_mor_bl'],
             bbox=CACHE_BBOX,
             append_time=APPEND_TIMESTEPS,
@@ -104,23 +171,45 @@ if apply_detrending and use_mf50_reference:
         # Fallback: no MF50 found, keep run-specific behavior
         use_mf50_reference = False
 
-# --- STORE FINAL YEAR RESULTS ---
+# --- STORE SNAPSHOT RESULTS ---
 comparison_results = {}
+comparison_labels = {}
+
+target_snapshot_dates = get_target_snapshot_dates(
+    count=SNAPSHOT_COUNT,
+    explicit_dates=SNAPSHOT_TARGET_DATES,
+    date_range=SNAPSHOT_DATE_RANGE,
+)
+
+print("\nTarget hydrodynamic snapshot dates:")
+for dt in target_snapshot_dates:
+    print(f"  - {_date_to_label(dt)}")
 
 # --- COMPUTE MAP RESULTS FOR EACH RUN ---
 for i, folder in enumerate(model_folders):
     model_location = base_path / folder
-    save_dir = model_location / 'output_plots'
+    folder_str = folder.name
+    save_dir = summary_output_dir / f'mapplots_{folder_str}'
     save_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"\nProcessing: {folder}")
+    print(f"\nProcessing: {folder_str}")
     
     # 1. LOAD FM DATA (cached)
+    run_paths = get_stitched_map_run_paths(
+        base_path=base_path,
+        folder_name=folder,
+        timed_out_dir=timed_out_dir,
+        variability_map=VARIABILITY_MAP,
+        analyze_noisy=False,
+    )
+    if not run_paths:
+        run_paths = [model_location]
+
     cache_tag = cache_tag_from_bbox(CACHE_BBOX, CACHE_TAG)
     ds = load_or_update_map_cache_multi(
         cache_dir=assessment_dir,
         folder_name=folder,
-        run_paths=[model_location],
+        run_paths=run_paths,
         var_names=['mesh2d_mor_bl', 'mesh2d_face_x', 'mesh2d_face_y'],
         bbox=CACHE_BBOX,
         append_time=APPEND_TIMESTEPS,
@@ -131,19 +220,16 @@ for i, folder in enumerate(model_folders):
         print(f"  No cached data for {folder}, skipping.")
         continue
 
-    # 2. MORPHOLOGICAL TIME LOGIC (Robust to restarts)
-    mf_val = get_mf_number(folder)
+    # 2. Time logic per scenario (no MORFAC sensitivity here)
     delta_time = ds.time.values - start_date
     hydro_years = delta_time / np.timedelta64(365, 'D')
-    morph_years = hydro_years * mf_val
 
-    # Find the index closest to Year 50
-    ts_final = np.argmin(np.abs(morph_years - target_year))
-    
-    print(f"Folder: {folder:10} | Found Year: {morph_years[ts_final]:.2f} at Index: {ts_final}")
-    
-    # Initialize dictionary for this MF
-    comparison_results[mf_val] = {}
+    snapshot_matches = get_snapshot_matches_by_target_dates(ds.time.values, target_snapshot_dates)
+    if not snapshot_matches:
+        print(f"  No timesteps found for {folder}, skipping.")
+        ds.close()
+        continue
+    last_snapshot_idx = snapshot_matches[-1][1]
 
     # --- DETRENDING: Store reference bed level if needed ---
     if apply_detrending:
@@ -168,234 +254,271 @@ for i, folder in enumerate(model_folders):
         from scipy.spatial import cKDTree
         tree = cKDTree(np.vstack([face_x, face_y]).T)
 
-    # 4. WIDTH-AVERAGED BED LEVEL
-    if compare_width_averaged_bedlevel:
-        print(f"Computing Bed Level for {folder}...")
-        var_name = "mesh2d_mor_bl"
-        dx = 1000 
-        x_bins = np.arange(x_targets[0], x_targets[-1] + dx, dx)
-        x_centers = (x_bins[:-1] + x_bins[1:]) / 2
-        
-        face_x = ds['mesh2d_face_x'].values
-        face_y = ds['mesh2d_face_y'].values
-        width_mask = (face_y >= y_range[0]) & (face_y <= y_range[1])
+    for target_dt, ts_idx, actual_dt in snapshot_matches:
+        target_label = _date_to_label(target_dt)
+        actual_label = _date_to_label(actual_dt)
+        snapshot_key = f"d{_date_to_filename_tag(target_dt)}"
+        snapshot_label = f"target={target_label} | actual={actual_label}"
+        print(f"Scenario: {folder_str:25} | {snapshot_label} | HydroYear={hydro_years[ts_idx]:.2f}")
 
-        bedlev_data = ds[var_name].isel(time=ts_final).values.copy()
+        comparison_results.setdefault(snapshot_key, {})
+        comparison_results[snapshot_key][folder_str] = {}
+        comparison_labels[snapshot_key] = target_label
 
-        # Apply detrending if enabled
-        if apply_detrending:
-            bedlev_data = bedlev_data - reference_bed
-            # For detrended data, don't use bed_threshold filter (data is centered around 0)
-            # Only filter based on spatial domain
-            valid_mask = width_mask
-        else:
-            # For non-detrended data, use bed_threshold to exclude high land values
-            valid_mask = (width_mask) & (bedlev_data < bed_threshold)
-        
-        temp_means = []
-        for k in range(len(x_bins)-1):
-            bin_mask = valid_mask & (face_x >= x_bins[k]) & (face_x < x_bins[k+1])
-            temp_means.append(np.mean(bedlev_data[bin_mask]) if np.any(bin_mask) else np.nan)
-        
-        comparison_results[mf_val]['BL'] = np.array(temp_means)
-        comparison_results[mf_val]['x_centers'] = x_centers
+        # 4. WIDTH-AVERAGED BED LEVEL
+        if compare_width_averaged_bedlevel:
+            print(f"Computing Bed Level for {folder} ({snapshot_label})...")
+            var_name = "mesh2d_mor_bl"
+            dx = 1000
+            x_bins = np.arange(x_targets[0], x_targets[-1] + dx, dx)
+            x_centers = (x_bins[:-1] + x_bins[1:]) / 2
 
-    # 5. MAXIMUM DEPTH ANALYSIS (95th percentile)
-    if compare_max_depth:
-        print(f"Computing Maximum Depth for {folder}...")
-        var_name = "mesh2d_mor_bl"
-        dx = 1000
-        x_bins = np.arange(x_targets[0], x_targets[-1] + dx, dx)
-        x_centers = (x_bins[:-1] + x_bins[1:]) / 2
-        
-        face_x = ds['mesh2d_face_x'].values
-        face_y = ds['mesh2d_face_y'].values
-        width_mask = (face_y >= y_range[0]) & (face_y <= y_range[1])
-        
-        bedlev_data = ds[var_name].isel(time=ts_final).values.copy()
-        
-        # Apply detrending if enabled
-        if apply_detrending:
-            bedlev_data = bedlev_data - reference_bed
-        
-        # For depth calculation: convert bed level to depth
-        # Depth is positive downward (negative bed level = deep channel)
-        if use_absolute_depth:
-            # Use absolute value to make all depths positive
-            depths_field = np.abs(bedlev_data)
-        else:
-            # Traditional: depth = -bed_level (negative values become positive)
-            depths_field = -bedlev_data
-        
-        # Apply thresholds
-        if apply_detrending:
-            valid_mask = width_mask  # No bed_threshold when detrended
-        else:
-            valid_mask = (width_mask) & (bedlev_data < bed_threshold)
-        
-        max_depths = []
-        for k in range(len(x_bins)-1):
-            bin_mask = valid_mask & (face_x >= x_bins[k]) & (face_x < x_bins[k+1])
-            if np.any(bin_mask):
-                bin_depths = depths_field[bin_mask]
-                valid_depths = bin_depths[~np.isnan(bin_depths)]
-                if len(valid_depths) > 0:
-                    max_depth = np.percentile(valid_depths, depth_percentile)
-                    max_depths.append(max_depth)
+            face_x = ds['mesh2d_face_x'].values
+            face_y = ds['mesh2d_face_y'].values
+            width_mask = (face_y >= y_range[0]) & (face_y <= y_range[1])
+
+            bedlev_data = ds[var_name].isel(time=ts_idx).values.copy()
+
+            # Apply detrending if enabled
+            if apply_detrending:
+                bedlev_data = bedlev_data - reference_bed
+                # For detrended data, don't use bed_threshold filter (data is centered around 0)
+                # Only filter based on spatial domain
+                valid_mask = width_mask
+            else:
+                # For non-detrended data, use bed_threshold to exclude high land values
+                valid_mask = (width_mask) & (bedlev_data < bed_threshold)
+
+            temp_means = []
+            for k in range(len(x_bins)-1):
+                bin_mask = valid_mask & (face_x >= x_bins[k]) & (face_x < x_bins[k+1])
+                temp_means.append(np.mean(bedlev_data[bin_mask]) if np.any(bin_mask) else np.nan)
+
+            comparison_results[snapshot_key][folder_str]['BL'] = np.array(temp_means)
+            comparison_results[snapshot_key][folder_str]['x_centers'] = x_centers
+
+            if plot_width_averaged_bedlevel_individual:
+                plt.figure(figsize=(10, 6))
+                plt.plot(x_centers/1000, temp_means, 'o-', color='black')
+                plt.xlabel('Distance [km]')
+                detrend_label = ' (Detrended)' if apply_detrending else ''
+                plt.ylabel(f'Width-averaged Bed Level [m]{detrend_label}')
+                plt.title(f'Width-averaged Bed Level: {folder_str} ({snapshot_label})')
+                plt.grid(True, alpha=0.3)
+                plt.savefig(save_dir / f'width_averaged_bedlevel_map_{actual_label}_{folder_str}.png')
+                if ts_idx == last_snapshot_idx:
+                    plt.savefig(save_dir / f'width_averaged_bedlevel_map_final_{folder_str}.png')
+                plt.close()
+
+        # 5. MAXIMUM DEPTH ANALYSIS (95th percentile)
+        if compare_max_depth:
+            print(f"Computing Maximum Depth for {folder} ({snapshot_label})...")
+            var_name = "mesh2d_mor_bl"
+            dx = 1000
+            x_bins = np.arange(x_targets[0], x_targets[-1] + dx, dx)
+            x_centers = (x_bins[:-1] + x_bins[1:]) / 2
+
+            face_x = ds['mesh2d_face_x'].values
+            face_y = ds['mesh2d_face_y'].values
+            width_mask = (face_y >= y_range[0]) & (face_y <= y_range[1])
+
+            bedlev_data = ds[var_name].isel(time=ts_idx).values.copy()
+
+            # Apply detrending if enabled
+            if apply_detrending:
+                bedlev_data = bedlev_data - reference_bed
+
+            # For depth calculation: convert bed level to depth
+            # Depth is positive downward (negative bed level = deep channel)
+            if use_absolute_depth:
+                # Use absolute value to make all depths positive
+                depths_field = np.abs(bedlev_data)
+            else:
+                # Traditional: depth = -bed_level (negative values become positive)
+                depths_field = -bedlev_data
+
+            # Apply thresholds
+            if apply_detrending:
+                valid_mask = width_mask  # No bed_threshold when detrended
+            else:
+                valid_mask = (width_mask) & (bedlev_data < bed_threshold)
+
+            max_depths = []
+            for k in range(len(x_bins)-1):
+                bin_mask = valid_mask & (face_x >= x_bins[k]) & (face_x < x_bins[k+1])
+                if np.any(bin_mask):
+                    bin_depths = depths_field[bin_mask]
+                    valid_depths = bin_depths[~np.isnan(bin_depths)]
+                    if len(valid_depths) > 0:
+                        max_depth = np.percentile(valid_depths, depth_percentile)
+                        max_depths.append(max_depth)
+                    else:
+                        max_depths.append(np.nan)
                 else:
                     max_depths.append(np.nan)
-            else:
-                max_depths.append(np.nan)
-        
-        comparison_results[mf_val]['MaxDepth'] = np.array(max_depths)
-        
-        if plot_max_depth_individual:
-            plt.figure(figsize=(10, 6))
-            plt.plot(x_centers/1000, max_depths, 'o-', color='steelblue')
-            plt.xlabel('Distance [km]')
-            depth_label = 'Absolute Depth' if use_absolute_depth else 'Depth'
-            detrend_label = ' (Detrended)' if apply_detrending else ''
-            plt.ylabel(f'{depth_percentile}th Percentile {depth_label} [m]{detrend_label}')
-            plt.title(f'Maximum Channel Depth: {folder}')
-            plt.grid(True, alpha=0.3)
-            plt.savefig(save_dir / f'max_depth_{folder}.png')
-            plt.close()
 
-    # 6. CHANNEL WIDTH ANALYSIS
-    if compare_channel_width:
-        print(f"Computing Channel Widths for {folder}...")
-        
-        max_widths = []
-        for x_coord in x_targets:
-            distances, bed_profile = get_bed_profile_at_x(
-                ds, tree, x_coord, y_range, ts_final, 
-                reference_bed=reference_bed if apply_detrending else None,
-                detrend=apply_detrending
-            )
-            
-            # Filter out land values
-            if apply_detrending:
-                # For detrended data, use different threshold logic
-                bed_profile[np.abs(bed_profile) > bed_threshold] = np.nan
-            else:
-                bed_profile[bed_profile > bed_threshold] = np.nan
-            
-            max_width = compute_max_channel_width(bed_profile, distances, safety_buffer)
-            max_widths.append(max_width)
-        
-        comparison_results[mf_val]['ChannelWidth'] = np.array(max_widths)
-        
-        if plot_channel_width_individual:
-            plt.figure(figsize=(10, 6))
-            plt.plot(x_targets/1000, max_widths, 'o-', color='coral')
-            plt.xlabel('Distance [km]')
-            plt.ylabel('Max Channel Width [m]')
-            detrend_label = ' (Detrended)' if apply_detrending else ''
-            plt.title(f'Maximum Channel Width: {folder}{detrend_label}')
-            plt.grid(True, alpha=0.3)
-            plt.savefig(save_dir / f'channel_width_{folder}.png')
-            plt.close()
+            comparison_results[snapshot_key][folder_str]['MaxDepth'] = np.array(max_depths)
+
+            if plot_max_depth_individual:
+                plt.figure(figsize=(10, 6))
+                plt.plot(x_centers/1000, max_depths, 'o-', color='steelblue')
+                plt.xlabel('Distance [km]')
+                depth_label = 'Absolute Depth' if use_absolute_depth else 'Depth'
+                detrend_label = ' (Detrended)' if apply_detrending else ''
+                plt.ylabel(f'{depth_percentile}th Percentile {depth_label} [m]{detrend_label}')
+                plt.title(f'Maximum Channel Depth: {folder_str} ({snapshot_label})')
+                plt.grid(True, alpha=0.3)
+                plt.savefig(save_dir / f'max_depth_map_{actual_label}_{folder_str}.png')
+                if ts_idx == last_snapshot_idx:
+                    plt.savefig(save_dir / f'max_depth_map_final_{folder_str}.png')
+                plt.close()
+
+        # 6. CHANNEL WIDTH ANALYSIS
+        if compare_channel_width:
+            print(f"Computing Channel Widths for {folder_str} ({snapshot_label})...")
+
+            max_widths = []
+            for x_coord in x_targets:
+                distances, bed_profile = get_bed_profile_at_x(
+                    ds, tree, x_coord, y_range, ts_idx,
+                    reference_bed=reference_bed if apply_detrending else None,
+                    detrend=apply_detrending
+                )
+
+                # Filter out land values
+                if apply_detrending:
+                    # For detrended data, use different threshold logic
+                    bed_profile[np.abs(bed_profile) > bed_threshold] = np.nan
+                else:
+                    bed_profile[bed_profile > bed_threshold] = np.nan
+
+                max_width = compute_max_channel_width(bed_profile, distances, safety_buffer)
+                max_widths.append(max_width)
+
+            comparison_results[snapshot_key][folder_str]['ChannelWidth'] = np.array(max_widths)
+
+            if plot_channel_width_individual:
+                plt.figure(figsize=(10, 6))
+                plt.plot(x_targets/1000, max_widths, 'o-', color='coral')
+                plt.xlabel('Distance [km]')
+                plt.ylabel('Max Channel Width [m]')
+                detrend_label = ' (Detrended)' if apply_detrending else ''
+                plt.title(f'Maximum Channel Width: {folder_str}{detrend_label} ({snapshot_label})')
+                plt.grid(True, alpha=0.3)
+                plt.savefig(save_dir / f'channel_width_map_{actual_label}_{folder_str}.png')
+                if ts_idx == last_snapshot_idx:
+                    plt.savefig(save_dir / f'channel_width_map_final_{folder_str}.png')
+                plt.close()
 
     ds.close()
 
 # %% --- 7. FINAL COMPARISON PLOT ---
 print("\nGenerating Comparison Plot...")
 
-# Count active plots
-n_plots = sum([
-    compare_braiding_index and 'BI_tau' in comparison_results[list(comparison_results.keys())[0]],
-    compare_braiding_index and 'BI_depth' in comparison_results[list(comparison_results.keys())[0]],
-    compare_width_averaged_bedlevel,
-    compare_max_depth,
-    compare_channel_width
-])
+for snapshot_key, snapshot_results in comparison_results.items():
+    if not snapshot_results:
+        continue
 
-if n_plots == 0:
-    print("No plots to generate!")
-else:
+    # Count active plots
+    first_key = list(snapshot_results.keys())[0]
+    n_plots = sum([
+        compare_braiding_index and 'BI_tau' in snapshot_results[first_key],
+        compare_braiding_index and 'BI_depth' in snapshot_results[first_key],
+        compare_width_averaged_bedlevel,
+        compare_max_depth,
+        compare_channel_width
+    ])
+
+    if n_plots == 0:
+        print("No plots to generate!")
+        continue
+
     fig, axes = plt.subplots(n_plots, 1, figsize=(12, 4 * n_plots), sharex=True)
     if n_plots == 1:
         axes = [axes]
-    
-    sorted_mfs = sorted(comparison_results.keys())
-    colors = plt.cm.viridis(np.linspace(0, 0.8, len(sorted_mfs)))
-    
+
+    sorted_scenarios = sorted(snapshot_results.keys())
+    colors = plt.cm.viridis(np.linspace(0, 0.8, len(sorted_scenarios)))
+
     plot_idx = 0
-    
+
     # Plot 1: Shear Stress BI
-    if compare_braiding_index and 'BI_tau' in comparison_results[sorted_mfs[0]]:
-        for idx, mf in enumerate(sorted_mfs):
-            data = comparison_results[mf]
+    if compare_braiding_index and 'BI_tau' in snapshot_results[first_key]:
+        for idx, scenario in enumerate(sorted_scenarios):
+            data = snapshot_results[scenario]
             if 'BI_tau' in data:
-                axes[plot_idx].plot(x_targets/1000, data['BI_tau'], 
-                                   label=f'MF {mf}', color=colors[idx], marker='o', ms=4)
+                axes[plot_idx].plot(x_targets/1000, data['BI_tau'],
+                                   label=scenario, color=colors[idx], marker='o', ms=4)
         axes[plot_idx].set_title(f'BI ({var_tau}), fixed threshold: tau > {tau_threshold} N/m²')
         axes[plot_idx].set_ylabel('braiding index')
         axes[plot_idx].legend(loc='best')
         axes[plot_idx].grid(True, alpha=0.2)
         plot_idx += 1
-    
+
     # Plot 2: Water Depth BI
-    if compare_braiding_index and 'BI_depth' in comparison_results[sorted_mfs[0]]:
-        for idx, mf in enumerate(sorted_mfs):
-            data = comparison_results[mf]
+    if compare_braiding_index and 'BI_depth' in snapshot_results[first_key]:
+        for idx, scenario in enumerate(sorted_scenarios):
+            data = snapshot_results[scenario]
             if 'BI_depth' in data:
-                axes[plot_idx].plot(x_targets/1000, data['BI_depth'], 
-                                   label=f'MF {mf}', color=colors[idx], marker='s', ms=4, linestyle='--')
+                axes[plot_idx].plot(x_targets/1000, data['BI_depth'],
+                                   label=scenario, color=colors[idx], marker='s', ms=4, linestyle='--')
         axes[plot_idx].set_title(f'BI ({var_depth}), relative threshold: {int(depth_threshold*100)}% above mean water depth')
         axes[plot_idx].set_ylabel('braiding index')
         axes[plot_idx].legend(loc='best')
         axes[plot_idx].grid(True, alpha=0.2)
         plot_idx += 1
-    
+
     # Plot 3: Bed Level
     if compare_width_averaged_bedlevel:
-        for idx, mf in enumerate(sorted_mfs):
-            data = comparison_results[mf]
+        for idx, scenario in enumerate(sorted_scenarios):
+            data = snapshot_results[scenario]
             if 'BL' in data:
-                axes[plot_idx].plot(data['x_centers']/1000, data['BL'], 
-                                   color=colors[idx], linewidth=2, label=f'MF {mf}')
+                axes[plot_idx].plot(data['x_centers']/1000, data['BL'],
+                                   color=colors[idx], linewidth=2, label=scenario)
         axes[plot_idx].set_title('width-averaged bed level')
         axes[plot_idx].set_ylabel('bed level [m]')
         axes[plot_idx].legend(loc='best')
         axes[plot_idx].grid(True, alpha=0.2)
         plot_idx += 1
-    
+
     # Plot 4: Maximum Depth
     if compare_max_depth:
-        for idx, mf in enumerate(sorted_mfs):
-            data = comparison_results[mf]
+        for idx, scenario in enumerate(sorted_scenarios):
+            data = snapshot_results[scenario]
             if 'MaxDepth' in data:
-                axes[plot_idx].plot(data['x_centers']/1000, data['MaxDepth'], 
-                                   color=colors[idx], linewidth=2, label=f'MF {mf}', marker='o', ms=3)
+                axes[plot_idx].plot(data['x_centers']/1000, data['MaxDepth'],
+                                   color=colors[idx], linewidth=2, label=scenario, marker='o', ms=3)
         axes[plot_idx].set_title(f'p{depth_percentile} channel depth')
         axes[plot_idx].set_ylabel('depth [m]')
         axes[plot_idx].legend(loc='best')
         axes[plot_idx].grid(True, alpha=0.2)
         plot_idx += 1
-    
+
     # Plot 5: Channel Width
     if compare_channel_width:
-        for idx, mf in enumerate(sorted_mfs):
-            data = comparison_results[mf]
+        for idx, scenario in enumerate(sorted_scenarios):
+            data = snapshot_results[scenario]
             if 'ChannelWidth' in data:
-                axes[plot_idx].plot(x_targets/1000, data['ChannelWidth'], 
-                                   color=colors[idx], linewidth=2, label=f'MF {mf}', marker='s', ms=3)
+                axes[plot_idx].plot(x_targets/1000, data['ChannelWidth'],
+                                   color=colors[idx], linewidth=2, label=scenario, marker='s', ms=3)
         axes[plot_idx].set_title(f'maximum channel width (threshold: mean depth - {int(safety_buffer*100)} cm)')
         axes[plot_idx].set_ylabel('width [m]')
         axes[plot_idx].legend(loc='best')
         axes[plot_idx].grid(True, alpha=0.2)
-    
+
     axes[-1].set_xlabel('x-coordinate along estuary [km]')
-    
-    plt.tight_layout()
+    fig.suptitle(f"Hydrodynamic snapshot around {comparison_labels.get(snapshot_key, snapshot_key)}", fontsize=12)
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.97])
+
+    snapshot_date = comparison_labels.get(snapshot_key, snapshot_key)
 
     if apply_detrending:
-        plt.savefig(base_path / f'sensitivity_MF_detrended_along_estuary_Tmorph_{target_year}years.png', dpi=300)
+        plt.savefig(summary_output_dir / f'overall_morphology_variability_comparison_detrended_{snapshot_date}.png', dpi=300)
     else:
-        plt.savefig(base_path / f'sensitivity_MF_along_estuary_Tmorph_{target_year}years.png', dpi=300)
+        plt.savefig(summary_output_dir / f'overall_morphology_variability_comparison_{snapshot_date}.png', dpi=300)
     plt.show()
-    
-    print(f'Saved comparison plot at {base_path}')
 
-print("\nAll FM processing complete.")
+    print(f'Saved comparison plot at {summary_output_dir} for {snapshot_key}')
+
+print("\nAll processing complete.")

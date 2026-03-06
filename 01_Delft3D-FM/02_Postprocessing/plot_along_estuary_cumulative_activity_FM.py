@@ -15,6 +15,7 @@ from FUNCTIONS.F_general import get_mf_number
 from FUNCTIONS.F_cache import load_results_cache, save_results_cache
 from FUNCTIONS.F_map_cache import cache_tag_from_bbox, load_or_update_map_cache_multi
 from FUNCTIONS.F_morphological_activity import cumulative_activity, morph_years_from_datetimes
+from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
 #%% --- SETTINGS & PATHS ---
 
@@ -164,24 +165,16 @@ if force_recompute or not results:
         print(f"\nProcessing: {folder}")
 
         # --- RESTART STITCHING (timed-out + restart, same as cross-section scripts) ---
-        all_run_paths = []
-
-        if ANALYSIS_MODE == "variability":
-            scenario_num = folder.split('_')[0]
-            if scenario_num in VARIABILITY_MAP and timed_out_dir.exists():
-                timed_out_folder = VARIABILITY_MAP[scenario_num]
-                timed_out_path = timed_out_dir / timed_out_folder
-                if timed_out_path.exists():
-                    all_run_paths.append(timed_out_path)
-
-        elif ANALYSIS_MODE == "morfac":
-            if 'restart' in folder.lower() and timed_out_dir.exists():
-                mf_prefix = folder.split('_')[0]
-                matches = [f.name for f in timed_out_dir.iterdir() if f.name.startswith(mf_prefix)]
-                if matches:
-                    all_run_paths.append(timed_out_dir / matches[0])
-
-        all_run_paths.append(model_location)
+        variability_map = VARIABILITY_MAP if ANALYSIS_MODE == "variability" else None
+        all_run_paths = get_stitched_map_run_paths(
+            base_path=base_path,
+            folder_name=folder,
+            timed_out_dir=timed_out_dir,
+            variability_map=variability_map,
+            analyze_noisy=False,
+        )
+        if not all_run_paths:
+            all_run_paths = [model_location]
 
         # Determine MORFAC
         if use_folder_morfac:
