@@ -76,6 +76,25 @@ plot_max_depth_individual = True
 compare_channel_width = True 
 plot_channel_width_individual = True
 
+compare_hypsometric = True
+plot_hypsometric_individual = True
+
+# Human-readable labels per scenario number (used in combined plots)
+SCENARIO_LABELS = {
+    '1': 'Constant',
+    '2': 'Seasonal',
+    '3': 'Flashy',
+    '4': 'Single peak',
+}
+
+# Colours: one per scenario (used in combined plots)
+SCENARIO_COLORS = {
+    '1': '#1f77b4',   # blue   - Constant
+    '2': '#ff7f0e',   # orange - Seasonal
+    '3': '#2ca02c',   # green  - Flashy
+    '4': '#d62728',   # red    - Single peak
+}
+
 
 def _date_to_filename_tag(dt64):
     return str(np.datetime_as_string(dt64, unit='D')).replace('-', '')
@@ -83,6 +102,29 @@ def _date_to_filename_tag(dt64):
 
 def _date_to_label(dt64):
     return str(np.datetime_as_string(dt64, unit='D'))
+
+
+def _scenario_key_from_folder(folder_name):
+    try:
+        return str(int(str(folder_name).split('_')[0]))
+    except Exception:
+        return str(folder_name).split('_')[0]
+
+
+def _scenario_label(folder_name):
+    key = _scenario_key_from_folder(folder_name)
+    return SCENARIO_LABELS.get(key, str(folder_name))
+
+
+def _scenario_color(folder_name):
+    key = _scenario_key_from_folder(folder_name)
+    return SCENARIO_COLORS.get(key, 'grey')
+
+
+def _scenario_legend_label(folder_name):
+    key = _scenario_key_from_folder(folder_name)
+    base = SCENARIO_LABELS.get(key, key)
+    return f"{base} ({folder_name})"
 
 
 def get_target_snapshot_dates(count=4, explicit_dates=None, date_range=None):
@@ -106,14 +148,51 @@ def get_snapshot_matches_by_target_dates(time_values, target_dates):
     if len(time_values) == 0:
         return []
 
-    time_ns = np.asarray(time_values).astype('datetime64[ns]').astype('int64')
+    time_dt = np.array(time_values, dtype='datetime64[ns]')
+    time_ns = time_dt.astype('int64')
     matches = []
     for target_dt in target_dates:
-        target_ns = np.datetime64(target_dt).astype('datetime64[ns]').astype('int64')
+        target_ns = np.datetime64(target_dt, 'ns').astype('int64')
         ts_idx = int(np.argmin(np.abs(time_ns - target_ns)))
-        actual_dt = np.datetime64(time_ns[ts_idx], 'ns')
+        actual_dt = time_dt[ts_idx]
         matches.append((target_dt, ts_idx, actual_dt))
     return matches
+
+
+def compute_hypsometric_curve(bedlev_data, valid_mask, face_area=None):
+    vals = bedlev_data[valid_mask]
+    vals = vals[np.isfinite(vals)]
+    if vals.size == 0:
+        return np.array([]), np.array([]), 'Cumulative area'
+
+    if face_area is not None:
+        area_vals = face_area[valid_mask]
+        area_vals = area_vals[np.isfinite(vals)] if area_vals.shape != vals.shape else area_vals
+        area_vals = np.asarray(area_vals, dtype=float)
+        if area_vals.size != vals.size or np.all(~np.isfinite(area_vals)):
+            area_vals = np.ones_like(vals, dtype=float)
+            area_label = 'Cumulative area fraction [-]'
+            to_plot_area = False
+        else:
+            area_vals = np.where(np.isfinite(area_vals), area_vals, 0.0)
+            area_label = 'Cumulative area [km²]'
+            to_plot_area = True
+    else:
+        area_vals = np.ones_like(vals, dtype=float)
+        area_label = 'Cumulative area fraction [-]'
+        to_plot_area = False
+
+    order = np.argsort(vals)
+    elev_sorted = vals[order]
+    area_sorted = area_vals[order]
+    cum_area = np.cumsum(area_sorted)
+
+    if to_plot_area:
+        cum_area = cum_area / 1e6  # m² -> km²
+    else:
+        cum_area = cum_area / cum_area[-1]
+
+    return elev_sorted, cum_area, area_label
 
 #%% --- SEARCH & SORT FOLDERS ---
 base_path = base_directory / config
@@ -193,6 +272,8 @@ for i, folder in enumerate(model_folders):
     save_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\nProcessing: {folder_str}")
+    scenario_color = _scenario_color(folder_str)
+    scenario_label = _scenario_label(folder_str)
     
     # 1. LOAD FM DATA (cached)
     run_paths = get_stitched_map_run_paths(
@@ -265,6 +346,10 @@ for i, folder in enumerate(model_folders):
         comparison_results[snapshot_key][folder_str] = {}
         comparison_labels[snapshot_key] = target_label
 
+        face_x = ds['mesh2d_face_x'].values
+        face_y = ds['mesh2d_face_y'].values
+        width_mask = (face_y >= y_range[0]) & (face_y <= y_range[1])
+
         # 4. WIDTH-AVERAGED BED LEVEL
         if compare_width_averaged_bedlevel:
             print(f"Computing Bed Level for {folder} ({snapshot_label})...")
@@ -272,10 +357,6 @@ for i, folder in enumerate(model_folders):
             dx = 1000
             x_bins = np.arange(x_targets[0], x_targets[-1] + dx, dx)
             x_centers = (x_bins[:-1] + x_bins[1:]) / 2
-
-            face_x = ds['mesh2d_face_x'].values
-            face_y = ds['mesh2d_face_y'].values
-            width_mask = (face_y >= y_range[0]) & (face_y <= y_range[1])
 
             bedlev_data = ds[var_name].isel(time=ts_idx).values.copy()
 
@@ -299,11 +380,11 @@ for i, folder in enumerate(model_folders):
 
             if plot_width_averaged_bedlevel_individual:
                 plt.figure(figsize=(10, 6))
-                plt.plot(x_centers/1000, temp_means, 'o-', color='black')
+                plt.plot(x_centers/1000, temp_means, 'o-', color=scenario_color)
                 plt.xlabel('Distance [km]')
                 detrend_label = ' (Detrended)' if apply_detrending else ''
                 plt.ylabel(f'Width-averaged Bed Level [m]{detrend_label}')
-                plt.title(f'Width-averaged Bed Level: {folder_str} ({snapshot_label})')
+                plt.title(f'Width-averaged Bed Level: {scenario_label} ({snapshot_label})')
                 plt.grid(True, alpha=0.3)
                 plt.savefig(save_dir / f'width_averaged_bedlevel_map_{actual_label}_{folder_str}.png')
                 if ts_idx == last_snapshot_idx:
@@ -317,10 +398,6 @@ for i, folder in enumerate(model_folders):
             dx = 1000
             x_bins = np.arange(x_targets[0], x_targets[-1] + dx, dx)
             x_centers = (x_bins[:-1] + x_bins[1:]) / 2
-
-            face_x = ds['mesh2d_face_x'].values
-            face_y = ds['mesh2d_face_y'].values
-            width_mask = (face_y >= y_range[0]) & (face_y <= y_range[1])
 
             bedlev_data = ds[var_name].isel(time=ts_idx).values.copy()
 
@@ -361,12 +438,12 @@ for i, folder in enumerate(model_folders):
 
             if plot_max_depth_individual:
                 plt.figure(figsize=(10, 6))
-                plt.plot(x_centers/1000, max_depths, 'o-', color='steelblue')
+                plt.plot(x_centers/1000, max_depths, 'o-', color=scenario_color)
                 plt.xlabel('Distance [km]')
                 depth_label = 'Absolute Depth' if use_absolute_depth else 'Depth'
                 detrend_label = ' (Detrended)' if apply_detrending else ''
                 plt.ylabel(f'{depth_percentile}th Percentile {depth_label} [m]{detrend_label}')
-                plt.title(f'Maximum Channel Depth: {folder_str} ({snapshot_label})')
+                plt.title(f'Maximum Channel Depth: {scenario_label} ({snapshot_label})')
                 plt.grid(True, alpha=0.3)
                 plt.savefig(save_dir / f'max_depth_map_{actual_label}_{folder_str}.png')
                 if ts_idx == last_snapshot_idx:
@@ -399,15 +476,51 @@ for i, folder in enumerate(model_folders):
 
             if plot_channel_width_individual:
                 plt.figure(figsize=(10, 6))
-                plt.plot(x_targets/1000, max_widths, 'o-', color='coral')
+                plt.plot(x_targets/1000, max_widths, 'o-', color=scenario_color)
                 plt.xlabel('Distance [km]')
                 plt.ylabel('Max Channel Width [m]')
                 detrend_label = ' (Detrended)' if apply_detrending else ''
-                plt.title(f'Maximum Channel Width: {folder_str}{detrend_label} ({snapshot_label})')
+                plt.title(f'Maximum Channel Width: {scenario_label}{detrend_label} ({snapshot_label})')
                 plt.grid(True, alpha=0.3)
                 plt.savefig(save_dir / f'channel_width_map_{actual_label}_{folder_str}.png')
                 if ts_idx == last_snapshot_idx:
                     plt.savefig(save_dir / f'channel_width_map_final_{folder_str}.png')
+                plt.close()
+
+        # 7. HYPSOMETRIC CURVE
+        if compare_hypsometric:
+            print(f"Computing Hypsometric Curve for {folder_str} ({snapshot_label})...")
+            bedlev_data = ds['mesh2d_mor_bl'].isel(time=ts_idx).values.copy()
+
+            if apply_detrending:
+                bedlev_data = bedlev_data - reference_bed
+                valid_mask = width_mask
+            else:
+                valid_mask = (width_mask) & (bedlev_data < bed_threshold)
+
+            elev_curve, area_curve, area_label = compute_hypsometric_curve(
+                bedlev_data=bedlev_data,
+                valid_mask=valid_mask,
+                face_area=None,
+            )
+
+            comparison_results[snapshot_key][folder_str]['HypsoElevation'] = elev_curve
+            comparison_results[snapshot_key][folder_str]['HypsoArea'] = area_curve
+            comparison_results[snapshot_key][folder_str]['HypsoAreaLabel'] = area_label
+
+            if plot_hypsometric_individual and elev_curve.size > 0:
+                plt.figure(figsize=(10, 6))
+                plt.plot(area_curve, elev_curve, '-', color=scenario_color, linewidth=2)
+                plt.xlabel(area_label)
+                detrend_label = ' (Detrended)' if apply_detrending else ''
+                plt.ylabel(f'Bed elevation [m]{detrend_label}')
+                plt.title(f'Hypsometric Curve: {scenario_label} ({snapshot_label})')
+                if not apply_detrending:
+                    plt.axhline(y=bed_threshold, color='red', linestyle='--', alpha=0.7)
+                plt.grid(True, alpha=0.3)
+                plt.savefig(save_dir / f'hypsometric_curve_{actual_label}_{folder_str}.png')
+                if ts_idx == last_snapshot_idx:
+                    plt.savefig(save_dir / f'hypsometric_curve_final_{folder_str}.png')
                 plt.close()
 
     ds.close()
@@ -438,8 +551,6 @@ for snapshot_key, snapshot_results in comparison_results.items():
         axes = [axes]
 
     sorted_scenarios = sorted(snapshot_results.keys())
-    colors = plt.cm.viridis(np.linspace(0, 0.8, len(sorted_scenarios)))
-
     plot_idx = 0
 
     # Plot 1: Shear Stress BI
@@ -448,7 +559,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
             data = snapshot_results[scenario]
             if 'BI_tau' in data:
                 axes[plot_idx].plot(x_targets/1000, data['BI_tau'],
-                                   label=scenario, color=colors[idx], marker='o', ms=4)
+                                   label=_scenario_legend_label(scenario), color=_scenario_color(scenario), marker='o', ms=4)
         axes[plot_idx].set_title(f'BI ({var_tau}), fixed threshold: tau > {tau_threshold} N/m²')
         axes[plot_idx].set_ylabel('braiding index')
         axes[plot_idx].legend(loc='best')
@@ -461,7 +572,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
             data = snapshot_results[scenario]
             if 'BI_depth' in data:
                 axes[plot_idx].plot(x_targets/1000, data['BI_depth'],
-                                   label=scenario, color=colors[idx], marker='s', ms=4, linestyle='--')
+                                   label=_scenario_legend_label(scenario), color=_scenario_color(scenario), marker='s', ms=4, linestyle='--')
         axes[plot_idx].set_title(f'BI ({var_depth}), relative threshold: {int(depth_threshold*100)}% above mean water depth')
         axes[plot_idx].set_ylabel('braiding index')
         axes[plot_idx].legend(loc='best')
@@ -474,7 +585,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
             data = snapshot_results[scenario]
             if 'BL' in data:
                 axes[plot_idx].plot(data['x_centers']/1000, data['BL'],
-                                   color=colors[idx], linewidth=2, label=scenario)
+                                   color=_scenario_color(scenario), linewidth=2, label=_scenario_legend_label(scenario))
         axes[plot_idx].set_title('width-averaged bed level')
         axes[plot_idx].set_ylabel('bed level [m]')
         axes[plot_idx].legend(loc='best')
@@ -487,7 +598,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
             data = snapshot_results[scenario]
             if 'MaxDepth' in data:
                 axes[plot_idx].plot(data['x_centers']/1000, data['MaxDepth'],
-                                   color=colors[idx], linewidth=2, label=scenario, marker='o', ms=3)
+                                   color=_scenario_color(scenario), linewidth=2, label=_scenario_legend_label(scenario), marker='o', ms=3)
         axes[plot_idx].set_title(f'p{depth_percentile} channel depth')
         axes[plot_idx].set_ylabel('depth [m]')
         axes[plot_idx].legend(loc='best')
@@ -500,7 +611,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
             data = snapshot_results[scenario]
             if 'ChannelWidth' in data:
                 axes[plot_idx].plot(x_targets/1000, data['ChannelWidth'],
-                                   color=colors[idx], linewidth=2, label=scenario, marker='s', ms=3)
+                                   color=_scenario_color(scenario), linewidth=2, label=_scenario_legend_label(scenario), marker='s', ms=3)
         axes[plot_idx].set_title(f'maximum channel width (threshold: mean depth - {int(safety_buffer*100)} cm)')
         axes[plot_idx].set_ylabel('width [m]')
         axes[plot_idx].legend(loc='best')
@@ -520,5 +631,48 @@ for snapshot_key, snapshot_results in comparison_results.items():
     plt.show()
 
     print(f'Saved comparison plot at {summary_output_dir} for {snapshot_key}')
+
+    # Separate hypsometric comparison plot for this snapshot.
+    if compare_hypsometric:
+        fig_h, ax_h = plt.subplots(figsize=(10, 6))
+        has_hypso = False
+        area_labels = []
+
+        for scenario in sorted_scenarios:
+            data = snapshot_results[scenario]
+            if 'HypsoElevation' not in data or 'HypsoArea' not in data:
+                continue
+            if data['HypsoElevation'].size == 0:
+                continue
+
+            has_hypso = True
+            area_labels.append(data.get('HypsoAreaLabel', 'Cumulative area'))
+            ax_h.plot(
+                data['HypsoArea'],
+                data['HypsoElevation'],
+                linewidth=2,
+                color=_scenario_color(scenario),
+                label=_scenario_legend_label(scenario),
+            )
+
+        if has_hypso:
+            x_label = area_labels[0] if len(set(area_labels)) == 1 else 'Cumulative area'
+            ax_h.set_xlabel(x_label)
+            ax_h.set_ylabel('Bed elevation [m]')
+            ax_h.set_title(f'Hypsometric curves around {comparison_labels.get(snapshot_key, snapshot_key)}')
+            if not apply_detrending:
+                ax_h.axhline(y=bed_threshold, color='red', linestyle='--', alpha=0.7)
+            ax_h.grid(True, alpha=0.2)
+            ax_h.legend(loc='best')
+            fig_h.tight_layout()
+            snapshot_date = comparison_labels.get(snapshot_key, snapshot_key)
+            if apply_detrending:
+                fig_h.savefig(summary_output_dir / f'hypsometric_comparison_detrended_{snapshot_date}.png', dpi=300)
+            else:
+                fig_h.savefig(summary_output_dir / f'hypsometric_comparison_{snapshot_date}.png', dpi=300)
+            plt.show()
+            print(f'Saved hypsometric comparison plot at {summary_output_dir} for {snapshot_key}')
+        else:
+            plt.close(fig_h)
 
 print("\nAll processing complete.")

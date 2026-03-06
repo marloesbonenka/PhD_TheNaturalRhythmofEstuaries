@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import glob
 from pathlib import Path
 from typing import Iterable
 from uuid import uuid4
@@ -81,6 +82,29 @@ def select_cache_path(cache_dir: Path, folder_name: str, var_name: str, tag: str
     return tagged
 
 
+def _expand_run_path_files(run_paths: Iterable) -> list[Path]:
+    files: list[Path] = []
+    for run_path in run_paths:
+        file_pattern = _to_file_pattern(run_path)
+        matches = [Path(p) for p in glob.glob(file_pattern)]
+        files.extend([p for p in matches if p.is_file()])
+    return files
+
+
+def _cache_is_fresh(cache_paths: list[Path], run_paths: Iterable) -> bool:
+    if not cache_paths or any(not p.exists() for p in cache_paths):
+        return False
+
+    source_files = _expand_run_path_files(run_paths)
+    if not source_files:
+        # If sources are unavailable but caches exist, prefer cache reuse.
+        return True
+
+    newest_source_mtime = max(p.stat().st_mtime_ns for p in source_files)
+    oldest_cache_mtime = min(p.stat().st_mtime_ns for p in cache_paths)
+    return oldest_cache_mtime >= newest_source_mtime
+
+
 def load_or_update_map_cache_multi(
     cache_dir: Path,
     folder_name: str,
@@ -92,6 +116,8 @@ def load_or_update_map_cache_multi(
     chunks=None,
     cache_tag=None,
 ):
+    run_paths = list(run_paths)
+
     def _select_var_with_topology(ds: xu.UgridDataset, selected: list[str]) -> xu.UgridDataset:
         keep = set(selected)
         if 'time' in ds.variables:
@@ -119,6 +145,15 @@ def load_or_update_map_cache_multi(
         return ds[keep_existing]
 
     print(f"[map-cache] Scenario: {folder_name}")
+
+    cache_paths = [select_cache_path(cache_dir, folder_name, var_name, cache_tag) for var_name in var_names]
+    if _cache_is_fresh(cache_paths, run_paths):
+        print("[map-cache]   cache is up-to-date, skipping map-partition reload")
+        datasets = [xu.open_dataset(cache_path) for cache_path in cache_paths]
+        if len(datasets) == 1:
+            return datasets[0]
+        return _merge_preserve_ugrid(datasets, compat='no_conflicts', join='outer')
+
     ds_all = build_masked_map_dataset(run_paths, var_names, bbox=bbox, chunks=chunks)
     if ds_all is None:
         return None
@@ -293,6 +328,11 @@ def load_or_update_map_cache(
     chunks=None,
     cache_tag=None,
 ):
+    run_paths = list(run_paths)
+
+    if cache_path.exists() and _cache_is_fresh([cache_path], run_paths):
+        return xu.open_dataset(cache_path)
+
     ds_existing = None
     if cache_path.exists():
         ds_existing = xu.open_dataset(cache_path)
