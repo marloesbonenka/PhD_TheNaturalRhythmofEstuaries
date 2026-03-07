@@ -105,6 +105,29 @@ def _cache_is_fresh(cache_paths: list[Path], run_paths: Iterable) -> bool:
     return oldest_cache_mtime >= newest_source_mtime
 
 
+def _target_dates_signature(target_dates) -> str:
+    if target_dates is None:
+        return "all"
+    target_ns = [str(np.datetime64(target_dt, 'ns').astype('int64')) for target_dt in target_dates]
+    return ",".join(target_ns)
+
+
+def _cache_has_target_dates(cache_paths: list[Path], target_dates) -> bool:
+    if not cache_paths or any(not p.exists() for p in cache_paths):
+        return False
+
+    expected_signature = _target_dates_signature(target_dates)
+    for cache_path in cache_paths:
+        ds_cache = xu.open_dataset(cache_path)
+        try:
+            actual_signature = ds_cache.attrs.get('target_dates_signature')
+            if actual_signature != expected_signature:
+                return False
+        finally:
+            ds_cache.close()
+    return True
+
+
 def load_or_update_map_cache_multi(
     cache_dir: Path,
     folder_name: str,
@@ -148,7 +171,7 @@ def load_or_update_map_cache_multi(
     print(f"[map-cache] Scenario: {folder_name}")
 
     cache_paths = [select_cache_path(cache_dir, folder_name, var_name, cache_tag) for var_name in var_names]
-    if _cache_is_fresh(cache_paths, run_paths):
+    if _cache_is_fresh(cache_paths, run_paths) and _cache_has_target_dates(cache_paths, target_dates):
         print("[map-cache]   cache is up-to-date, skipping map-partition reload")
         datasets = [xu.open_dataset(cache_path) for cache_path in cache_paths]
         if len(datasets) == 1:
@@ -181,6 +204,7 @@ def load_or_update_map_cache_multi(
         if cache_tag is not None:
             ds_out.attrs['cache_tag'] = str(cache_tag)
         ds_out.attrs['cache_bbox'] = "full" if bbox is None else str(list(bbox))
+        ds_out.attrs['target_dates_signature'] = _target_dates_signature(target_dates)
 
         comp = dict(zlib=True, complevel=4)
         encoding = {v: comp for v in ds_out.data_vars}
