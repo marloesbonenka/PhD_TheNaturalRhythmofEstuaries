@@ -7,6 +7,7 @@
 
 #%%
 import sys
+import numpy as np
 from pathlib import Path
 from FUNCTIONS.F_map_cache import (
     cache_tag_from_bbox,
@@ -41,6 +42,20 @@ BBOX = [1, 1, 45000, 15000]
 APPEND_TIMESTEPS = True
 APPEND_VARIABLES = True
 CACHE_TAG = None  # Set to "full" for full domain or custom tag
+
+# Snapshot settings: evenly spaced timesteps over the simulation period
+# Set SNAPSHOT_COUNT = None to save ALL timesteps (original behaviour)
+SNAPSHOT_COUNT = 6
+SNAPSHOT_DATE_RANGE = (np.datetime64('2025-01-01'), np.datetime64('2055-12-31'))
+
+# Compute evenly spaced target dates
+if SNAPSHOT_COUNT is not None:
+    _start_ns = np.datetime64(SNAPSHOT_DATE_RANGE[0]).astype('datetime64[ns]').astype('int64')
+    _end_ns   = np.datetime64(SNAPSHOT_DATE_RANGE[1]).astype('datetime64[ns]').astype('int64')
+    TARGET_DATES = [np.datetime64(int(ns), 'ns')
+                    for ns in np.linspace(_start_ns, _end_ns, SNAPSHOT_COUNT)]
+else:
+    TARGET_DATES = None
 
 # Mapping: restart folder prefix -> timed-out folder prefix
 VARIABILITY_MAP = {
@@ -95,6 +110,7 @@ for folder in model_folders:
         append_time=APPEND_TIMESTEPS,
         append_vars=APPEND_VARIABLES,
         cache_tag=cache_tag,
+        target_dates=TARGET_DATES,
     )
 
     if ds_out is None:

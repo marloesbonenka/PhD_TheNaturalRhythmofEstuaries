@@ -115,6 +115,7 @@ def load_or_update_map_cache_multi(
     append_vars=True,
     chunks=None,
     cache_tag=None,
+    target_dates=None,
 ):
     run_paths = list(run_paths)
 
@@ -154,7 +155,7 @@ def load_or_update_map_cache_multi(
             return datasets[0]
         return _merge_preserve_ugrid(datasets, compat='no_conflicts', join='outer')
 
-    ds_all = build_masked_map_dataset(run_paths, var_names, bbox=bbox, chunks=chunks)
+    ds_all = build_masked_map_dataset(run_paths, var_names, bbox=bbox, chunks=chunks, target_dates=target_dates)
     if ds_all is None:
         return None
 
@@ -262,7 +263,7 @@ def _to_file_pattern(path_like) -> str:
     return str(Path(path_like) / "output" / "*_map.nc")
 
 
-def build_masked_map_dataset(run_paths: Iterable, var_names, bbox=None, chunks=None):
+def build_masked_map_dataset(run_paths: Iterable, var_names, bbox=None, chunks=None, target_dates=None):
     def _keep_topology_and_selected(ds: xr.Dataset) -> xr.Dataset:
         if var_names is None:
             return ds
@@ -315,6 +316,25 @@ def build_masked_map_dataset(run_paths: Iterable, var_names, bbox=None, chunks=N
     if bbox is not None:
         print(f"[map-cache]   apply bbox: {bbox}")
         full_ds = full_ds.ugrid.sel(x=slice(bbox[0], bbox[2]), y=slice(bbox[1], bbox[3]))
+
+    if target_dates is not None and 'time' in full_ds.dims:
+        print(f"[map-cache]   selecting {len(target_dates)} snapshot timesteps")
+        time_values = full_ds['time'].values
+        time_ns = np.array(time_values, dtype='datetime64[ns]').astype('int64')
+        selected_indices = []
+        for target_dt in target_dates:
+            target_ns = np.datetime64(target_dt, 'ns').astype('int64')
+            idx = int(np.argmin(np.abs(time_ns - target_ns)))
+            selected_indices.append(idx)
+        # Deduplicate while preserving order
+        seen = set()
+        unique_indices = [i for i in selected_indices if not (i in seen or seen.add(i))]
+        full_ds = full_ds.isel(time=unique_indices)
+        actual_times = full_ds['time'].values
+        for t_target, t_actual in zip(target_dates, actual_times):
+            print(f"[map-cache]     target {np.datetime_as_string(np.datetime64(t_target, 'D'), unit='D')} "
+                  f"-> actual {np.datetime_as_string(np.datetime64(t_actual, 'D'), unit='D')}")
+
     return full_ds
 
 
