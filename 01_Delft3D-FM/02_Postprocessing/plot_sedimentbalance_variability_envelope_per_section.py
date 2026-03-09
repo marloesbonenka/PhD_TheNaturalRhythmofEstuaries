@@ -167,12 +167,24 @@ for cache_file in noisy_cache_files:
 
 
 #%% --- 4. PLOT: one figure per box ---
+
+# ── Cap all plots at the shortest simulation time across all loaded runs ──
+all_times = [base_time] + \
+            [r['time'] for r in noisy_runs.values()] + \
+            [r['time'] for r in variability_runs.values()]
+t_end_min = min(t[-1] for t in all_times)
+print(f"Shortest simulation end time across all runs: {t_end_min}")
+
+# Trim helper: boolean mask for a given time array
+def trim(t):
+    return t <= t_end_min
+
 for box_key in boxes:
     box_start, box_end = box_key
     fig, ax = plt.subplots()
 
     # --- Noisy envelope (plotted first so scenario lines appear on top) ---
-    noisy_stack = align_to_common_time(base_time, noisy_runs, box_key)
+    noisy_stack = align_to_common_time(base_time[trim(base_time)], noisy_runs, box_key)
     if noisy_stack.size > 0:
         env_min = np.nanmin(noisy_stack, axis=0)
         env_max = np.nanmax(noisy_stack, axis=0)
@@ -181,10 +193,11 @@ for box_key in boxes:
             buf = run_data['buffers'].get(box_key)
             if buf is None:
                 continue
-            ax.plot(run_data['time'], buf, color='grey', alpha=0.35, linewidth=0.7,
+            mask = trim(run_data['time'])
+            ax.plot(run_data['time'][mask], buf[mask], color='grey', alpha=0.35, linewidth=0.7,
                     label='Noisy runs' if i == 0 else None)
 
-        ax.fill_between(base_time, env_min, env_max,
+        ax.fill_between(base_time[trim(base_time)], env_min, env_max,
                         color='grey', alpha=0.2, label='Noisy envelope')
     else:
         print(f"[WARNING] No noisy data for box {box_start}-{box_end} km.")
@@ -195,14 +208,16 @@ for box_key in boxes:
             buf = run_data['buffers'].get(box_key)
             if buf is None:
                 continue
-            ax.plot(run_data['time'], buf,
+            mask = trim(run_data['time'])
+            ax.plot(run_data['time'][mask], buf[mask],
                     color=run_data['color'], linewidth=1.2,
                     label=run_data['label'])
 
     # --- Base run (always on top) ---
     base_buf = base_buffers.get(box_key)
     if base_buf is not None:
-        ax.plot(base_time, base_buf,
+        mask = trim(base_time)
+        ax.plot(base_time[mask], base_buf[mask],
                 color=base_cfg['color'], linewidth=1.8,
                 label=base_cfg['label'])
 
@@ -217,5 +232,3 @@ for box_key in boxes:
     plt.savefig(fig_path, dpi=300, bbox_inches='tight')
     print(f"Saved: {fig_path}")
     plt.show()
-
-print("Done.")

@@ -44,9 +44,11 @@ if ANALYZE_NOISY:
     base_path = base_directory / config / f"0_Noise_Q{DISCHARGE}"
 else:
     base_path = base_directory / config
-output_dir = base_path / output_dirname
+
+output_dir = base_path / 'output_plots' / output_dirname
 output_dir.mkdir(parents=True, exist_ok=True)
 timed_out_dir = base_path / "timed-out"
+
 if not base_path.exists():
     raise FileNotFoundError(f"Base path not found: {base_path}")
 if not timed_out_dir.exists():

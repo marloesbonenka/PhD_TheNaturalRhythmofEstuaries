@@ -14,9 +14,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import sys
-import xarray as xr
 from pathlib import Path
-from scipy import signal
 import re
 
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
@@ -199,7 +197,7 @@ def tidal_avg(arr, window):
 
 
 # %% ============================================================
-#    PER-SCENARIO PLOTS  (plots 1–4: unchanged)
+#    PER-SCENARIO PLOTS  — one figure per scenario, all sections in each
 # ===============================================================
 for scenario_dir, data in scenario_data.items():
     scenario_name = Path(scenario_dir).name
@@ -310,6 +308,12 @@ for scenario_dir, data in scenario_data.items():
 window        = int(TIDAL_WINDOW_HOURS / DT_HOURS)
 max_lag_steps = int(MAX_LAG_DAYS * 24 / DT_HOURS)
 
+t_end_min = min(
+    data['t'][SPINUP_STEPS:].max()
+    for data in scenario_data.values()
+)
+print(f"Shortest simulation end time across scenarios: {t_end_min}")
+
 processed = {}   # scenario_key → dict of trimmed arrays
 
 for scenario_dir, data in scenario_data.items():
@@ -322,15 +326,19 @@ for scenario_dir, data in scenario_data.items():
     time           = data['t']
 
     idx_river = np.argmin(np.abs(km_positions - RIVER_KM))
+    
+    time_trimmed = time[SPINUP_STEPS:]
+    t_end_idx = np.searchsorted(time_trimmed, t_end_min, side='right')
 
     processed[scenario_key] = dict(
         label                  = SCENARIO_LABELS.get(scenario_key, scenario_dir),
         color                  = SCENARIO_COLORS.get(scenario_key, 'grey'),
-        Q_river                = Q_all[SPINUP_STEPS:, idx_river],
-        time                   = time[SPINUP_STEPS:],
-        buffer_volumes_trimmed = {k: v[SPINUP_STEPS:] for k, v in buffer_volumes.items()},
+        Q_river                = Q_all[SPINUP_STEPS : SPINUP_STEPS + t_end_idx, idx_river],
+        time                   = time_trimmed[:t_end_idx],
+        buffer_volumes_trimmed = {k: v[SPINUP_STEPS : SPINUP_STEPS + t_end_idx]
+                                  for k, v in buffer_volumes.items()},
         km_positions           = km_positions,
-        transport              = data[sed_var],
+        transport              = data[sed_var][:SPINUP_STEPS + t_end_idx],
     )
 
 
