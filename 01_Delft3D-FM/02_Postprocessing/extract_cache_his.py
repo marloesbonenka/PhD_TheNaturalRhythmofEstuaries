@@ -33,7 +33,7 @@ boxes = [(box_edges[i], box_edges[i + 1]) for i in range(len(box_edges) - 1)]
 
 # Scenario filters — match settings from your analysis script
 SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']
-DISCHARGE = 500
+DISCHARGE = 1000
 ANALYZE_NOISY = False
 
 # %% --- PATHS ---
@@ -51,23 +51,39 @@ if not timed_out_dir.exists():
     timed_out_dir = None
     print('[WARNING] Timed-out directory not found.')
 
-VARIABILITY_MAP = {
-    '1': f'01_baserun{DISCHARGE}',
-    '2': f'02_run{DISCHARGE}_seasonal',
-    '3': f'03_run{DISCHARGE}_flashy',
-    '4': f'04_run{DISCHARGE}_singlepeak',
-}
-
 # %% --- FIND RUN FOLDERS ---
-model_folders = [f.name for f in base_path.iterdir()
-                 if f.is_dir() and f.name[0].isdigit()]
+# Mapping: restart folder prefix -> timed-out folder prefix
+if DISCHARGE == 500:
+    VARIABILITY_MAP = {
+        '1': f'01_baserun{DISCHARGE}',
+        '2': f'02_run{DISCHARGE}_seasonal',
+        '3': f'03_run{DISCHARGE}_flashy',
+        '4': f'04_run{DISCHARGE}_singlepeak'
+    }
+    # Find run folders starting with a digit (e.g. 1_rst, 2_rst)
+    model_folders = [f for f in base_path.iterdir() 
+                    if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
+    model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
+
+if DISCHARGE == 1000:
+    VARIABILITY_MAP = {
+        '01': f'01_baserun{DISCHARGE}',
+        '02': f'02_run{DISCHARGE}_seasonal',
+        '03': f'03_run{DISCHARGE}_flashy',
+        '04': f'04_run{DISCHARGE}_singlepeak'
+    }
+    # Find run folders starting with a digit (e.g. 1_rst, 2_rst)
+    model_folders = [f for f in base_path.iterdir() 
+                    if f.is_dir() and f.name[0].isdigit()]
+    model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
+
 if SCENARIOS_TO_PROCESS:
     try:
         scenario_filter = set(int(s) for s in SCENARIOS_TO_PROCESS)
     except Exception:
         scenario_filter = set()
-    model_folders = [f for f in model_folders if int(f.split('_')[0]) in scenario_filter]
-model_folders.sort(key=lambda x: int(x.split('_')[0]))
+    model_folders = [f for f in model_folders if int(f.name.split('_')[0]) in scenario_filter]
+
 print(f"Found {len(model_folders)} run folders in: {base_path}")
 
 # %% --- BUILD HIS FILE PATHS (same logic as analysis script) ---
@@ -98,7 +114,7 @@ for var_name in VARIABLES_TO_CACHE:
 
     for scenario_dir, his_file_paths in run_his_paths.items():
         scenario_name = Path(scenario_dir).name
-        scenario_num = scenario_dir.split('_')[0]
+        scenario_num = scenario_name.split('_')[0]
         run_id = '_'.join(scenario_name.split('_')[1:])
         cache_file = cache_dir / f"hisoutput_{int(scenario_num)}_{run_id}.nc"
 
