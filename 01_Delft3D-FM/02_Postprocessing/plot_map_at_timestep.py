@@ -16,11 +16,11 @@ DISCHARGE = 500
 # --- Variable selection ---
 var_names = ['mesh2d_mor_bl', 'mesh2d_s1', 'mesh2d_taus']  # e.g. ['mesh2d_mor_bl'] or all three
 time_to_extract = None
-target_hydrodynamic_date = '2055-12-31' # e.g. '2055-12-31'; when set, nearest timestep is used per run
+target_hydrodynamic_date = None #'2055-12-31' # e.g. '2055-12-31'; when set, nearest timestep is used per run
 
 # Cache settings
-CACHE_BBOX = None  # None = full domain
-CACHE_TAG = "full"
+CACHE_BBOX = [1, 1, 45000, 15000] # xmin, ymin, xmax, ymax
+CACHE_TAG = None
 APPEND_TIMESTEPS = True
 APPEND_VARIABLES = True
 
@@ -41,16 +41,30 @@ if not timed_out_dir.exists():
 
 # Mapping: restart folder prefix -> timed-out folder prefix
 # 1 = constant (baserun), 2 = seasonal, 3 = flashy, 4 = singlepeak
-VARIABILITY_MAP = {
-    '1': f'01_baserun{DISCHARGE}',
-    '2': f'02_run{DISCHARGE}_seasonal',
-    '3': f'03_run{DISCHARGE}_flashy',
-    '4': f'04_run{DISCHARGE}_singlepeak',
-}
+# Mapping: restart folder prefix -> timed-out folder prefix
+if DISCHARGE == 500:
+    VARIABILITY_MAP = {
+        '1': f'01_baserun{DISCHARGE}',
+        '2': f'02_run{DISCHARGE}_seasonal',
+        '3': f'03_run{DISCHARGE}_flashy',
+        '4': f'04_run{DISCHARGE}_singlepeak'
+    }
+    # Find run folders starting with a digit (e.g. 1_rst, 2_rst)
+    model_folders = [f for f in base_path.iterdir() 
+                    if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
+    model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
 
-# Find all run folders: start with digit (with or without '_rst')
-model_folders = [f.name for f in base_path.iterdir() 
+if DISCHARGE == 1000:
+    VARIABILITY_MAP = {
+        '01': f'01_baserun{DISCHARGE}',
+        '02': f'02_run{DISCHARGE}_seasonal',
+        '03': f'03_run{DISCHARGE}_flashy',
+        '04': f'04_run{DISCHARGE}_singlepeak'
+    }
+    # Find run folders starting with a digit (e.g. 1_rst, 2_rst)
+    model_folders = [f for f in base_path.iterdir() 
                     if f.is_dir() and f.name[0].isdigit()]
+    model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
 
 if SCENARIOS_TO_PROCESS:
     try:
@@ -58,15 +72,6 @@ if SCENARIOS_TO_PROCESS:
     except Exception:
         scenario_filter = set()
     model_folders = [f for f in model_folders if int(f.split('_')[0]) in scenario_filter]
-# Sort by leading number
-model_folders.sort(key=lambda x: int(x.split('_')[0]))
-
-print(f"Found {len(model_folders)} run folders in: {base_path}")
-
-# model_folders = [
-#     f'1_Q{DISCHARGE}_rst.9093769',
-#     f'2_Q{DISCHARGE}_rst_seasonal.9093860',
-#     f'3_Q{DISCHARGE}_rst_flashy.9094053']
 
 configs = {
     'mesh2d_mor_bl': {
@@ -91,16 +96,20 @@ configs = {
         'file_tag': 'shear_stress_map_final'
     }
 }
+#%%
+# =============================================================================
+# 2. PROCESSING LOOP
+# =============================================================================
 
 for folder in model_folders:
     model_location = base_path / folder
     output_plots_dir = model_location / 'output_plots'
     output_plots_dir.mkdir(parents=True, exist_ok=True)
-    print(f"\nProcessing: {folder}")
+    print(f"\nProcessing: {folder.name}")
 
     run_paths = get_stitched_map_run_paths(
         base_path=base_path,
-        folder_name=folder,
+        folder_name=folder.name,
         timed_out_dir=timed_out_dir,
         variability_map=VARIABILITY_MAP,
         analyze_noisy=False,
@@ -111,7 +120,7 @@ for folder in model_folders:
     cache_tag = cache_tag_from_bbox(CACHE_BBOX, CACHE_TAG)
     ds = load_or_update_map_cache_multi(
         cache_dir=assessment_dir,
-        folder_name=folder,
+        folder_name=folder.name,
         run_paths=run_paths,
         var_names=var_names,
         bbox=CACHE_BBOX,
@@ -121,79 +130,165 @@ for folder in model_folders:
     )
 
     if ds is None:
-        print(f"Skipping {folder}: no data cached.")
+        print(f"Skipping {folder.name}: no data cached.")
         continue
 
-    selected_time_label = "Unknown time"
-    selected_time_tag = "unknown_time"
+    if 'time' not in ds.dims or len(ds.time) == 0:
+        print(f"Skipping {folder.name}: no time dimension found.")
+        continue
 
-    if 'time' in ds.dims and len(ds.time) > 0:
-        time_values = np.asarray(ds.time.values).astype('datetime64[ns]')
-        print("\n[i] Time dimension:")
-        print(f"  - Number of timesteps: {len(time_values)}")
-        print(f"  - First time: {time_values[0]}")
-        print(f"  - Last time: {time_values[-1]}")
+    time_values = np.asarray(ds.time.values).astype('datetime64[ns]')
+    print(f"  Found {len(time_values)} timestep(s): {time_values[0]} -> {time_values[-1]}")
 
-        if target_hydrodynamic_date is not None:
-            target_dt = np.datetime64(target_hydrodynamic_date).astype('datetime64[ns]')
-            idx = int(np.argmin(np.abs(time_values.astype('int64') - target_dt.astype('int64'))))
-        elif time_to_extract is not None:
-            idx = int(time_to_extract)
-            if idx < 0:
-                idx = len(time_values) + idx
-            idx = max(0, min(idx, len(time_values) - 1))
-        else:
-            idx = len(time_values) - 1
-
+    # --- Loop over all timesteps ---
+    for idx in range(len(time_values)):
         actual_dt = np.datetime64(time_values[idx], 'ns')
         actual_label = str(np.datetime_as_string(actual_dt, unit='s')).replace('T', ' ')
         actual_tag = str(np.datetime_as_string(actual_dt, unit='D'))
+        print(f"  Plotting timestep {idx+1}/{len(time_values)}: {actual_label}")
 
-        if target_hydrodynamic_date is not None:
-            target_label = str(np.datetime_as_string(np.datetime64(target_hydrodynamic_date), unit='D'))
-            selected_time_label = f"{actual_label} (target {target_label})"
-        else:
-            selected_time_label = actual_label
-        selected_time_tag = actual_tag
+        ds_t = ds.isel(time=idx)
 
-        print(f"  - Selected timestep index: {idx}")
-        print(f"  - Selected actual time: {selected_time_label}")
-        ds = ds.isel(time=idx)
+        # --- Loop over all variables ---
+        for var_name in var_names:
+            if var_name not in ds_t:
+                print(f"    Skipping variable {var_name}: not found in dataset.")
+                continue
 
-    for var_name in var_names:
-        if var_name not in ds:
-            print(f"Skipping {folder}: Variable {var_name} not found.")
-            continue
-        data_source = ds
-        current_cfg = configs[var_name]
-        cmap = current_cfg['cmap']
+            current_cfg = configs[var_name]
 
-        data_to_plot = data_source[var_name]
-        timestamp_str = selected_time_label
+            fig, ax = plt.subplots(figsize=(12, 8))
+            pc = ds_t[var_name].ugrid.plot(
+                ax=ax,
+                cmap=current_cfg['cmap'],
+                add_colorbar=False,
+                edgecolors='none',
+                vmin=current_cfg['vmin'],
+                vmax=current_cfg['vmax']
+            )
+            ax.set_aspect('equal')
+            ax.set_title(f"{current_cfg['label']} | {folder.name} | {actual_label}", color='black')
 
-        # --- 4. PLOTTING ---        
-        fig, ax = plt.subplots(figsize=(12, 8))
+            divider = make_axes_locatable(ax)
+            cax = divider.append_axes("right", size="3%", pad=0.1)
+            cbar = plt.colorbar(pc, cax=cax)
+            cbar.set_label(current_cfg['label'])
 
-        pc = data_to_plot.ugrid.plot(
-            ax=ax,
-            cmap=cmap,
-            add_colorbar=False,
-            edgecolors='none',
-            vmin=current_cfg['vmin'],
-            vmax=current_cfg['vmax']
-        )
-        ax.set_aspect('equal')
-        ax.set_title(f"{current_cfg['label']} on {timestamp_str}", color='black')
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="3%", pad=0.1)
-        cbar = plt.colorbar(pc, cax=cax)
-        cbar.set_label(current_cfg['label'])
-        plt.tight_layout()
-        save_name = f"{current_cfg['file_tag']}_{selected_time_tag}_{folder}.png"
-        save_path = output_plots_dir / save_name
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.show()
-        print(f"Successfully saved: {save_name}")
+            plt.tight_layout()
+            save_name = f"{current_cfg['file_tag']}_{actual_tag}_{folder.name}.png"
+            save_path = output_plots_dir / save_name
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            plt.close(fig)  # prevents memory issues over many timesteps
+            print(f"    Saved: {save_name}")
 
-print("\nBatch processing complete.")
+print("\n" + "="*30)
+print("BATCH PLOTTING COMPLETE")
+print("="*30)
+
 # %%
+
+# for folder in model_folders:
+#     model_location = base_path / folder
+#     output_plots_dir = model_location / 'output_plots'
+#     output_plots_dir.mkdir(parents=True, exist_ok=True)
+#     print(f"\nProcessing: {folder}")
+
+#     run_paths = get_stitched_map_run_paths(
+#         base_path=base_path,
+#         folder_name=folder,
+#         timed_out_dir=timed_out_dir,
+#         variability_map=VARIABILITY_MAP,
+#         analyze_noisy=False,
+#     )
+#     if not run_paths:
+#         run_paths = [model_location]
+
+#     cache_tag = cache_tag_from_bbox(CACHE_BBOX, CACHE_TAG)
+#     ds = load_or_update_map_cache_multi(
+#         cache_dir=assessment_dir,
+#         folder_name=folder,
+#         run_paths=run_paths,
+#         var_names=var_names,
+#         bbox=CACHE_BBOX,
+#         append_time=APPEND_TIMESTEPS,
+#         append_vars=APPEND_VARIABLES,
+#         cache_tag=cache_tag,
+#     )
+
+#     if ds is None:
+#         print(f"Skipping {folder}: no data cached.")
+#         continue
+
+#     selected_time_label = "Unknown time"
+#     selected_time_tag = "unknown_time"
+
+#     if 'time' in ds.dims and len(ds.time) > 0:
+#         time_values = np.asarray(ds.time.values).astype('datetime64[ns]')
+#         print("\n[i] Time dimension:")
+#         print(f"  - Number of timesteps: {len(time_values)}")
+#         print(f"  - First time: {time_values[0]}")
+#         print(f"  - Last time: {time_values[-1]}")
+
+#         if target_hydrodynamic_date is not None:
+#             target_dt = np.datetime64(target_hydrodynamic_date).astype('datetime64[ns]')
+#             idx = int(np.argmin(np.abs(time_values.astype('int64') - target_dt.astype('int64'))))
+#         elif time_to_extract is not None:
+#             idx = int(time_to_extract)
+#             if idx < 0:
+#                 idx = len(time_values) + idx
+#             idx = max(0, min(idx, len(time_values) - 1))
+#         else:
+#             idx = len(time_values) - 1
+
+#         actual_dt = np.datetime64(time_values[idx], 'ns')
+#         actual_label = str(np.datetime_as_string(actual_dt, unit='s')).replace('T', ' ')
+#         actual_tag = str(np.datetime_as_string(actual_dt, unit='D'))
+
+#         if target_hydrodynamic_date is not None:
+#             target_label = str(np.datetime_as_string(np.datetime64(target_hydrodynamic_date), unit='D'))
+#             selected_time_label = f"{actual_label} (target {target_label})"
+#         else:
+#             selected_time_label = actual_label
+#         selected_time_tag = actual_tag
+
+#         print(f"  - Selected timestep index: {idx}")
+#         print(f"  - Selected actual time: {selected_time_label}")
+#         ds = ds.isel(time=idx)
+
+#     for var_name in var_names:
+#         if var_name not in ds:
+#             print(f"Skipping {folder}: Variable {var_name} not found.")
+#             continue
+#         data_source = ds
+#         current_cfg = configs[var_name]
+#         cmap = current_cfg['cmap']
+
+#         data_to_plot = data_source[var_name]
+#         timestamp_str = selected_time_label
+
+#         # --- 4. PLOTTING ---        
+#         fig, ax = plt.subplots(figsize=(12, 8))
+
+#         pc = data_to_plot.ugrid.plot(
+#             ax=ax,
+#             cmap=cmap,
+#             add_colorbar=False,
+#             edgecolors='none',
+#             vmin=current_cfg['vmin'],
+#             vmax=current_cfg['vmax']
+#         )
+#         ax.set_aspect('equal')
+#         ax.set_title(f"{current_cfg['label']} on {timestamp_str}", color='black')
+#         divider = make_axes_locatable(ax)
+#         cax = divider.append_axes("right", size="3%", pad=0.1)
+#         cbar = plt.colorbar(pc, cax=cax)
+#         cbar.set_label(current_cfg['label'])
+#         plt.tight_layout()
+#         save_name = f"{current_cfg['file_tag']}_{selected_time_tag}_{folder}.png"
+#         save_path = output_plots_dir / save_name
+#         plt.savefig(save_path, dpi=300, bbox_inches='tight')
+#         plt.show()
+#         print(f"Successfully saved: {save_name}")
+
+# print("\nBatch processing complete.")
+# # %%

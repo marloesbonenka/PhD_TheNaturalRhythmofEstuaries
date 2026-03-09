@@ -14,7 +14,7 @@ from FUNCTIONS.F_map_cache import (
     load_or_update_map_cache_multi,
 )
 from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
-
+#%%
 # =============================================================================
 # 1. SETUP & PATHS
 # =============================================================================
@@ -27,7 +27,7 @@ if str(functions_root) not in sys.path:
 # --- SETTINGS ---
 
 ANALYSIS_MODE = "variability"
-DISCHARGE = 500 # Adjust this to match your specific discharge scenario (e.g., 500, 1000, etc.)
+DISCHARGE = 1000 # Adjust this to match your specific discharge scenario (e.g., 500, 1000, etc.)
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
 config = f'Model_Output/Q{DISCHARGE}'
 base_path = base_directory / config
@@ -58,13 +58,29 @@ else:
     TARGET_DATES = None
 
 # Mapping: restart folder prefix -> timed-out folder prefix
-VARIABILITY_MAP = {
-    '1': f'01_baserun{DISCHARGE}',
-    '2': f'02_run{DISCHARGE}_seasonal',
-    '3': f'03_run{DISCHARGE}_flashy',
-    '4': f'04_run{DISCHARGE}_singlepeak'
-}
+if DISCHARGE == 500:
+    VARIABILITY_MAP = {
+        '1': f'01_baserun{DISCHARGE}',
+        '2': f'02_run{DISCHARGE}_seasonal',
+        '3': f'03_run{DISCHARGE}_flashy',
+        '4': f'04_run{DISCHARGE}_singlepeak'
+    }
+    # Find run folders starting with a digit (e.g. 1_rst, 2_rst)
+    model_folders = [f for f in base_path.iterdir() 
+                    if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
+    model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
 
+if DISCHARGE == 1000:
+    VARIABILITY_MAP = {
+        '01': f'01_baserun{DISCHARGE}',
+        '02': f'02_run{DISCHARGE}_seasonal',
+        '03': f'03_run{DISCHARGE}_flashy',
+        '04': f'04_run{DISCHARGE}_singlepeak'
+    }
+    # Find run folders starting with a digit (e.g. 1_rst, 2_rst)
+    model_folders = [f for f in base_path.iterdir() 
+                    if f.is_dir() and f.name[0].isdigit()]
+    model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
 
 # Directories
 output_dir = base_path / 'cached_data'
@@ -74,10 +90,6 @@ output_dir.mkdir(parents=True, exist_ok=True)
 # 2. PROCESSING LOOP
 # =============================================================================
 
-# Find run folders starting with a digit (e.g. 1_rst, 2_rst)
-model_folders = [f for f in base_path.iterdir() 
-                 if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
-model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
 
 print(f"Starting extraction for {len(model_folders)} runs...")
 
