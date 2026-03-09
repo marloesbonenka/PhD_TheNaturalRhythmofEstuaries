@@ -33,7 +33,7 @@ boxes = [(box_edges[i], box_edges[i+1]) for i in range(len(box_edges)-1)]
 
 # Which scenarios to process (set to None or empty list for all)
 SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']  # Use all scenarios
-DISCHARGE = 500                    # or 1000, etc.
+DISCHARGE = 1000                    # or 1000, etc.
 ANALYZE_NOISY = False               # Set to True to analyze noisy scenarios
 
 #%% --- PATHS ---  
@@ -56,28 +56,38 @@ if not timed_out_dir.exists():
     print('[WARNING] Timed-out directory not found. No timed-out scenarios will be included.')
     #raise FileNotFoundError(f"Timed-out directory not found: {timed_out_dir}")
 
+# %% --- FIND RUN FOLDERS ---
 # Mapping: restart folder prefix -> timed-out folder prefix
-# 1 = constant (baserun), 2 = seasonal, 3 = flashy, 4 = singlepeak
-VARIABILITY_MAP = {
-    '1': f'01_baserun{DISCHARGE}',
-    '2': f'02_run{DISCHARGE}_seasonal',
-    '3': f'03_run{DISCHARGE}_flashy',
-    '4': f'04_run{DISCHARGE}_singlepeak',
-}
+if DISCHARGE == 500:
+    VARIABILITY_MAP = {
+        '1': f'01_baserun{DISCHARGE}',
+        '2': f'02_run{DISCHARGE}_seasonal',
+        '3': f'03_run{DISCHARGE}_flashy',
+        '4': f'04_run{DISCHARGE}_singlepeak'
+    }
+    # Find run folders starting with a digit (e.g. 1_rst, 2_rst)
+    model_folders = [f for f in base_path.iterdir() 
+                    if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
+    model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
 
-# Find all run folders: start with digit (with or without '_rst')
-model_folders = [f.name for f in base_path.iterdir() 
+if DISCHARGE == 1000:
+    VARIABILITY_MAP = {
+        '01': f'01_baserun{DISCHARGE}',
+        '02': f'02_run{DISCHARGE}_seasonal',
+        '03': f'03_run{DISCHARGE}_flashy',
+        '04': f'04_run{DISCHARGE}_singlepeak'
+    }
+    # Find run folders starting with a digit (e.g. 1_rst, 2_rst)
+    model_folders = [f for f in base_path.iterdir() 
                     if f.is_dir() and f.name[0].isdigit()]
-# Filter by SCENARIOS_TO_PROCESS if specified. Normalize leading zeros by
-# comparing integer scenario numbers so '1' and '01' match the same scenario.
+    model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
+
 if SCENARIOS_TO_PROCESS:
     try:
         scenario_filter = set(int(s) for s in SCENARIOS_TO_PROCESS)
     except Exception:
         scenario_filter = set()
-    model_folders = [f for f in model_folders if int(f.split('_')[0]) in scenario_filter]
-# Sort by leading number
-model_folders.sort(key=lambda x: int(x.split('_')[0]))
+    model_folders = [f for f in model_folders if int(f.name.split('_')[0]) in scenario_filter]
 
 print(f"Found {len(model_folders)} run folders in: {base_path}")
 
@@ -125,8 +135,8 @@ else:
 #%% --- LOAD AND STITCH ALL DATA FIRST ---
 scenario_data = {}
 for scenario_dir, his_file_paths in run_his_paths.items():
-    scenario_name = Path(scenario_dir).name
-    scenario_num = scenario_dir.split('_')[0]
+    scenario_name = scenario_dir.name
+    scenario_num = scenario_dir.name.split('_')[0]
     run_id = '_'.join(scenario_name.split('_')[1:])
     
     # Generic cache name — one file per scenario, all variables appended inside
