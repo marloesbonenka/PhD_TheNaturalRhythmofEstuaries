@@ -71,29 +71,28 @@ if SCENARIOS_TO_PROCESS:
         scenario_filter = set(int(s) for s in SCENARIOS_TO_PROCESS)
     except Exception:
         scenario_filter = set()
-    model_folders = [f for f in model_folders if int(f.split('_')[0]) in scenario_filter]
-
+    model_folders = [f for f in model_folders if int(f.name.split('_')[0]) in scenario_filter]
 configs = {
     'mesh2d_mor_bl': {
         'cmap': create_bedlevel_colormap(),
         'vmin': -15,
         'vmax': 15,
         'label': 'Bed Level [m]',
-        'file_tag': 'bedlevel_map_final'
+        'file_tag': 'bedlevel_map'
     },
     'mesh2d_s1': {
         'cmap': create_water_colormap(),
         'vmin': -1,   # Adjust based on your tide/datum
         'vmax': 3,
         'label': 'Water Level [m]',
-        'file_tag': 'water_level_map_final'
+        'file_tag': 'water_level_map'
     },
     'mesh2d_taus': {
         'cmap': create_shear_stress_colormap(),
         'vmin': 0,
         'vmax': 5,    # Adjust based on flow intensity
         'label': 'Bed Shear Stress [N/m²]',
-        'file_tag': 'shear_stress_map_final'
+        'file_tag': 'shear_stress_map'
     }
 }
 #%%
@@ -103,7 +102,7 @@ configs = {
 
 for folder in model_folders:
     model_location = base_path / folder
-    output_plots_dir = model_location / 'output_plots'
+    output_plots_dir = base_path / 'output_plots' / 'map_plots'
     output_plots_dir.mkdir(parents=True, exist_ok=True)
     print(f"\nProcessing: {folder.name}")
 
