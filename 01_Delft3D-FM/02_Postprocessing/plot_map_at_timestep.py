@@ -21,8 +21,8 @@ target_hydrodynamic_date = None #'2055-12-31' # e.g. '2055-12-31'; when set, nea
 # Cache settings
 CACHE_BBOX = [1, 1, 45000, 15000] # xmin, ymin, xmax, ymax
 CACHE_TAG = None
-APPEND_TIMESTEPS = True
-APPEND_VARIABLES = True
+APPEND_TIMESTEPS = False
+APPEND_VARIABLES = False
 
 #%%
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
@@ -72,6 +72,7 @@ if SCENARIOS_TO_PROCESS:
     except Exception:
         scenario_filter = set()
     model_folders = [f for f in model_folders if int(f.name.split('_')[0]) in scenario_filter]
+
 configs = {
     'mesh2d_mor_bl': {
         'cmap': create_bedlevel_colormap(),

@@ -85,23 +85,37 @@ if not timed_out_dir.exists():
     timed_out_dir = None
     print('[WARNING] Timed-out directory not found. No timed-out scenarios will be included.')
 
-VARIABILITY_MAP = {
-    '1': f'01_baserun{DISCHARGE}',
-    '2': f'02_run{DISCHARGE}_seasonal',
-    '3': f'03_run{DISCHARGE}_flashy',
-    '4': f'04_run{DISCHARGE}_singlepeak',
-}
+if DISCHARGE == 500:
+    VARIABILITY_MAP = {
+        '1': f'01_baserun{DISCHARGE}',
+        '2': f'02_run{DISCHARGE}_seasonal',
+        '3': f'03_run{DISCHARGE}_flashy',
+        '4': f'04_run{DISCHARGE}_singlepeak'
+    }
+    # Find run folders starting with a digit (e.g. 1_rst, 2_rst)
+    model_folders = [f for f in base_path.iterdir() 
+                    if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
+    model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
 
-# %% --- FIND RUN FOLDERS ---
-model_folders = [f.name for f in base_path.iterdir()
-                 if f.is_dir() and f.name[0].isdigit()]
+if DISCHARGE == 1000:
+    VARIABILITY_MAP = {
+        '01': f'01_baserun{DISCHARGE}',
+        '02': f'02_run{DISCHARGE}_seasonal',
+        '03': f'03_run{DISCHARGE}_flashy',
+        '04': f'04_run{DISCHARGE}_singlepeak'
+    }
+    # Find run folders starting with a digit (e.g. 1_rst, 2_rst)
+    model_folders = [f for f in base_path.iterdir() 
+                    if f.is_dir() and f.name[0].isdigit()]
+    model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
+
 if SCENARIOS_TO_PROCESS:
     try:
         scenario_filter = set(int(s) for s in SCENARIOS_TO_PROCESS)
     except Exception:
         scenario_filter = set()
-    model_folders = [f for f in model_folders if int(f.split('_')[0]) in scenario_filter]
-model_folders.sort(key=lambda x: int(x.split('_')[0]))
+    model_folders = [f for f in model_folders if int(f.name.split('_')[0]) in scenario_filter]
+
 print(f"Found {len(model_folders)} run folders in: {base_path}")
 
 # %% --- BUILD HIS FILE PATH MAP ---
@@ -109,14 +123,14 @@ run_his_paths = {}
 for folder in model_folders:
     model_location = base_path / folder
     his_paths = []
-    scenario_num = folder.split('_')[0]
+    scenario_num = folder.name.split('_')[0]
     try:
         scenario_key = str(int(scenario_num))
     except Exception:
         scenario_key = scenario_num
 
     if ANALYZE_NOISY:
-        match = re.search(r'noisy(\d+)', folder)
+        match = re.search(r'noisy(\d+)', folder.name)
         timed_out_folder = None
         if timed_out_dir is None:
             print('[WARNING] Timed-out directory not available; skipping timed-out noisy runs.')
@@ -132,7 +146,7 @@ for folder in model_folders:
                 his_paths.append(timed_out_path)
     else:
         if timed_out_dir is not None:
-            timed_out_folder = VARIABILITY_MAP.get(scenario_key, folder)
+            timed_out_folder = VARIABILITY_MAP.get(scenario_key, folder.name)
             timed_out_path = timed_out_dir / timed_out_folder / "output" / "FlowFM_0000_his.nc"
             if timed_out_path.exists():
                 his_paths.append(timed_out_path)
@@ -163,7 +177,7 @@ scenario_data = {}
 
 for scenario_dir, his_file_paths in run_his_paths.items():
     scenario_name = Path(scenario_dir).name
-    scenario_num  = scenario_dir.split('_')[0]
+    scenario_num  = scenario_name.split('_')[0]
     run_id        = '_'.join(scenario_name.split('_')[1:])
     cache_file    = cache_dir / f"hisoutput_{int(scenario_num)}_{run_id}.nc"
 
@@ -201,7 +215,7 @@ def tidal_avg(arr, window):
 # ===============================================================
 for scenario_dir, data in scenario_data.items():
     scenario_name = Path(scenario_dir).name
-    scenario_num  = scenario_dir.split('_')[0]
+    scenario_num  = scenario_name.split('_')[0]
     scenario_label = SCENARIO_LABELS.get(str(int(scenario_num)), scenario_name)
 
     km_positions   = data['km_positions']
@@ -317,7 +331,7 @@ print(f"Shortest simulation end time across scenarios: {t_end_min}")
 processed = {}   # scenario_key → dict of trimmed arrays
 
 for scenario_dir, data in scenario_data.items():
-    scenario_num  = scenario_dir.split('_')[0]
+    scenario_num  = Path(scenario_dir).name.split('_')[0]
     scenario_key  = str(int(scenario_num))
 
     km_positions   = data['km_positions']
