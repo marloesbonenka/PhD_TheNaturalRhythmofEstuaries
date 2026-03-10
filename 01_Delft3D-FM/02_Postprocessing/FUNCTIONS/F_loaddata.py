@@ -411,6 +411,130 @@ def load_cross_section_data(his_file_path, q_var='cross_section_discharge',
         'flood_sign_used': flood_sign_used,
     }
 
+
+def load_cross_section_data_from_cache(cache_file, q_var='cross_section_discharge',
+                                        select_cycles_hydrodynamic=False, n_periods=3,
+                                        select_max_flood=False, flood_sign=-1,
+                                        select_max_flood_per_cycle=False,
+                                        exclude_last_timestep=False,
+                                        exclude_last_n_days=0,
+                                        selected_time_indices=None):
+    """
+    Load cross-section data from a pre-populated .nc cache file
+    (as created by load_and_cache_scenario / extract_cache_his.py) and apply
+    the same time-selection logic as load_cross_section_data.
+
+    The cache must contain: km_positions (km), t (time), and q_var (time × km).
+    Falls back gracefully: callers should check cache_file.exists() and that
+    q_var is present before calling.
+    """
+    with xr.open_dataset(cache_file) as ds:
+        km_positions = ds['km_positions'].values
+        times_raw = ds['t'].values
+        var_numpy = ds[q_var].values  # shape: (time, km)
+
+    plot_km = km_positions
+    plot_indices = np.arange(len(km_positions))
+
+    var_data = xr.DataArray(
+        var_numpy,
+        dims=['time', 'cross_section'],
+        coords={'time': times_raw},
+    )
+    times = times_raw
+
+    if exclude_last_timestep and len(times) > 1:
+        var_data = var_data.isel(time=slice(0, -1))
+        times = times[:-1]
+
+    if exclude_last_n_days and len(times) > 1:
+        dt = times[1] - times[0]
+        dt_seconds = dt / np.timedelta64(1, 's')
+        timesteps_per_day = int(np.round(24 * 3600 / dt_seconds))
+        drop_steps = int(exclude_last_n_days) * timesteps_per_day
+        if drop_steps > 0 and len(times) > drop_steps:
+            var_data = var_data.isel(time=slice(0, -drop_steps))
+            times = times[:-drop_steps]
+
+    max_flood_km = None
+    flood_sign_used = flood_sign
+
+    def _flip_sign(sign):
+        return 1 if sign == -1 else -1
+
+    if selected_time_indices is not None:
+        selected_time_indices = np.asarray(selected_time_indices, dtype=int)
+        var_data = var_data.isel(time=selected_time_indices)
+        times_selected = times[selected_time_indices]
+        n_timesteps_original = len(times)
+        selection_mode = 'external'
+    elif select_max_flood_per_cycle:
+        print("  Selecting max flood timestep for each cycle (from cache)...")
+        selected_time_indices = select_max_flood_indices_per_cycle(
+            times, var_data, plot_km, flood_sign=flood_sign)
+        if len(selected_time_indices) == 0:
+            alt_sign = _flip_sign(flood_sign)
+            alt_indices = select_max_flood_indices_per_cycle(
+                times, var_data, plot_km, flood_sign=alt_sign)
+            if len(alt_indices) > 0:
+                selected_time_indices = alt_indices
+                flood_sign_used = alt_sign
+        var_data = var_data.isel(time=selected_time_indices)
+        times_selected = times[selected_time_indices]
+        n_timesteps_original = len(times)
+        selection_mode = 'max_flood_per_cycle'
+    elif select_max_flood:
+        print("  Selecting maximum flood penetration timestep (from cache)...")
+        try:
+            t_idx, max_flood_km = select_max_flood_timestep(var_data, plot_km, flood_sign=flood_sign)
+        except ValueError:
+            alt_sign = _flip_sign(flood_sign)
+            t_idx, max_flood_km = select_max_flood_timestep(var_data, plot_km, flood_sign=alt_sign)
+            flood_sign_used = alt_sign
+        var_data = var_data.isel(time=[t_idx])
+        times_selected = np.array([times[t_idx]])
+        selected_time_indices = np.array([t_idx])
+        n_timesteps_original = len(times)
+        selection_mode = 'max_flood'
+    elif select_cycles_hydrodynamic:
+        print("  Selecting one hydrodynamic day from each period (from cache)...")
+        selected_time_indices = select_representative_days(times, n_periods=n_periods)
+        dt = times[1] - times[0]
+        dt_seconds = dt / np.timedelta64(1, 's')
+        timesteps_per_day = int(np.round(24 * 3600 / dt_seconds))
+        print(f"  Timesteps per day: {timesteps_per_day}")
+        print(f"  Selecting {len(selected_time_indices)} total timesteps (~{len(selected_time_indices) // timesteps_per_day} complete days)")
+        var_data = var_data.isel(time=selected_time_indices)
+        times_selected = times[selected_time_indices]
+        n_timesteps_original = len(times)
+        selection_mode = 'representative_days'
+    else:
+        times_selected = times
+        selected_time_indices = np.arange(len(times))
+        n_timesteps_original = len(times)
+        selection_mode = 'all'
+
+    time_hours = (times_selected - times[0]) / np.timedelta64(1, 'h')
+    times_datetime = pd.to_datetime(times_selected)
+
+    return {
+        'ds': None,
+        q_var: var_data,
+        'km_positions': plot_km,
+        't': times,
+        'times': times_selected,
+        'times_datetime': times_datetime,
+        'time_hours': time_hours,
+        'n_timesteps': len(times_selected),
+        'n_timesteps_original': n_timesteps_original,
+        'selected_indices': selected_time_indices,
+        'cross_section_indices': plot_indices,
+        'selection_mode': selection_mode,
+        'max_flood_km': max_flood_km,
+        'flood_sign_used': flood_sign_used,
+    }
+
+
 def load_cross_section_data_old(his_file_path, q_var='cross_section_discharge',
 							estuary_only=True, km_range=(20, 45),
 							select_cycles_hydrodynamic=True, n_periods=3,

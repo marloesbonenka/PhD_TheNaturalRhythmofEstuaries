@@ -32,9 +32,9 @@ box_edges = np.arange(20, 50, 5)  # [20, 25, 30, 35, 40, 45]
 boxes = [(box_edges[i], box_edges[i + 1]) for i in range(len(box_edges) - 1)]
 
 # Scenario filters — match settings from your analysis script
-SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']
-DISCHARGE = 1000
-ANALYZE_NOISY = False
+SCENARIOS_TO_PROCESS = ['0', '1', '2', '3', '4']
+DISCHARGE = 500
+ANALYZE_NOISY = True
 
 # %% --- PATHS ---
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
@@ -60,9 +60,14 @@ if DISCHARGE == 500:
         '3': f'03_run{DISCHARGE}_flashy',
         '4': f'04_run{DISCHARGE}_singlepeak'
     }
-    # Find run folders starting with a digit (e.g. 1_rst, 2_rst)
-    model_folders = [f for f in base_path.iterdir() 
-                    if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
+    # Find run folders starting with a digit
+    # Noisy runs are identified by 'noisy' in the name (they may not have '_rst')
+    if ANALYZE_NOISY:
+        model_folders = [f for f in base_path.iterdir()
+                        if f.is_dir() and f.name[0].isdigit() and 'noisy' in f.name.lower()]
+    else:
+        model_folders = [f for f in base_path.iterdir()
+                        if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
     model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
 
 if DISCHARGE == 1000:

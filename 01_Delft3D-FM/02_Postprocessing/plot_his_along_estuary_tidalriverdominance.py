@@ -1,6 +1,9 @@
 """
 Plot longitudinal discharge profiles from sea to river over morphological time,
 to visualize the transition from tidal to river dominance.
+
+ANALYSIS_MODE = 'variability' : loop over discharge variability scenarios (Q500/Q1000)
+ANALYSIS_MODE = 'morfac'      : single MORFAC run from Test_MORFAC folder structure
 """
 
 import sys
@@ -13,59 +16,155 @@ except NameError:
     base_path = Path.cwd()
 sys.path.append(str(base_path))
 
-from FUNCTIONS.F_loaddata import *
+from FUNCTIONS.F_loaddata import (
+    get_stitched_his_paths, load_cross_section_data, load_cross_section_data_from_cache,
+    find_mf_run_folder, get_his_paths_for_run,
+)
 from FUNCTIONS.F_tidalriverdominance import *
-from FUNCTIONS.F_cache import DatasetCache
+
+#%%===========================================================================
+# CONFIGURATION
+# ============================================================================
+
+ANALYSIS_MODE = 'variability'  # 'variability' | 'morfac'
+
+exclude_last_n_days = 0
+
+# --- Variability mode settings ---
+DISCHARGE = 500
+SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']  # subset to run; None = all
+
+# --- MORFAC mode settings ---
+MORFAC_ROOT_DIR  = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Test_MORFAC")
+MORFAC_SCENARIO  = "03_flashy"       # 01_constant | 02_seasonal | 03_flashy
+MORFAC_TMORPH_YEARS = 400            # 50 | 400 | ...
+MORFAC_MF_NUMBER = 100
+
+#%% --- Variability mode: paths and folder discovery ---
+if ANALYSIS_MODE == 'variability':
+    base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
+    config = f"Model_Output/Q{DISCHARGE}"
+    run_base_path = base_directory / config
+
+    if DISCHARGE == 500:
+        VARIABILITY_MAP = {
+            '1': f'01_baserun{DISCHARGE}',
+            '2': f'02_run{DISCHARGE}_seasonal',
+            '3': f'03_run{DISCHARGE}_flashy',
+            '4': f'04_run{DISCHARGE}_singlepeak',
+        }
+    elif DISCHARGE == 1000:
+        VARIABILITY_MAP = {
+            '01': f'01_baserun{DISCHARGE}',
+            '02': f'02_run{DISCHARGE}_seasonal',
+            '03': f'03_run{DISCHARGE}_flashy',
+            '04': f'04_run{DISCHARGE}_singlepeak',
+        }
+
+    VARIABILITY_SCENARIOS = {
+        '1': 'baserun',
+        '2': 'seasonal',
+        '3': 'flashy',
+        '4': 'singlepeak',
+    }
+
+    timed_out_dir = run_base_path / "timed-out"
+    if not timed_out_dir.exists():
+        timed_out_dir = None
+        print('[WARNING] Timed-out directory not found.')
+
+    # Folder discovery — same logic as extract_cache_his.py (noisy excluded)
+    if DISCHARGE == 500:
+        model_folders = [f for f in run_base_path.iterdir()
+                         if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
+    else:  # Q1000
+        model_folders = [f for f in run_base_path.iterdir()
+                         if f.is_dir() and f.name[0].isdigit()]
+    model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
+
+    if SCENARIOS_TO_PROCESS:
+        scenario_filter = {int(s) for s in SCENARIOS_TO_PROCESS}
+        model_folders = [f for f in model_folders if int(f.name.split('_')[0]) in scenario_filter]
+
+    print(f"Found {len(model_folders)} run folders in: {run_base_path}")
+
+    cache_dir = run_base_path / "cached_data"
+
+    # Build list of (run_name, label, his_file_paths, output_dir, cache_file)
+    runs_to_process = []
+    for folder in model_folders:
+        his_paths = get_stitched_his_paths(
+            base_path=run_base_path,
+            folder_name=folder,
+            timed_out_dir=timed_out_dir,
+            variability_map=VARIABILITY_MAP,
+            analyze_noisy=False,
+        )
+        if not his_paths:
+            print(f"[WARNING] No HIS files found for {folder.name}, skipping.")
+            continue
+        scenario_num = str(int(folder.name.split('_')[0]))
+        run_id = '_'.join(folder.name.split('_')[1:])
+        cache_file = cache_dir / f"hisoutput_{int(scenario_num)}_{run_id}.nc"
+        label = VARIABILITY_SCENARIOS.get(scenario_num, folder.name)
+        out_dir = folder / "output_plots"
+        runs_to_process.append((folder.name, label, his_paths, out_dir, cache_file))
+
+else:  # morfac
+    morfac_base_dir = MORFAC_ROOT_DIR / MORFAC_SCENARIO / f"Tmorph_{MORFAC_TMORPH_YEARS}years"
+    run_folder, run_name = find_mf_run_folder(morfac_base_dir, MORFAC_MF_NUMBER)
+    his_paths = get_his_paths_for_run(morfac_base_dir, run_folder)
+    out_dir = run_folder / "output_plots"
+    runs_to_process = [(run_name, MORFAC_SCENARIO, his_paths, out_dir, None)]
 
 #%%===========================================================================
 # MAIN EXECUTION
 # ============================================================================
 
-if __name__ == '__main__':
-    # --- SETTINGS ---
-    root_dir = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Test_MORFAC")
-    scenario_dir = "03_flashy"  # 01_constant | 02_seasonal | 03_flashy
-    tmorph_years = 400             # 50 | 400 | ...
-    base_dir = root_dir / scenario_dir / f"Tmorph_{tmorph_years}years"
-    mf_number = 100
-    exclude_last_n_days = 0
-    
-    # Initialize dataset cache
-    dataset_cache = DatasetCache()
-    
-    run_folder, run_name = find_mf_run_folder(base_dir, mf_number)
-    his_file_paths = get_his_paths_for_run(base_dir, run_folder)
+def _load(cache_file, his_file_paths, **kwargs):
+    """Load using cache when available, fall back to HIS files."""
+    q = kwargs.get('q_var', 'cross_section_discharge')
+    if cache_file is not None and cache_file.exists():
+        print(f"  [cache] {cache_file.name}")
+        d = load_cross_section_data_from_cache(cache_file, **kwargs)
+    else:
+        d = load_cross_section_data(his_file_paths, **kwargs)
+    d['discharge'] = d[q]
+    return d
+
+
+for run_name, label, his_file_paths, output_dir, cache_file in runs_to_process:
+    print(f"\n{'='*60}")
+    print(f"{label}: {run_name}")
+    print(f"{'='*60}")
+
     if not his_file_paths:
-        raise FileNotFoundError(f"No HIS files found for run {run_name}")
-    output_dir = run_folder / "output_plots"
+        print(f"[WARNING] No HIS files, skipping.")
+        continue
+
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     try:
         # ===== DATA LOADING =====
         print("Loading cross-section data...")
-        data = load_cross_section_data(
-            his_file_paths,
+        data = _load(
+            cache_file, his_file_paths,
             q_var='cross_section_discharge',
-            estuary_only=True,
-            km_range=(20, 45),
             select_cycles_hydrodynamic=False,
             n_periods=3,
             select_max_flood=True,
             flood_sign=-1,
             exclude_last_timestep=True,
             exclude_last_n_days=exclude_last_n_days,
-            dataset_cache=dataset_cache
         )
         flood_sign_used = data.get('flood_sign_used', -1)
-        
+
         heatmap_data = None
         full_data = None
         if data.get('selection_mode') == 'max_flood':
-            heatmap_data = load_cross_section_data(
-                his_file_paths,
+            heatmap_data = _load(
+                cache_file, his_file_paths,
                 q_var='cross_section_discharge',
-                estuary_only=True,
-                km_range=(20, 45),
                 select_cycles_hydrodynamic=False,
                 n_periods=3,
                 select_max_flood=False,
@@ -73,13 +172,10 @@ if __name__ == '__main__':
                 select_max_flood_per_cycle=True,
                 exclude_last_timestep=True,
                 exclude_last_n_days=exclude_last_n_days,
-                dataset_cache=dataset_cache
             )
-            full_data = load_cross_section_data(
-                his_file_paths,
+            full_data = _load(
+                cache_file, his_file_paths,
                 q_var='cross_section_discharge',
-                estuary_only=True,
-                km_range=(20, 45),
                 select_cycles_hydrodynamic=False,
                 n_periods=3,
                 select_max_flood=False,
@@ -87,16 +183,15 @@ if __name__ == '__main__':
                 select_max_flood_per_cycle=False,
                 exclude_last_timestep=True,
                 exclude_last_n_days=exclude_last_n_days,
-                dataset_cache=dataset_cache
             )
-        print(f"✓ Selected {data['n_timesteps']} timesteps from {data['n_timesteps_original']} total")
-        print(f"✓ Found {len(data['km_positions'])} cross-sections")
-        print(f"✓ KM range: {data['km_positions'].min():.1f} to {data['km_positions'].max():.1f} km")
+        print(f"  Selected {data['n_timesteps']} timesteps from {data['n_timesteps_original']} total")
+        print(f"  Found {len(data['km_positions'])} cross-sections")
+        print(f"  KM range: {data['km_positions'].min():.1f} to {data['km_positions'].max():.1f} km")
         print()
-        
+
         # ===== PLOTTING =====
         print("Creating visualizations...")
-        
+
         settings = {
             'quantity_name': 'Discharge',
             'y_label': 'Discharge [m³/s]',
@@ -107,8 +202,8 @@ if __name__ == '__main__':
             'symmetric_scale': False
         }
         file_tag = 'discharge'
+
         if data.get('selection_mode') == 'max_flood':
-            # Plot: Max flood profile
             print("  - Max flood longitudinal profile...")
             fig1, ax1 = plot_max_flood_profile(data, y_label=settings['y_label'])
             plt.tight_layout()
@@ -136,7 +231,6 @@ if __name__ == '__main__':
                     plt.show()
 
             if heatmap_data is not None:
-                # Plot: Heatmap using max-flood moment per cycle
                 print("  - Space-time heatmap (max flood per cycle)...")
                 fig3, ax3 = plot_discharge_heatmap(
                     heatmap_data,
@@ -151,7 +245,6 @@ if __name__ == '__main__':
                 fig3.savefig(output_dir / f"{run_name}_heatmap_max_flood_per_cycle_{file_tag}.png", dpi=300, bbox_inches='tight')
                 plt.show()
         else:
-            # Plot 1: Statistics
             print(f"  - {settings['quantity_name']} statistics...")
             fig1, axes1 = plot_discharge_statistics(
                 data,
@@ -162,7 +255,6 @@ if __name__ == '__main__':
             fig1.savefig(output_dir / f"{run_name}_{file_tag}_statistics.png", dpi=300, bbox_inches='tight')
             plt.show()
 
-            # Plot 2: Upstream inflow (most upstream cross-section)
             print(f"  - Upstream {settings['quantity_name'].lower()} time series...")
             fig2, ax2 = plot_upstream_inflow_timeseries(
                 data,
@@ -172,8 +264,7 @@ if __name__ == '__main__':
             plt.tight_layout()
             fig2.savefig(output_dir / f"{run_name}_upstream_{file_tag}_timeseries.png", dpi=300, bbox_inches='tight')
             plt.show()
-            
-            # Plot 3: Heatmap
+
             print("  - Space-time heatmap...")
             fig3, ax3 = plot_discharge_heatmap(
                 data,
@@ -187,13 +278,10 @@ if __name__ == '__main__':
             plt.tight_layout()
             fig3.savefig(output_dir / f"{run_name}_heatmap_{file_tag}.png", dpi=300, bbox_inches='tight')
             plt.show()
-        
-        print("\n✓ Done!")
-        
+
+        print(f"Done: {run_name}")
+
     except Exception as e:
-        print(f"✗ Error: {e}")
+        print(f"Error for {run_name}: {e}")
         import traceback
         traceback.print_exc()
-    finally:
-        dataset_cache.close_all()
-# %%
