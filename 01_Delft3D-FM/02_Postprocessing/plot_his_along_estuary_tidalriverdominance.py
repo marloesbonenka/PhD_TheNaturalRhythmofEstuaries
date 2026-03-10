@@ -107,14 +107,14 @@ if ANALYSIS_MODE == 'variability':
         run_id = '_'.join(folder.name.split('_')[1:])
         cache_file = cache_dir / f"hisoutput_{int(scenario_num)}_{run_id}.nc"
         label = VARIABILITY_SCENARIOS.get(scenario_num, folder.name)
-        out_dir = folder / "output_plots"
+        out_dir = "output_plots" / "plots_his_tidalintrusion" / f"{scenario_num}_{label}"
         runs_to_process.append((folder.name, label, his_paths, out_dir, cache_file))
 
 else:  # morfac
     morfac_base_dir = MORFAC_ROOT_DIR / MORFAC_SCENARIO / f"Tmorph_{MORFAC_TMORPH_YEARS}years"
     run_folder, run_name = find_mf_run_folder(morfac_base_dir, MORFAC_MF_NUMBER)
     his_paths = get_his_paths_for_run(morfac_base_dir, run_folder)
-    out_dir = run_folder / "output_plots"
+    out_dir = "output_plots" / "plots_his_tidalintrusion" / f"{MORFAC_MF_NUMBER}_{MORFAC_SCENARIO}"
     runs_to_process = [(run_name, MORFAC_SCENARIO, his_paths, out_dir, None)]
 
 #%%===========================================================================
