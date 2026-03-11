@@ -5,7 +5,7 @@ import sys
 # Add the FUNCTIONS directory to the path
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\01_Model_setup\BOUNDARY_FILES_GENERATION")
 
-from FUNCTIONS.FUNCS_plot_discharge_scenarios import plot_discharge_scenarios_first_year, compute_CV, compute_p90_p10
+from FUNCTIONS.FUNCS_plot_discharge_scenarios import plot_discharge_scenarios_first_year
 #%%
 
 # Base directory containing all scenario subfolders
