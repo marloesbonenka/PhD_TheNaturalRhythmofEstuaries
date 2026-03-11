@@ -107,7 +107,7 @@ if ANALYSIS_MODE == 'variability':
         run_id = '_'.join(folder.name.split('_')[1:])
         cache_file = cache_dir / f"hisoutput_{int(scenario_num)}_{run_id}.nc"
         label = VARIABILITY_SCENARIOS.get(scenario_num, folder.name)
-        out_dir = "output_plots" / "plots_his_tidalintrusion" / f"{scenario_num}_{label}"
+        out_dir = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Output\Q500\output_plots\plots_his_max_floodintrusion") / f"{scenario_num}_{label}"
         runs_to_process.append((folder.name, label, his_paths, out_dir, cache_file))
 
 else:  # morfac
