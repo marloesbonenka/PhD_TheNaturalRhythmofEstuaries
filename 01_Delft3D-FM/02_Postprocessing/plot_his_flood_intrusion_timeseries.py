@@ -14,6 +14,14 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import sys
 from pathlib import Path
+import pandas as pd
+
+# ─── MOVING AVERAGE WINDOW ───────────────────────────────────────────────────
+MA_PERIOD = 'yearly'   # <-- change this: 'daily' | 'weekly' | 'monthly' | 'yearly'
+# ─────────────────────────────────────────────────────────────────────────────
+
+PERIOD_YEARS = {'daily': 1/365, 'weekly': 1/52, 'monthly': 1/12, 'yearly': 1.0}
+period_years = PERIOD_YEARS[MA_PERIOD]
 
 # ── FORCE WHITE STYLE (overrides any dark_background set globally) ─────────────
 plt.style.use('default')
@@ -229,14 +237,6 @@ for scenario_key in scenario_keys:
     print(f"Saved: {output_dir / fname_s}")
 
 # %%
-import pandas as pd
-
-# ─── MOVING AVERAGE WINDOW ───────────────────────────────────────────────────
-MA_PERIOD = 'yearly'   # <-- change this: 'daily' | 'weekly' | 'monthly' | 'yearly'
-# ─────────────────────────────────────────────────────────────────────────────
-
-PERIOD_YEARS = {'daily': 1/365, 'weekly': 1/52, 'monthly': 1/12, 'yearly': 1.0}
-period_years = PERIOD_YEARS[MA_PERIOD]
 
 fig, ax = plt.subplots(figsize=(10, 10))
 
