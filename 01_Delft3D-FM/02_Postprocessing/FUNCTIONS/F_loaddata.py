@@ -908,8 +908,14 @@ def split_by_hydrodynamic_cycle(times, values, cycle_days=365.25):
 
 def load_and_cache_scenario(scenario_dir, his_file_paths, cache_file, boxes, var_name):
     """
-    Load one scenario variable from cache or HIS files, and optionally compute
-    buffer volumes (only for cumulative transport variables).
+    Load one scenario variable from cache or HIS files.
+
+    Supports:
+    - cross-section variables (dims include: time, cross_section)
+    - station/point variables (dims include: time, station)
+
+    Buffer volumes are only computed for selected cumulative cross-section
+    transport variables.
     """
     
     BUFFER_VOLUME_VARS = {'cross_section_bedload_sediment_transport'}
@@ -924,100 +930,185 @@ def load_and_cache_scenario(scenario_dir, his_file_paths, cache_file, boxes, var
 
     if var_cached:
         print(f"Loading '{var_name}' from cache: {cache_file}")
-        ds = xr.open_dataset(cache_file)
-        km_positions = ds['km_positions'].values
-        variable_data = ds[var_name].values
-        time = ds['t'].values
-        buffer_volumes = {}
-        if compute_buffers:
-            buffer_volumes = {
-                (box_start, box_end): ds[f'buffer_{var_name}_{int(box_start)}_{int(box_end)}'].values
-                for box_start, box_end in boxes
-                if f'buffer_{var_name}_{int(box_start)}_{int(box_end)}' in ds
+        with xr.open_dataset(cache_file) as ds:
+            variable_data = ds[var_name].values
+            time = ds['t'].values if 't' in ds else ds['time'].values
+            buffer_volumes = {}
+            if compute_buffers:
+                buffer_volumes = {
+                    (box_start, box_end): ds[f'buffer_{var_name}_{int(box_start)}_{int(box_end)}'].values
+                    for box_start, box_end in boxes
+                    if f'buffer_{var_name}_{int(box_start)}_{int(box_end)}' in ds
+                }
+
+            if 'km_positions' in ds:
+                return scenario_dir, {
+                    'km_positions': ds['km_positions'].values,
+                    var_name: variable_data,
+                    't': time,
+                    'buffer_volumes': buffer_volumes,
+                }
+
+            if 'station_name' in ds:
+                return scenario_dir, {
+                    'station_name': ds['station_name'].values,
+                    var_name: variable_data,
+                    't': time,
+                    'buffer_volumes': {},
+                }
+
+            return scenario_dir, {
+                var_name: variable_data,
+                't': time,
+                'buffer_volumes': buffer_volumes,
             }
-        ds.close()
-        return scenario_dir, {
+
+    # --- Load from HIS files ---
+    print(f"Loading '{var_name}' from HIS files: {scenario_dir}")
+    with xr.open_dataset(his_file_paths[0]) as ds0:
+        if var_name not in ds0:
+            raise KeyError(f"Variable '{var_name}' not found in {his_file_paths[0]}")
+        var_dims = ds0[var_name].dims
+
+    buffer_volumes = {}
+
+    if 'cross_section' in var_dims:
+        data = load_cross_section_data(
+            his_file_path=his_file_paths,
+            q_var=var_name,
+            estuary_only=True,
+            km_range=(20, 45),
+            select_cycles_hydrodynamic=False,
+        )
+
+        km_positions = np.array(data['km_positions'])
+        time = data['t']
+
+        print(f"  Reading '{var_name}' data into memory...")
+        variable_data = data[var_name].values  # shape: (time, km)
+
+        if 'ds' in data and data['ds'] is not None:
+            try:
+                data['ds'].close()
+            except Exception:
+                pass
+
+        # For a box [box_start, box_end] km:
+        #   buffer = transport_upstream - transport_downstream
+        # i.e. cumulative sediment that entered the box minus what left it.
+        if compute_buffers:
+            for box_start, box_end in boxes:
+                idx_up = np.argmin(np.abs(km_positions - box_start))
+                idx_down = np.argmin(np.abs(km_positions - box_end))
+                buf = variable_data[:, idx_up] - variable_data[:, idx_down]
+                buffer_volumes[(box_start, box_end)] = buf
+
+        ds_add = xr.Dataset(
+            {
+                var_name: (['time', 'km'], variable_data),
+                'km_positions': (['km'], km_positions),
+                't': (['time'], time),
+                **{
+                    f'buffer_{var_name}_{int(box_start)}_{int(box_end)}': (['time'], buf)
+                    for (box_start, box_end), buf in buffer_volumes.items()
+                },
+            },
+            coords={'time': time, 'km': km_positions},
+        )
+
+        result_payload = {
             'km_positions': km_positions,
             var_name: variable_data,
             't': time,
             'buffer_volumes': buffer_volumes,
         }
 
-    # --- Load from HIS files ---
-    print(f"Loading '{var_name}' from HIS files: {scenario_dir}")
-    data = load_cross_section_data(
-        his_file_path=his_file_paths,
-        q_var=var_name,
-        estuary_only=True,
-        km_range=(20, 45),
-        select_cycles_hydrodynamic=False,
-    )
+    elif 'station' in var_dims:
+        with xr.open_dataset(his_file_paths[0]) as ds0:
+            if 'station_name' in ds0:
+                station_name_raw = ds0['station_name'].values
+                if len(station_name_raw) > 0 and isinstance(station_name_raw[0], bytes):
+                    station_names = np.array([s.decode('utf-8', errors='ignore').strip() for s in station_name_raw])
+                else:
+                    station_names = np.array([str(s).strip() for s in station_name_raw])
+            else:
+                n_station = ds0.sizes.get('station', 0)
+                station_names = np.array([f'station_{i}' for i in range(n_station)])
 
-    km_positions = np.array(data['km_positions'])
-    time = data['t']
+        var_parts = []
+        time_parts = []
+        last_time = None
+        last_var_end = None
 
-    print(f"  Reading '{var_name}' data into memory...")
-    variable_data = data[var_name].values  # shape: (time, km)
+        for i, p in enumerate(his_file_paths):
+            with xr.open_dataset(p) as ds_part:
+                var_part = ds_part[var_name].values
+                t_part = ds_part['time'].values
 
-    if 'ds' in data and data['ds'] is not None:
-        try:
-            data['ds'].close()
-        except Exception:
-            pass
+            if i > 0 and last_var_end is not None:
+                if 'cumulative' in var_name or 'bedload_sediment_transport' in var_name or 'suspended_sediment_transport' in var_name:
+                    var_part = var_part + last_var_end
 
-    # --- Compute buffer volumes (cumulative transport vars only) ---
-    # For a box [box_start, box_end] km:
-    #   buffer = transport_upstream - transport_downstream
-    # i.e. cumulative sediment that entered the box minus what left it.
-    buffer_volumes = {}
-    buffer_vars = {}
-    if compute_buffers:
-        for box_start, box_end in boxes:
-            idx_up   = np.argmin(np.abs(km_positions - box_start))
-            idx_down = np.argmin(np.abs(km_positions - box_end))
-            buf = variable_data[:, idx_up] - variable_data[:, idx_down]
-            buffer_volumes[(box_start, box_end)] = buf
-            buffer_vars[f'buffer_{var_name}_{int(box_start)}_{int(box_end)}'] = (['time'], buf)
+            if last_time is not None and len(t_part) > 1:
+                dt = t_part[1] - t_part[0]
+                offset = (last_time - t_part[0]) + dt
+                t_part = t_part + offset
+
+            var_parts.append(var_part)
+            time_parts.append(t_part)
+            if len(t_part) > 0:
+                last_time = t_part[-1]
+                last_var_end = var_part[-1]
+
+        variable_data = np.concatenate(var_parts, axis=0)
+        time = np.concatenate(time_parts)
+
+        ds_add = xr.Dataset(
+            {
+                var_name: (['time', 'station'], variable_data),
+                'station_name': (['station'], station_names),
+                't': (['time'], time),
+            },
+            coords={'time': time, 'station': np.arange(len(station_names))},
+        )
+
+        result_payload = {
+            'station_name': station_names,
+            var_name: variable_data,
+            't': time,
+            'buffer_volumes': {},
+        }
+
+    else:
+        raise ValueError(
+            f"Unsupported dims for '{var_name}': {var_dims}. "
+            "Expected a variable with 'cross_section' or 'station' dimension."
+        )
 
     # --- Append to (or create) cache ---
-    new_vars = {
-        var_name: (['time', 'km'], variable_data),
-        **{
-            f'buffer_{var_name}_{int(box_start)}_{int(box_end)}': (['time'], buf)
-            for (box_start, box_end), buf in buffer_volumes.items()
-        },
-    }
-
     if cache_file.exists():
-        # Merge new variables into the existing dataset
         with xr.open_dataset(cache_file) as ds_existing:
-            ds_existing = ds_existing.load()  # load into memory before closing
-        ds_new = xr.Dataset(
-            {**{v: ds_existing[v] for v in ds_existing.data_vars}, **new_vars},
-            coords={'km': km_positions, 'time': time},
-        )
-        # Preserve coordinate variables that may already exist
-        if 'km_positions' not in ds_new:
-            ds_new['km_positions'] = (['km'], km_positions)
-        if 't' not in ds_new:
-            ds_new['t'] = (['time'], time)
+            ds_existing = ds_existing.load()
+
+        ds_new = ds_existing
+        for coord_name, coord in ds_add.coords.items():
+            if coord_name not in ds_new.coords:
+                ds_new = ds_new.assign_coords({coord_name: coord})
+
+        for var in ds_add.data_vars:
+            # Keep existing core axes/coords stable for backward compatibility.
+            if var in {'t', 'km_positions'} and var in ds_new:
+                continue
+            ds_new[var] = ds_add[var]
     else:
-        ds_new = xr.Dataset(
-            {'km_positions': (['km'], km_positions), 't': (['time'], time), **new_vars},
-            coords={'km': km_positions, 'time': time},
-        )
+        ds_new = ds_add
 
     comp = dict(zlib=True, complevel=4)
     encoding = {v: comp for v in ds_new.data_vars}
     ds_new.to_netcdf(cache_file, encoding=encoding)
     print(f"  Saved/updated cache: {cache_file}")
 
-    return scenario_dir, {
-        'km_positions': km_positions,
-        var_name: variable_data,
-        't': time,
-        'buffer_volumes': buffer_volumes,
-    }
+    return scenario_dir, result_payload
 
 def load_and_cache_scenario_old(scenario_dir, his_file_paths, cache_file, boxes, var_name):
     """Load one scenario from cache or HIS files, compute buffer volumes, save cache."""

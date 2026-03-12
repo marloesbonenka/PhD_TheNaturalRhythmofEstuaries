@@ -679,31 +679,82 @@ for snapshot_key, snapshot_results in comparison_results.items():
     sorted_scenarios = sort_scenario_keys(scenario_groups.keys())
     plot_idx = 0
 
+    def _plot_noisy_context(ax, x, y_noisy_stack, y_base_for_envelope=None, add_labels=False):
+        """Plot thin noisy trajectories and noisy envelope, optionally including baserun in bounds."""
+        if not NOISY or y_noisy_stack is None or y_noisy_stack.shape[0] < 1:
+            return
+
+        # Thin grey trajectories for all noisy runs.
+        for i in range(y_noisy_stack.shape[0]):
+            ax.plot(
+                x,
+                y_noisy_stack[i],
+                color='grey',
+                alpha=0.35,
+                linewidth=0.7,
+                label='Noisy runs' if (add_labels and i == 0) else None,
+                zorder=1,
+            )
+
+        y_env_stack = y_noisy_stack
+        if y_base_for_envelope is not None:
+            yb = np.asarray(y_base_for_envelope)
+            if yb.ndim == 1:
+                yb = yb[np.newaxis, :]
+            if yb.size > 0:
+                y_env_stack = np.vstack([y_env_stack, yb])
+
+        if y_env_stack.shape[0] > 1:
+            y_min = np.nanmin(y_env_stack, axis=0)
+            y_max = np.nanmax(y_env_stack, axis=0)
+            ax.fill_between(
+                x,
+                y_min,
+                y_max,
+                color='grey',
+                alpha=0.18,
+                label='Noisy envelope (incl. baserun)' if add_labels else None,
+                zorder=1,
+            )
+
     # Plot 1: Shear Stress BI
     if compare_braiding_index and 'BI_tau' in snapshot_results[first_key]:
+        noisy_legend_added = False
         for scenario in sorted_scenarios:
             run_items = scenario_groups[scenario]
             y_stack = stack_metric_arrays(run_items, 'BI_tau')
-            draw_metric_with_optional_envelope(
-                ax=axes[plot_idx],
-                x=x_targets / 1000,
-                y_stack=y_stack,
-                color=_scenario_color(scenario, SCENARIO_COLORS),
-                label=_scenario_label(scenario, SCENARIO_LABELS),
-                add_envelope=NOISY,
-                marker='o',
+            y_base = stack_metric_arrays(baseline_groups[scenario], 'BI_tau') if scenario in baseline_groups else None
+
+            _plot_noisy_context(
+                axes[plot_idx],
+                x_targets / 1000,
+                y_stack,
+                y_base_for_envelope=y_base,
+                add_labels=not noisy_legend_added,
             )
+            if NOISY and y_stack is not None and y_stack.shape[0] > 0:
+                noisy_legend_added = True
+
+            if not NOISY:
+                draw_metric_with_optional_envelope(
+                    ax=axes[plot_idx],
+                    x=x_targets / 1000,
+                    y_stack=y_stack,
+                    color=_scenario_color(scenario, SCENARIO_COLORS),
+                    label=_scenario_label(scenario, SCENARIO_LABELS),
+                    add_envelope=False,
+                    marker='o',
+                )
             if scenario in baseline_groups:
-                y_base = stack_metric_arrays(baseline_groups[scenario], 'BI_tau')
                 draw_metric_with_optional_envelope(
                     ax=axes[plot_idx],
                     x=x_targets / 1000,
                     y_stack=y_base,
                     color=BASELINE_COLOR,
-                    label=f"{_scenario_label(scenario, SCENARIO_LABELS)} baseline",
+                    label=f"{_scenario_label(scenario, SCENARIO_LABELS)} baseline (solid)",
                     add_envelope=False,
                     marker=None,
-                    linestyle='--',
+                    linestyle='-',
                 )
         axes[plot_idx].set_title(f'BI ({var_tau}), fixed threshold: tau > {tau_threshold} N/m²')
         axes[plot_idx].set_ylabel('braiding index')
@@ -713,29 +764,42 @@ for snapshot_key, snapshot_results in comparison_results.items():
 
     # Plot 2: Water Depth BI
     if compare_braiding_index and 'BI_depth' in snapshot_results[first_key]:
+        noisy_legend_added = False
         for scenario in sorted_scenarios:
             run_items = scenario_groups[scenario]
             y_stack = stack_metric_arrays(run_items, 'BI_depth')
-            draw_metric_with_optional_envelope(
-                ax=axes[plot_idx],
-                x=x_targets / 1000,
-                y_stack=y_stack,
-                color=_scenario_color(scenario, SCENARIO_COLORS),
-                label=_scenario_label(scenario, SCENARIO_LABELS),
-                add_envelope=NOISY,
-                marker='s',
+            y_base = stack_metric_arrays(baseline_groups[scenario], 'BI_depth') if scenario in baseline_groups else None
+
+            _plot_noisy_context(
+                axes[plot_idx],
+                x_targets / 1000,
+                y_stack,
+                y_base_for_envelope=y_base,
+                add_labels=not noisy_legend_added,
             )
+            if NOISY and y_stack is not None and y_stack.shape[0] > 0:
+                noisy_legend_added = True
+
+            if not NOISY:
+                draw_metric_with_optional_envelope(
+                    ax=axes[plot_idx],
+                    x=x_targets / 1000,
+                    y_stack=y_stack,
+                    color=_scenario_color(scenario, SCENARIO_COLORS),
+                    label=_scenario_label(scenario, SCENARIO_LABELS),
+                    add_envelope=False,
+                    marker='s',
+                )
             if scenario in baseline_groups:
-                y_base = stack_metric_arrays(baseline_groups[scenario], 'BI_depth')
                 draw_metric_with_optional_envelope(
                     ax=axes[plot_idx],
                     x=x_targets / 1000,
                     y_stack=y_base,
                     color=BASELINE_COLOR,
-                    label=f"{_scenario_label(scenario, SCENARIO_LABELS)} baseline",
+                    label=f"{_scenario_label(scenario, SCENARIO_LABELS)} baseline (solid)",
                     add_envelope=False,
                     marker=None,
-                    linestyle='--',
+                    linestyle='-',
                 )
         axes[plot_idx].set_title(f'BI ({var_depth}), relative threshold: {int(depth_threshold*100)}% above mean water depth')
         axes[plot_idx].set_ylabel('braiding index')
@@ -745,6 +809,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
 
     # Plot 3: Bed Level
     if compare_width_averaged_bedlevel:
+        noisy_legend_added = False
         for scenario in sorted_scenarios:
             run_items = scenario_groups[scenario]
             y_stack = stack_metric_arrays(run_items, 'BL')
@@ -754,29 +819,49 @@ for snapshot_key, snapshot_results in comparison_results.items():
             if first_with_x is None:
                 continue
             x_vals = first_with_x['x_centers'] / 1000
-            draw_metric_with_optional_envelope(
-                ax=axes[plot_idx],
-                x=x_vals,
-                y_stack=y_stack,
-                color=_scenario_color(scenario, SCENARIO_COLORS),
-                label=_scenario_label(scenario, SCENARIO_LABELS),
-                add_envelope=NOISY,
-                marker=None,
-            )
+            if not NOISY:
+                draw_metric_with_optional_envelope(
+                    ax=axes[plot_idx],
+                    x=x_vals,
+                    y_stack=y_stack,
+                    color=_scenario_color(scenario, SCENARIO_COLORS),
+                    label=_scenario_label(scenario, SCENARIO_LABELS),
+                    add_envelope=False,
+                    marker=None,
+                )
             if scenario in baseline_groups:
                 y_base = stack_metric_arrays(baseline_groups[scenario], 'BL')
                 base_x_data = next((d for _, d in baseline_groups[scenario] if 'x_centers' in d), None)
+                _plot_noisy_context(
+                    axes[plot_idx],
+                    x_vals,
+                    y_stack,
+                    y_base_for_envelope=y_base,
+                    add_labels=not noisy_legend_added,
+                )
+                if NOISY and y_stack is not None and y_stack.shape[0] > 0:
+                    noisy_legend_added = True
                 if base_x_data is not None:
                     draw_metric_with_optional_envelope(
                         ax=axes[plot_idx],
                         x=base_x_data['x_centers'] / 1000,
                         y_stack=y_base,
                         color=BASELINE_COLOR,
-                        label=f"{_scenario_label(scenario, SCENARIO_LABELS)} baseline",
+                        label=f"{_scenario_label(scenario, SCENARIO_LABELS)} baseline (solid)",
                         add_envelope=False,
                         marker=None,
-                        linestyle='--',
+                        linestyle='-',
                     )
+            else:
+                _plot_noisy_context(
+                    axes[plot_idx],
+                    x_vals,
+                    y_stack,
+                    y_base_for_envelope=None,
+                    add_labels=not noisy_legend_added,
+                )
+                if NOISY and y_stack is not None and y_stack.shape[0] > 0:
+                    noisy_legend_added = True
         axes[plot_idx].set_title('width-averaged bed level')
         axes[plot_idx].set_ylabel('bed level [m]')
         axes[plot_idx].legend(loc='best')
@@ -785,6 +870,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
 
     # Plot 4: Maximum Depth
     if compare_max_depth:
+        noisy_legend_added = False
         for scenario in sorted_scenarios:
             run_items = scenario_groups[scenario]
             y_stack = stack_metric_arrays(run_items, 'MaxDepth')
@@ -794,29 +880,49 @@ for snapshot_key, snapshot_results in comparison_results.items():
             if first_with_x is None:
                 continue
             x_vals = first_with_x['x_centers'] / 1000
-            draw_metric_with_optional_envelope(
-                ax=axes[plot_idx],
-                x=x_vals,
-                y_stack=y_stack,
-                color=_scenario_color(scenario, SCENARIO_COLORS),
-                label=_scenario_label(scenario, SCENARIO_LABELS),
-                add_envelope=NOISY,
-                marker='o',
-            )
+            if not NOISY:
+                draw_metric_with_optional_envelope(
+                    ax=axes[plot_idx],
+                    x=x_vals,
+                    y_stack=y_stack,
+                    color=_scenario_color(scenario, SCENARIO_COLORS),
+                    label=_scenario_label(scenario, SCENARIO_LABELS),
+                    add_envelope=False,
+                    marker='o',
+                )
             if scenario in baseline_groups:
                 y_base = stack_metric_arrays(baseline_groups[scenario], 'MaxDepth')
                 base_x_data = next((d for _, d in baseline_groups[scenario] if 'x_centers' in d), None)
+                _plot_noisy_context(
+                    axes[plot_idx],
+                    x_vals,
+                    y_stack,
+                    y_base_for_envelope=y_base,
+                    add_labels=not noisy_legend_added,
+                )
+                if NOISY and y_stack is not None and y_stack.shape[0] > 0:
+                    noisy_legend_added = True
                 if base_x_data is not None:
                     draw_metric_with_optional_envelope(
                         ax=axes[plot_idx],
                         x=base_x_data['x_centers'] / 1000,
                         y_stack=y_base,
                         color=BASELINE_COLOR,
-                        label=f"{_scenario_label(scenario, SCENARIO_LABELS)} baseline",
+                        label=f"{_scenario_label(scenario, SCENARIO_LABELS)} baseline (solid)",
                         add_envelope=False,
                         marker=None,
-                        linestyle='--',
+                        linestyle='-',
                     )
+            else:
+                _plot_noisy_context(
+                    axes[plot_idx],
+                    x_vals,
+                    y_stack,
+                    y_base_for_envelope=None,
+                    add_labels=not noisy_legend_added,
+                )
+                if NOISY and y_stack is not None and y_stack.shape[0] > 0:
+                    noisy_legend_added = True
         axes[plot_idx].set_title(f'p{depth_percentile} channel depth')
         axes[plot_idx].set_ylabel('depth [m]')
         axes[plot_idx].legend(loc='best')
@@ -825,29 +931,42 @@ for snapshot_key, snapshot_results in comparison_results.items():
 
     # Plot 5: Channel Width
     if compare_channel_width:
+        noisy_legend_added = False
         for scenario in sorted_scenarios:
             run_items = scenario_groups[scenario]
             y_stack = stack_metric_arrays(run_items, 'ChannelWidth')
-            draw_metric_with_optional_envelope(
-                ax=axes[plot_idx],
-                x=x_targets / 1000,
-                y_stack=y_stack,
-                color=_scenario_color(scenario, SCENARIO_COLORS),
-                label=_scenario_label(scenario, SCENARIO_LABELS),
-                add_envelope=NOISY,
-                marker='s',
+            y_base = stack_metric_arrays(baseline_groups[scenario], 'ChannelWidth') if scenario in baseline_groups else None
+
+            _plot_noisy_context(
+                axes[plot_idx],
+                x_targets / 1000,
+                y_stack,
+                y_base_for_envelope=y_base,
+                add_labels=not noisy_legend_added,
             )
+            if NOISY and y_stack is not None and y_stack.shape[0] > 0:
+                noisy_legend_added = True
+
+            if not NOISY:
+                draw_metric_with_optional_envelope(
+                    ax=axes[plot_idx],
+                    x=x_targets / 1000,
+                    y_stack=y_stack,
+                    color=_scenario_color(scenario, SCENARIO_COLORS),
+                    label=_scenario_label(scenario, SCENARIO_LABELS),
+                    add_envelope=False,
+                    marker='s',
+                )
             if scenario in baseline_groups:
-                y_base = stack_metric_arrays(baseline_groups[scenario], 'ChannelWidth')
                 draw_metric_with_optional_envelope(
                     ax=axes[plot_idx],
                     x=x_targets / 1000,
                     y_stack=y_base,
                     color=BASELINE_COLOR,
-                    label=f"{_scenario_label(scenario, SCENARIO_LABELS)} baseline",
+                    label=f"{_scenario_label(scenario, SCENARIO_LABELS)} baseline (solid)",
                     add_envelope=False,
                     marker=None,
-                    linestyle='--',
+                    linestyle='-',
                 )
         axes[plot_idx].set_title(f'maximum channel width (threshold: mean depth - {int(safety_buffer*100)} cm)')
         axes[plot_idx].set_ylabel('width [m]')
@@ -868,6 +987,199 @@ for snapshot_key, snapshot_results in comparison_results.items():
     plt.show()
 
     print(f'Saved comparison plot at {summary_output_dir} for {snapshot_key}')
+
+    # Optional second set: noisy envelope context + deterministic variability overlays
+    # (baserun + seasonal + flashy + singlepeak).
+    if NOISY and baseline_groups:
+        n_ref_plots = n_plots
+        fig_ref, axes_ref = plt.subplots(n_ref_plots, 1, figsize=(12, 4 * n_ref_plots), sharex=True)
+        if n_ref_plots == 1:
+            axes_ref = [axes_ref]
+
+        ref_scenarios = sort_scenario_keys(baseline_groups.keys())
+        noisy_scenarios = sort_scenario_keys(scenario_groups.keys())
+
+        def _stack_noisy_all(metric_key):
+            stacks = []
+            for scn in noisy_scenarios:
+                y_scn = stack_metric_arrays(scenario_groups[scn], metric_key)
+                if y_scn is not None and y_scn.size > 0:
+                    stacks.append(y_scn)
+            if not stacks:
+                return None
+            return np.vstack(stacks)
+
+        ref_idx = 0
+
+        if compare_braiding_index and 'BI_tau' in snapshot_results[first_key]:
+            y_noisy = _stack_noisy_all('BI_tau')
+            _plot_noisy_context(
+                ax=axes_ref[ref_idx],
+                x=x_targets / 1000,
+                y_noisy_stack=y_noisy,
+                y_base_for_envelope=None,
+                add_labels=True,
+            )
+            for scenario in ref_scenarios:
+                y_ref = stack_metric_arrays(baseline_groups[scenario], 'BI_tau')
+                draw_metric_with_optional_envelope(
+                    ax=axes_ref[ref_idx],
+                    x=x_targets / 1000,
+                    y_stack=y_ref,
+                    color=_scenario_color(scenario, SCENARIO_COLORS),
+                    label=_scenario_label(scenario, SCENARIO_LABELS),
+                    add_envelope=False,
+                    marker='o',
+                    linestyle='-',
+                )
+            axes_ref[ref_idx].set_title(f'BI ({var_tau}), fixed threshold: tau > {tau_threshold} N/m²')
+            axes_ref[ref_idx].set_ylabel('braiding index')
+            axes_ref[ref_idx].legend(loc='best')
+            axes_ref[ref_idx].grid(True, alpha=0.2)
+            ref_idx += 1
+
+        if compare_braiding_index and 'BI_depth' in snapshot_results[first_key]:
+            y_noisy = _stack_noisy_all('BI_depth')
+            _plot_noisy_context(
+                ax=axes_ref[ref_idx],
+                x=x_targets / 1000,
+                y_noisy_stack=y_noisy,
+                y_base_for_envelope=None,
+                add_labels=True,
+            )
+            for scenario in ref_scenarios:
+                y_ref = stack_metric_arrays(baseline_groups[scenario], 'BI_depth')
+                draw_metric_with_optional_envelope(
+                    ax=axes_ref[ref_idx],
+                    x=x_targets / 1000,
+                    y_stack=y_ref,
+                    color=_scenario_color(scenario, SCENARIO_COLORS),
+                    label=_scenario_label(scenario, SCENARIO_LABELS),
+                    add_envelope=False,
+                    marker='s',
+                    linestyle='-',
+                )
+            axes_ref[ref_idx].set_title(f'BI ({var_depth}), relative threshold: {int(depth_threshold*100)}% above mean water depth')
+            axes_ref[ref_idx].set_ylabel('braiding index')
+            axes_ref[ref_idx].legend(loc='best')
+            axes_ref[ref_idx].grid(True, alpha=0.2)
+            ref_idx += 1
+
+        if compare_width_averaged_bedlevel:
+            noisy_items_bl = []
+            for scn in noisy_scenarios:
+                noisy_items_bl.extend(scenario_groups[scn])
+            y_noisy_bl = _stack_noisy_all('BL')
+            x_noisy_bl_data = next((d for _, d in noisy_items_bl if 'x_centers' in d), None)
+            if x_noisy_bl_data is not None:
+                _plot_noisy_context(
+                    ax=axes_ref[ref_idx],
+                    x=x_noisy_bl_data['x_centers'] / 1000,
+                    y_noisy_stack=y_noisy_bl,
+                    y_base_for_envelope=None,
+                    add_labels=True,
+                )
+            for scenario in ref_scenarios:
+                run_items = baseline_groups[scenario]
+                y_ref = stack_metric_arrays(run_items, 'BL')
+                if y_ref is None:
+                    continue
+                x_ref_data = next((d for _, d in run_items if 'x_centers' in d), None)
+                if x_ref_data is None:
+                    continue
+                draw_metric_with_optional_envelope(
+                    ax=axes_ref[ref_idx],
+                    x=x_ref_data['x_centers'] / 1000,
+                    y_stack=y_ref,
+                    color=_scenario_color(scenario, SCENARIO_COLORS),
+                    label=_scenario_label(scenario, SCENARIO_LABELS),
+                    add_envelope=False,
+                    marker=None,
+                    linestyle='-',
+                )
+            axes_ref[ref_idx].set_title('width-averaged bed level')
+            axes_ref[ref_idx].set_ylabel('bed level [m]')
+            axes_ref[ref_idx].legend(loc='best')
+            axes_ref[ref_idx].grid(True, alpha=0.2)
+            ref_idx += 1
+
+        if compare_max_depth:
+            noisy_items_md = []
+            for scn in noisy_scenarios:
+                noisy_items_md.extend(scenario_groups[scn])
+            y_noisy_md = _stack_noisy_all('MaxDepth')
+            x_noisy_md_data = next((d for _, d in noisy_items_md if 'x_centers' in d), None)
+            if x_noisy_md_data is not None:
+                _plot_noisy_context(
+                    ax=axes_ref[ref_idx],
+                    x=x_noisy_md_data['x_centers'] / 1000,
+                    y_noisy_stack=y_noisy_md,
+                    y_base_for_envelope=None,
+                    add_labels=True,
+                )
+            for scenario in ref_scenarios:
+                run_items = baseline_groups[scenario]
+                y_ref = stack_metric_arrays(run_items, 'MaxDepth')
+                if y_ref is None:
+                    continue
+                x_ref_data = next((d for _, d in run_items if 'x_centers' in d), None)
+                if x_ref_data is None:
+                    continue
+                draw_metric_with_optional_envelope(
+                    ax=axes_ref[ref_idx],
+                    x=x_ref_data['x_centers'] / 1000,
+                    y_stack=y_ref,
+                    color=_scenario_color(scenario, SCENARIO_COLORS),
+                    label=_scenario_label(scenario, SCENARIO_LABELS),
+                    add_envelope=False,
+                    marker='o',
+                    linestyle='-',
+                )
+            axes_ref[ref_idx].set_title(f'p{depth_percentile} channel depth')
+            axes_ref[ref_idx].set_ylabel('depth [m]')
+            axes_ref[ref_idx].legend(loc='best')
+            axes_ref[ref_idx].grid(True, alpha=0.2)
+            ref_idx += 1
+
+        if compare_channel_width:
+            y_noisy = _stack_noisy_all('ChannelWidth')
+            _plot_noisy_context(
+                ax=axes_ref[ref_idx],
+                x=x_targets / 1000,
+                y_noisy_stack=y_noisy,
+                y_base_for_envelope=None,
+                add_labels=True,
+            )
+            for scenario in ref_scenarios:
+                y_ref = stack_metric_arrays(baseline_groups[scenario], 'ChannelWidth')
+                draw_metric_with_optional_envelope(
+                    ax=axes_ref[ref_idx],
+                    x=x_targets / 1000,
+                    y_stack=y_ref,
+                    color=_scenario_color(scenario, SCENARIO_COLORS),
+                    label=_scenario_label(scenario, SCENARIO_LABELS),
+                    add_envelope=False,
+                    marker='s',
+                    linestyle='-',
+                )
+            axes_ref[ref_idx].set_title(f'maximum channel width (threshold: mean depth - {int(safety_buffer*100)} cm)')
+            axes_ref[ref_idx].set_ylabel('width [m]')
+            axes_ref[ref_idx].legend(loc='best')
+            axes_ref[ref_idx].grid(True, alpha=0.2)
+
+        axes_ref[-1].set_xlabel('x-coordinate along estuary [km]')
+        fig_ref.suptitle(
+            f"Noisy envelope + variability overlays around {comparison_labels.get(snapshot_key, snapshot_key)}",
+            fontsize=12,
+        )
+        fig_ref.tight_layout(rect=[0, 0.03, 1, 0.97])
+
+        if apply_detrending:
+            fig_ref.savefig(summary_output_dir / f'overall_morphology_variability_overlay_detrended_{snapshot_date}.png', dpi=300)
+        else:
+            fig_ref.savefig(summary_output_dir / f'overall_morphology_variability_overlay_{snapshot_date}.png', dpi=300)
+        plt.show()
+        print(f'Saved noisy-envelope + variability overlay comparison at {summary_output_dir} for {snapshot_key}')
 
     # Separate hypsometric comparison plot for this snapshot.
     if compare_hypsometric:
@@ -938,7 +1250,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                         base_elev,
                         linewidth=2,
                         color=BASELINE_COLOR,
-                        linestyle='--',
+                        linestyle='-',
                         label=f"{label} baseline",
                     )
 

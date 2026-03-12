@@ -1,10 +1,14 @@
 """
-Add a variable from HIS output files to the scenario cache.
+Add one or more variables from HIS output files to the scenario cache.
 
 Run this script to pre-populate (or extend) the hisoutput_*.nc cache files
 with any variable available in the Delft3D-FM HIS output, without re-running
 the full analysis script. Buffer volumes are computed automatically for
 cumulative transport variables (see BUFFER_VOLUME_VARS in F_loaddata).
+
+Supported variable types:
+- cross-section variables (time x cross_section)
+- station/point variables (time x station)
 
 Usage: set VARIABLES_TO_CACHE and the scenario filters below, then run.
 """
@@ -24,6 +28,8 @@ from FUNCTIONS.F_loaddata import load_and_cache_scenario, get_stitched_his_paths
 VARIABLES_TO_CACHE = [
     'cross_section_discharge',
     'cross_section_bedload_sediment_transport',
+    'cross_section_velocity',
+    # 'waterlevel',
     # 'cross_section_suspended_sediment_transport',
 ]
 
@@ -112,6 +118,23 @@ cache_dir = base_path / "cached_data"
 cache_dir.mkdir(exist_ok=True)
 
 # %% --- POPULATE CACHE ---
+def _cache_file_for_variable(cache_dir, scenario_num, run_id, his_file_paths, var_name):
+    """
+    Keep legacy cross-section cache filenames unchanged.
+    Write station variables to dedicated files to avoid mixing schemas.
+    """
+    with xr.open_dataset(his_file_paths[0]) as ds0:
+        if var_name not in ds0:
+            raise KeyError(f"Variable '{var_name}' not found in {his_file_paths[0]}")
+        dims = ds0[var_name].dims
+
+    if 'station' in dims:
+        return cache_dir / f"hisoutput_stations_{int(scenario_num)}_{run_id}.nc"
+
+    # Default and backward-compatible path for cross-section and other legacy vars.
+    return cache_dir / f"hisoutput_{int(scenario_num)}_{run_id}.nc"
+
+
 for var_name in VARIABLES_TO_CACHE:
     print(f"\n{'='*60}")
     print(f"Variable: {var_name}")
@@ -121,7 +144,13 @@ for var_name in VARIABLES_TO_CACHE:
         scenario_name = Path(scenario_dir).name
         scenario_num = scenario_name.split('_')[0]
         run_id = '_'.join(scenario_name.split('_')[1:])
-        cache_file = cache_dir / f"hisoutput_{int(scenario_num)}_{run_id}.nc"
+        cache_file = _cache_file_for_variable(
+            cache_dir=cache_dir,
+            scenario_num=scenario_num,
+            run_id=run_id,
+            his_file_paths=his_file_paths,
+            var_name=var_name,
+        )
 
         # Check upfront so the summary is clear
         already_cached = False
@@ -134,6 +163,7 @@ for var_name in VARIABLES_TO_CACHE:
             continue
 
         print(f"  [LOAD] {scenario_dir}")
+        print(f"         -> {cache_file.name}")
         load_and_cache_scenario(
             scenario_dir=scenario_dir,
             his_file_paths=his_file_paths,
