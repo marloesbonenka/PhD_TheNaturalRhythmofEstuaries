@@ -282,7 +282,7 @@ if force_recompute or not results:
         )
         print(f"Saved cache after {folder}: {cache_path}")
 
-    dataset_cache.close_all()
+        ds.close()
 
 #--- plotting from cache/results ---
 for folder in model_folders:

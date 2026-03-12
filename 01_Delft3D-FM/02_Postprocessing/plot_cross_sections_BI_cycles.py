@@ -50,20 +50,22 @@ elif ANALYSIS_MODE == "morfac":
     config = r'TestingBoundaries_and_SensitivityAnalyses\Test_MORFAC\02_seasonal\Tmorph_50years'
     default_morfac = None
 
-timed_out_dir = base_directory / config / "timed-out"
+base_path = base_directory / config
+timed_out_dir = base_path / "timed-out"
 
 # --- SETTINGS ---
 n_slices = 5                # Controls how many bed levels are plotted in left panel
 safety_buffer = 0.20        # Buffer below mean bed level to define channels (in meters)
 use_vectorized_bi = True    # When True, use compute_braiding_index_series for faster BI computation on profiles with internal NaNs.
 show_cycle_mean = False     # When True, plot mean/envelope across cycles.
+plot_bi_mask_stack = True   # When True, add a mask-stack panel (time vs cross-section y) for BI validation.
 
 # Cross-section x-coordinates in meters
 selected_x_coords = [20000, 30000, 40000]
 
 # Y-range of the estuary (min, max) and sampling resolution
 y_range = (5000, 10000)
-n_y_samples = 150
+n_y_samples = 300  # Keep identical to bedlevel cross-section activity cache.
 
 # --- HYDRODYNAMIC CYCLE SETTINGS ---
 # Duration of ONE hydrodynamic cycle in days (1 year = 365.25 days)
@@ -88,26 +90,26 @@ cache_settings = {
 if __name__ == "__main__":
     # For variability: restart folders start with digit
     if ANALYSIS_MODE == "variability":
-        model_folders = [f.name for f in (base_directory / config).iterdir() 
+        model_folders = [f.name for f in base_path.iterdir() 
                          if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
         if SCENARIOS_TO_PROCESS:
             model_folders = [f for f in model_folders if f.split('_')[0] in SCENARIOS_TO_PROCESS]
         model_folders.sort(key=lambda x: int(x.split('_')[0]))
     elif ANALYSIS_MODE == "morfac":
-        model_folders = [f.name for f in (base_directory / config).iterdir() 
+        model_folders = [f.name for f in base_path.iterdir() 
                          if f.is_dir() and f.name.startswith('MF')]
         model_folders.sort(key=get_mf_number)
 
     dataset_cache = DatasetCache()
     
     for folder in model_folders:
-        model_location = base_directory / config / folder
+        model_location = base_path / folder
         
         print(f"\n" + "="*60)
         print(f"PROCESSING: {folder}")
         
         # --- 1. LOAD OR COMPUTE BRAIDING INDEX ---
-        cache_path = get_profile_cache_path(model_location, folder)
+        cache_path = get_shared_profile_cache_path(base_path, folder, suffix="including_land")
         folder_results, missing_x_coords = load_profile_cache(cache_path, selected_x_coords)
         
         # Compute bi_series from profiles if cached but bi_series missing
@@ -335,9 +337,10 @@ if __name__ == "__main__":
         morfac = default_morfac if default_morfac else float(get_mf_number(folder))
         
         n_cs = len(selected_x_coords)
-        fig, axes = plt.subplots(n_cs, 2, figsize=(18, 5 * n_cs))
+        n_cols = 3 if plot_bi_mask_stack else 2
+        fig, axes = plt.subplots(n_cs, n_cols, figsize=(9 * n_cols, 5 * n_cs))
         if n_cs == 1:
-            axes = axes.reshape(1, -1)
+            axes = np.array(axes).reshape(1, -1)
         
         for i, x_coord in enumerate(selected_x_coords):
             cs_name = f"km{int(x_coord / 1000)}"
@@ -347,6 +350,7 @@ if __name__ == "__main__":
             
             data = folder_results[cs_name]
             ax_spatial, ax_bi = axes[i, 0], axes[i, 1]
+            ax_mask = axes[i, 2] if plot_bi_mask_stack else None
             
             # Build DataFrame
             df_results = pd.DataFrame({
@@ -386,6 +390,45 @@ if __name__ == "__main__":
             ax_spatial.set_xlim(y_range[0], y_range[1])
             ax_spatial.grid(True, alpha=0.2)
             ax_spatial.legend(loc='best', fontsize='x-small')
+
+            # --- OPTIONAL PANEL: BI channel mask stack (time vs estuary y-coordinate) ---
+            if plot_bi_mask_stack:
+                ordered_profiles = [all_profiles_raw[int(p)] for p in df_results['p_idx'].values]
+                mask_stack = []
+
+                for prof_raw in ordered_profiles:
+                    prof = prof_raw.copy()
+                    prof[prof > 8.0] = np.nan
+
+                    # Match BI logic: interpolate internal gaps only.
+                    nans = np.isnan(prof)
+                    if np.any(~nans):
+                        x_idx = np.arange(prof.size)
+                        prof[nans] = np.interp(x_idx[nans], x_idx[~nans], prof[~nans], left=np.nan, right=np.nan)
+
+                    if np.all(np.isnan(prof)):
+                        is_channel = np.zeros_like(prof, dtype=np.uint8)
+                    else:
+                        threshold = np.nanmean(prof) - safety_buffer
+                        is_channel = ((~np.isnan(prof)) & (prof < threshold)).astype(np.uint8)
+
+                    mask_stack.append(is_channel)
+
+                mask_stack = np.asarray(mask_stack)
+                im = ax_mask.imshow(
+                    mask_stack,
+                    aspect='auto',
+                    origin='lower',
+                    extent=[y_range[0], y_range[1], morph_years.min(), morph_years.max()],
+                    cmap='binary',
+                    vmin=0,
+                    vmax=1,
+                    interpolation='nearest',
+                )
+                ax_mask.set_title(f"BI mask stack (0=white, 1=black): {cs_name}")
+                ax_mask.set_xlabel("Estuary y-coordinate [m]")
+                ax_mask.set_ylabel("Morphological time [years]")
+                ax_mask.grid(False)
             
             # --- RIGHT PANEL: Braiding Index per Cycle ---
             # Split braiding index into cycles
@@ -497,12 +540,12 @@ if __name__ == "__main__":
         # Add colorbar for cycle number (outside on the right)
         sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis, norm=plt.Normalize(vmin=1, vmax=n_cycles))
         sm.set_array([])
-        cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])  # [left, bottom, width, height]
+        cbar_ax = fig.add_axes([0.94, 0.15, 0.015, 0.7])  # [left, bottom, width, height]
         cbar = fig.colorbar(sm, cax=cbar_ax)
         cbar.set_label('Morphological Cycle Number')
         
         plt.suptitle(f"Braiding Index Evolution per Hydrodynamic Cycle\n{folder}", fontsize=14, y=1.02)
-        plt.tight_layout(rect=[0, 0, 0.90, 1])  # Leave space for colorbar on right
+        plt.tight_layout(rect=[0, 0, 0.93, 1])  # Leave space for cycle colorbar on right
         
         save_name = f"braiding_index_cycles_{folder}.png"
         plt.savefig(base_directory / config / save_name, dpi=300, bbox_inches='tight')

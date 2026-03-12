@@ -33,7 +33,7 @@ from FUNCTIONS.F_general import (
     )
 from FUNCTIONS.F_cache import (
     DatasetCache,
-    get_profile_cache_path, load_profile_cache, save_profile_cache
+    get_shared_profile_cache_path, load_profile_cache, save_profile_cache
 )
 
 from FUNCTIONS.F_braiding_index import get_nearest_face_indices
@@ -157,9 +157,7 @@ for folder in model_folders:
     model_location = base_path / folder
     
     # --- UNIFIED CACHE ---
-    cache_path = get_profile_cache_path(model_location, folder)
-    # Force a cache refresh with new name
-    cache_path = cache_path.with_name(cache_path.stem + "_including_land" + cache_path.suffix)
+    cache_path = get_shared_profile_cache_path(base_path, folder, suffix="including_land")
     print(f"Using cache: {cache_path}")
     cache_settings_profiles = {
         'selected_x_coords': selected_x_coords,

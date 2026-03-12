@@ -47,7 +47,8 @@ elif ANALYSIS_MODE == "morfac":
     config = r'TestingBoundaries_and_SensitivityAnalyses\Test_MORFAC\02_seasonal\Tmorph_50years'
     default_morfac = None  # Will extract from folder name
 
-timed_out_dir = base_directory / config / "timed-out"
+base_path = base_directory / config
+timed_out_dir = base_path / "timed-out"
 
 # --- SETTINGS ---
 n_slices = 5  
@@ -60,7 +61,7 @@ selected_x_coords = [20000, 30000, 40000]
 # Y-range of the estuary (min, max) and sampling resolution
 # Based on MAP file: mesh2d_face_y ranges from 337.5 to 15000.5 m
 y_range = (5000, 10000)  # Estuary width in meters
-n_y_samples = 150  # Number of points to sample across the width
+n_y_samples = 300  # Keep identical to bedlevel cross-section activity cache.
 
 # X-coordinate for discharge extraction (km 40 = 40000 m)
 DISCHARGE_X_COORD = 40000
@@ -82,7 +83,7 @@ cache_settings = {
 # For morfac: restart folders start with "MF" (e.g., "MF1_restart...")
 if ANALYSIS_MODE == "variability":
     # Find restart folders: start with digit and contain "_rst"
-    model_folders = [f.name for f in (base_directory / config).iterdir() 
+    model_folders = [f.name for f in base_path.iterdir() 
                      if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
     # Filter by SCENARIOS_TO_PROCESS if specified
     if SCENARIOS_TO_PROCESS:
@@ -90,7 +91,7 @@ if ANALYSIS_MODE == "variability":
     # Sort by leading number (e.g., "1_Q500..." -> 1)
     model_folders.sort(key=lambda x: int(x.split('_')[0]))
 elif ANALYSIS_MODE == "morfac":
-    model_folders = [f.name for f in (base_directory / config).iterdir() 
+    model_folders = [f.name for f in base_path.iterdir() 
                      if f.is_dir() and f.name.startswith('MF')]
     model_folders.sort(key=get_mf_number)
 
@@ -98,10 +99,10 @@ elif ANALYSIS_MODE == "morfac":
 
 dataset_cache = DatasetCache()
 for folder in model_folders:
-    model_location = base_directory / config / folder
+    model_location = base_path / folder
     
     # --- UNIFIED CACHE: shared between all profile-based scripts ---
-    cache_path = get_profile_cache_path(model_location, folder)
+    cache_path = get_shared_profile_cache_path(base_path, folder, suffix="including_land")
     
     # Try to load from unified cache (only loads x-coords we need)
     folder_results, missing_x_coords = load_profile_cache(cache_path, selected_x_coords)

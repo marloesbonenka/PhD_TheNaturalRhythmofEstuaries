@@ -192,6 +192,24 @@ def get_profile_cache_path(model_location: Path, folder: str) -> Path:
     return model_location / f"cache_profiles_{folder}.nc"
 
 
+def get_shared_profile_cache_path(base_path: Path, folder: str, suffix: str | None = None) -> Path:
+    """Get a shared cross-section profile cache path in base_path/cached_data.
+
+    Parameters
+    ----------
+    base_path : Path
+        Run collection base path (e.g. .../Model_Output/Q500).
+    folder : str
+        Run folder name.
+    suffix : str | None
+        Optional suffix appended before .nc (e.g. "including_land").
+    """
+    cache_dir = Path(base_path) / "cached_data"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    file_name = f"cache_profiles_{folder}.nc" if not suffix else f"cache_profiles_{folder}_{suffix}.nc"
+    return cache_dir / file_name
+
+
 def _list_groups(cache_path: Path, root: str) -> list[str]:
     if not cache_path.exists():
         return []
