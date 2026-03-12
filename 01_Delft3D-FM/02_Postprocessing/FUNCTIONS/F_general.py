@@ -146,3 +146,118 @@ def find_timestep_for_target_morphtime(ds, target_morph_years, start_date):
     actual_time = times[closest_idx]
     
     return closest_idx, actual_time, actual_hydro_years, actual_morph_years, actual_morfac
+
+
+
+# Convert a datetime64 value to a compact YYYYMMDD string for filenames.
+def _date_to_filename_tag(dt64):
+    return str(np.datetime_as_string(dt64, unit='D')).replace('-', '')
+
+
+# Convert a datetime64 value to a readable date label for titles and logs.
+def _date_to_label(dt64):
+    return str(np.datetime_as_string(dt64, unit='D'))
+
+
+# Extract the numeric scenario key from a folder name for consistent sorting and mapping.
+def _scenario_key_from_folder(folder_name):
+    try:
+        return str(int(str(folder_name).split('_')[0]))
+    except Exception:
+        return str(folder_name).split('_')[0]
+
+
+# Resolve a human-readable scenario label from a folder name.
+def _scenario_label(folder_name, scenario_labels_dict):
+    key = _scenario_key_from_folder(folder_name)
+    return scenario_labels_dict.get(key, str(folder_name))
+
+
+# Resolve the plotting color for a scenario based on its folder name.
+def _scenario_color(folder_name, scenario_colors_dict):
+    key = _scenario_key_from_folder(folder_name)
+    return scenario_colors_dict.get(key, 'grey')
+
+
+# Build a legend entry that includes both scenario name and folder identifier.
+def _scenario_legend_label(folder_name, scenario_labels_dict):
+    key = _scenario_key_from_folder(folder_name)
+    base = scenario_labels_dict.get(key, key)
+    return f"{base} ({folder_name})"
+
+
+# Generate hydrodynamic target snapshot dates, either explicit or evenly spaced in a range.
+def get_target_snapshot_dates(count=4, explicit_dates=None, date_range=None):
+    if explicit_dates:
+        return [np.datetime64(d).astype('datetime64[ns]') for d in explicit_dates]
+
+    count = max(2, int(count))
+    if date_range is None:
+        start_dt = np.datetime64('2025-01-01').astype('datetime64[ns]')
+        end_dt = np.datetime64('2055-12-31').astype('datetime64[ns]')
+    else:
+        start_dt = np.datetime64(date_range[0]).astype('datetime64[ns]')
+        end_dt = np.datetime64(date_range[1]).astype('datetime64[ns]')
+
+    # Build an even spacing in nanoseconds to avoid index-based alignment.
+    ns_grid = np.linspace(start_dt.astype('int64'), end_dt.astype('int64'), count)
+    return [np.datetime64(int(ns), 'ns') for ns in ns_grid]
+
+
+# Match each target date to the nearest available model time index and actual date.
+def get_snapshot_matches_by_target_dates(time_values, target_dates):
+    if len(time_values) == 0:
+        return []
+
+    time_dt = np.array(time_values, dtype='datetime64[ns]')
+    time_ns = time_dt.astype('int64')
+    matches = []
+    for target_dt in target_dates:
+        target_ns = np.datetime64(target_dt, 'ns').astype('int64')
+        ts_idx = int(np.argmin(np.abs(time_ns - target_ns)))
+        actual_dt = time_dt[ts_idx]
+        matches.append((target_dt, ts_idx, actual_dt))
+    return matches
+
+
+# Sort scenario keys numerically when possible, otherwise lexicographically.
+def sort_scenario_keys(keys):
+    return sorted(keys, key=lambda k: (0, int(k)) if str(k).isdigit() else (1, str(k)))
+
+
+# Group per-run snapshot results by scenario key derived from folder names.
+def group_snapshot_by_scenario(snapshot_results):
+    grouped = {}
+    for folder_name, data in snapshot_results.items():
+        scenario_key = _scenario_key_from_folder(folder_name)
+        grouped.setdefault(scenario_key, []).append((folder_name, data))
+    return grouped
+
+
+# Stack a metric across runs into a 2D array (n_runs, n_points).
+def stack_metric_arrays(run_items, metric_key):
+    arrays = []
+    for _, run_data in run_items:
+        arr = run_data.get(metric_key)
+        if arr is None:
+            continue
+        arr = np.asarray(arr)
+        if arr.size == 0:
+            continue
+        arrays.append(arr)
+    if not arrays:
+        return None
+    return np.vstack(arrays)
+
+
+# Plot a mean line and optional min-max envelope for a stacked metric.
+def draw_metric_with_optional_envelope(ax, x, y_stack, color, label, add_envelope=False, marker=None, linestyle='-'):
+    if y_stack is None:
+        return
+    y_center = np.nanmean(y_stack, axis=0)
+    if add_envelope and y_stack.shape[0] > 1:
+        y_min = np.nanmin(y_stack, axis=0)
+        y_max = np.nanmax(y_stack, axis=0)
+        ax.fill_between(x, y_min, y_max, color=color, alpha=0.18)
+    ax.plot(x, y_center, color=color, linewidth=2, label=label, marker=marker, ms=3, linestyle=linestyle)
+

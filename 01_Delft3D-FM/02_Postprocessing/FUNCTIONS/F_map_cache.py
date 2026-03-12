@@ -411,3 +411,46 @@ def load_or_update_map_cache(
         ds_existing.close()
 
     return ds_out
+
+
+# Extract face-center coordinates from a cached xugrid dataset across version variants.
+def _get_face_coords(ds):
+    """Robustly extract face_x and face_y from a xugrid UgridDataset.
+    
+    Tries multiple access patterns in order of preference to handle
+    differences across xugrid versions:
+      1. ds.grids[0].face_x / face_y          (xugrid >= 0.9)
+      2. ds.grid.face_x / face_y              (some older versions)
+      3. ds.coords['mesh2d_face_x'] etc.      (always registered as coords)
+    """
+    # Option 1: ds.grids[0].face_x / face_y (most common in recent xugrid)
+    try:
+        return (
+            np.asarray(ds.grids[0].face_x),
+            np.asarray(ds.grids[0].face_y),
+        )
+    except Exception:
+        pass
+
+    # Option 2: ds.grid.face_x / face_y
+    try:
+        return (
+            np.asarray(ds.grid.face_x),
+            np.asarray(ds.grid.face_y),
+        )
+    except Exception:
+        pass
+
+    # Option 3: coordinates registered automatically by xugrid
+    try:
+        return (
+            np.asarray(ds.coords['mesh2d_face_x']),
+            np.asarray(ds.coords['mesh2d_face_y']),
+        )
+    except Exception:
+        pass
+
+    raise RuntimeError(
+        "Could not extract face_x / face_y from the xugrid dataset. "
+        "Check that face_coordinates are preserved in the cache topology."
+    )

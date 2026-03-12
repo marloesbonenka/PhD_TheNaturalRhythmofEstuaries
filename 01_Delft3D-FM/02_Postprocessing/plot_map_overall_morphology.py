@@ -11,16 +11,34 @@ import sys
 # Add the current working directory (where FUNCTIONS is located)
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
 
-from FUNCTIONS.F_general import *
+from FUNCTIONS.F_general import (
+    _date_to_filename_tag,
+    _date_to_label,
+    _scenario_key_from_folder,
+    _scenario_label,
+    _scenario_color,
+    _scenario_legend_label,
+    get_target_snapshot_dates,
+    get_snapshot_matches_by_target_dates,
+    get_mf_number,
+    check_available_variables_xarray,
+    sort_scenario_keys,
+    group_snapshot_by_scenario,
+    stack_metric_arrays,
+    draw_metric_with_optional_envelope,
+)
 from FUNCTIONS.F_braiding_index import *
 from FUNCTIONS.F_channelwidth import *
-from FUNCTIONS.F_map_cache import cache_tag_from_bbox, load_or_update_map_cache_multi
+from FUNCTIONS.F_hypsometry import compute_hypsometric_curve
+from FUNCTIONS.F_map_cache import cache_tag_from_bbox, load_or_update_map_cache_multi, _get_face_coords
 from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
 
 #%% --- CONFIGURATION ---
 # Model output
 DISCHARGE = 500  # or 1000, etc.
+NOISY = True
+ADD_NON_NOISY_BASELINE_Q500 = True
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
 config = f'Model_Output/Q{DISCHARGE}'
 
@@ -94,153 +112,13 @@ SCENARIO_COLORS = {
     '3': '#2ca02c',   # green  - Flashy
     '4': '#d62728',   # red    - Single peak
 }
-
-
-def _date_to_filename_tag(dt64):
-    return str(np.datetime_as_string(dt64, unit='D')).replace('-', '')
-
-
-def _date_to_label(dt64):
-    return str(np.datetime_as_string(dt64, unit='D'))
-
-
-def _scenario_key_from_folder(folder_name):
-    try:
-        return str(int(str(folder_name).split('_')[0]))
-    except Exception:
-        return str(folder_name).split('_')[0]
-
-
-def _scenario_label(folder_name):
-    key = _scenario_key_from_folder(folder_name)
-    return SCENARIO_LABELS.get(key, str(folder_name))
-
-
-def _scenario_color(folder_name):
-    key = _scenario_key_from_folder(folder_name)
-    return SCENARIO_COLORS.get(key, 'grey')
-
-
-def _scenario_legend_label(folder_name):
-    key = _scenario_key_from_folder(folder_name)
-    base = SCENARIO_LABELS.get(key, key)
-    return f"{base} ({folder_name})"
-
-
-def get_target_snapshot_dates(count=4, explicit_dates=None, date_range=None):
-    if explicit_dates:
-        return [np.datetime64(d).astype('datetime64[ns]') for d in explicit_dates]
-
-    count = max(2, int(count))
-    if date_range is None:
-        start_dt = np.datetime64('2025-01-01').astype('datetime64[ns]')
-        end_dt = np.datetime64('2055-12-31').astype('datetime64[ns]')
-    else:
-        start_dt = np.datetime64(date_range[0]).astype('datetime64[ns]')
-        end_dt = np.datetime64(date_range[1]).astype('datetime64[ns]')
-
-    # Build an even spacing in nanoseconds to avoid index-based alignment.
-    ns_grid = np.linspace(start_dt.astype('int64'), end_dt.astype('int64'), count)
-    return [np.datetime64(int(ns), 'ns') for ns in ns_grid]
-
-
-def get_snapshot_matches_by_target_dates(time_values, target_dates):
-    if len(time_values) == 0:
-        return []
-
-    time_dt = np.array(time_values, dtype='datetime64[ns]')
-    time_ns = time_dt.astype('int64')
-    matches = []
-    for target_dt in target_dates:
-        target_ns = np.datetime64(target_dt, 'ns').astype('int64')
-        ts_idx = int(np.argmin(np.abs(time_ns - target_ns)))
-        actual_dt = time_dt[ts_idx]
-        matches.append((target_dt, ts_idx, actual_dt))
-    return matches
-
-
-def compute_hypsometric_curve(bedlev_data, valid_mask, face_area=None):
-    vals = bedlev_data[valid_mask]
-    vals = vals[np.isfinite(vals)]
-    if vals.size == 0:
-        return np.array([]), np.array([]), 'Cumulative area'
-
-    if face_area is not None:
-        area_vals = face_area[valid_mask]
-        area_vals = area_vals[np.isfinite(vals)] if area_vals.shape != vals.shape else area_vals
-        area_vals = np.asarray(area_vals, dtype=float)
-        if area_vals.size != vals.size or np.all(~np.isfinite(area_vals)):
-            area_vals = np.ones_like(vals, dtype=float)
-            area_label = 'Cumulative area fraction [-]'
-            to_plot_area = False
-        else:
-            area_vals = np.where(np.isfinite(area_vals), area_vals, 0.0)
-            area_label = 'Cumulative area [km²]'
-            to_plot_area = True
-    else:
-        area_vals = np.ones_like(vals, dtype=float)
-        area_label = 'Cumulative area fraction [-]'
-        to_plot_area = False
-
-    order = np.argsort(vals)
-    elev_sorted = vals[order]
-    area_sorted = area_vals[order]
-    cum_area = np.cumsum(area_sorted)
-
-    if to_plot_area:
-        cum_area = cum_area / 1e6  # m² -> km²
-    else:
-        cum_area = cum_area / cum_area[-1]
-
-    return elev_sorted, cum_area, area_label
-
-
-def _get_face_coords(ds):
-    """Robustly extract face_x and face_y from a xugrid UgridDataset.
-    
-    Tries multiple access patterns in order of preference to handle
-    differences across xugrid versions:
-      1. ds.grids[0].face_x / face_y          (xugrid >= 0.9)
-      2. ds.grid.face_x / face_y              (some older versions)
-      3. ds.coords['mesh2d_face_x'] etc.      (always registered as coords)
-    """
-    # Option 1: ds.grids[0].face_x / face_y (most common in recent xugrid)
-    try:
-        return (
-            np.asarray(ds.grids[0].face_x),
-            np.asarray(ds.grids[0].face_y),
-        )
-    except Exception:
-        pass
-
-    # Option 2: ds.grid.face_x / face_y
-    try:
-        return (
-            np.asarray(ds.grid.face_x),
-            np.asarray(ds.grid.face_y),
-        )
-    except Exception:
-        pass
-
-    # Option 3: coordinates registered automatically by xugrid
-    try:
-        return (
-            np.asarray(ds.coords['mesh2d_face_x']),
-            np.asarray(ds.coords['mesh2d_face_y']),
-        )
-    except Exception:
-        pass
-
-    raise RuntimeError(
-        "Could not extract face_x / face_y from the xugrid dataset. "
-        "Check that face_coordinates are preserved in the cache topology."
-    )
+BASELINE_COLOR = next(iter(SCENARIO_COLORS.values()))
 
 
 #%% --- SEARCH & SORT FOLDERS ---
 base_path = base_directory / config
 
-if DISCHARGE == 500:
+if DISCHARGE == 500 and NOISY is False:
     VARIABILITY_MAP = {
         '1': f'01_baserun{DISCHARGE}',
         '2': f'02_run{DISCHARGE}_seasonal',
@@ -250,6 +128,21 @@ if DISCHARGE == 500:
     # Find run folders starting with a digit (e.g. 1_rst, 2_rst)
     model_folders = [f for f in base_path.iterdir() 
                     if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
+    model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
+
+if DISCHARGE == 500 and NOISY is True:
+    VARIABILITY_MAP = {
+        '1': f'01_baserun{DISCHARGE}',
+        '2': f'02_run{DISCHARGE}_seasonal',
+        '3': f'03_run{DISCHARGE}_flashy',
+        '4': f'04_run{DISCHARGE}_singlepeak'
+    }
+    noisy_base_path = base_path / f'0_Noise_Q{DISCHARGE}'
+    if noisy_base_path.exists() and noisy_base_path.is_dir():
+        base_path = noisy_base_path
+
+    model_folders = [f for f in base_path.iterdir()
+                    if f.is_dir() and f.name[0].isdigit() and 'noisy' in f.name.lower()]
     model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
 
 if DISCHARGE == 1000:
@@ -307,6 +200,7 @@ if apply_detrending and use_mf50_reference:
 
 # --- STORE SNAPSHOT RESULTS ---
 comparison_results = {}
+baseline_comparison_results = {}
 comparison_labels = {}
 
 target_snapshot_dates = get_target_snapshot_dates(
@@ -327,8 +221,8 @@ for i, folder in enumerate(model_folders):
     save_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\nProcessing: {folder_str}")
-    scenario_color = _scenario_color(folder_str)
-    scenario_label = _scenario_label(folder_str)
+    scenario_color = _scenario_color(folder_str, SCENARIO_COLORS)
+    scenario_label = _scenario_label(folder_str, SCENARIO_LABELS)
     
     # 1. LOAD FM DATA (cached)
     run_paths = get_stitched_map_run_paths(
@@ -336,7 +230,7 @@ for i, folder in enumerate(model_folders):
         folder_name=folder.name,
         timed_out_dir=timed_out_dir,
         variability_map=VARIABILITY_MAP,
-        analyze_noisy=False,
+        analyze_noisy=NOISY,
     )
     if not run_paths:
         run_paths = [model_location]
@@ -579,6 +473,185 @@ for i, folder in enumerate(model_folders):
 
     ds.close()
 
+# --- OPTIONAL: ADD NON-NOISY Q500 BASELINE FOR COMPARISON ---
+if NOISY and DISCHARGE == 500 and ADD_NON_NOISY_BASELINE_Q500:
+    baseline_base_path = base_directory / config
+    baseline_timed_out_dir = baseline_base_path / 'timed-out'
+    baseline_assessment_dir = baseline_base_path / 'cached_data'
+    baseline_assessment_dir.mkdir(parents=True, exist_ok=True)
+
+    baseline_model_folders = [f for f in baseline_base_path.iterdir()
+                              if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
+    baseline_model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
+
+    print(f"\nLoading non-noisy Q500 baseline runs: {len(baseline_model_folders)} found")
+
+    for i, folder in enumerate(baseline_model_folders):
+        model_location = baseline_base_path / folder
+        folder_str = folder.name
+
+        print(f"\nProcessing baseline: {folder_str}")
+
+        run_paths = get_stitched_map_run_paths(
+            base_path=baseline_base_path,
+            folder_name=folder.name,
+            timed_out_dir=baseline_timed_out_dir,
+            variability_map=VARIABILITY_MAP,
+            analyze_noisy=False,
+        )
+        if not run_paths:
+            run_paths = [model_location]
+
+        cache_tag = cache_tag_from_bbox(CACHE_BBOX, CACHE_TAG)
+        ds = load_or_update_map_cache_multi(
+            cache_dir=baseline_assessment_dir,
+            folder_name=folder.name,
+            run_paths=run_paths,
+            var_names=['mesh2d_mor_bl'],
+            bbox=CACHE_BBOX,
+            append_time=APPEND_TIMESTEPS,
+            append_vars=APPEND_VARIABLES,
+            cache_tag=cache_tag,
+        )
+        if ds is None:
+            print(f"  No cached baseline data for {folder}, skipping.")
+            continue
+
+        delta_time = ds.time.values - start_date
+        hydro_years = delta_time / np.timedelta64(365, 'D')
+
+        snapshot_matches = get_snapshot_matches_by_target_dates(ds.time.values, target_snapshot_dates)
+        if not snapshot_matches:
+            print(f"  No baseline timesteps found for {folder}, skipping.")
+            ds.close()
+            continue
+
+        if apply_detrending:
+            if use_mf50_reference and (reference_bed_MF50 is not None):
+                reference_bed = reference_bed_MF50
+            else:
+                reference_bed = ds['mesh2d_mor_bl'].isel(time=reference_time_idx).values.copy()
+
+        if check_variables and i == 0:
+            check_available_variables_xarray(ds)
+            break
+
+        face_x, face_y = _get_face_coords(ds)
+
+        if compare_channel_width:
+            from scipy.spatial import cKDTree
+            tree = cKDTree(np.vstack([face_x, face_y]).T)
+
+        for target_dt, ts_idx, actual_dt in snapshot_matches:
+            target_label = _date_to_label(target_dt)
+            actual_label = _date_to_label(actual_dt)
+            snapshot_key = f"d{_date_to_filename_tag(target_dt)}"
+            snapshot_label = f"target={target_label} | actual={actual_label}"
+            print(f"Baseline: {folder_str:25} | {snapshot_label} | HydroYear={hydro_years[ts_idx]:.2f}")
+
+            baseline_comparison_results.setdefault(snapshot_key, {})
+            baseline_comparison_results[snapshot_key][folder_str] = {}
+            comparison_labels[snapshot_key] = target_label
+
+            width_mask = (face_y >= y_range[0]) & (face_y <= y_range[1])
+
+            if compare_width_averaged_bedlevel:
+                var_name = "mesh2d_mor_bl"
+                dx = 1000
+                x_bins = np.arange(x_targets[0], x_targets[-1] + dx, dx)
+                x_centers = (x_bins[:-1] + x_bins[1:]) / 2
+
+                bedlev_data = ds[var_name].isel(time=ts_idx).values.copy()
+                if apply_detrending:
+                    bedlev_data = bedlev_data - reference_bed
+                    valid_mask = width_mask
+                else:
+                    valid_mask = (width_mask) & (bedlev_data < bed_threshold)
+
+                temp_means = []
+                for k in range(len(x_bins)-1):
+                    bin_mask = valid_mask & (face_x >= x_bins[k]) & (face_x < x_bins[k+1])
+                    temp_means.append(np.mean(bedlev_data[bin_mask]) if np.any(bin_mask) else np.nan)
+
+                baseline_comparison_results[snapshot_key][folder_str]['BL'] = np.array(temp_means)
+                baseline_comparison_results[snapshot_key][folder_str]['x_centers'] = x_centers
+
+            if compare_max_depth:
+                var_name = "mesh2d_mor_bl"
+                dx = 1000
+                x_bins = np.arange(x_targets[0], x_targets[-1] + dx, dx)
+                x_centers = (x_bins[:-1] + x_bins[1:]) / 2
+
+                bedlev_data = ds[var_name].isel(time=ts_idx).values.copy()
+                if apply_detrending:
+                    bedlev_data = bedlev_data - reference_bed
+
+                if use_absolute_depth:
+                    depths_field = np.abs(bedlev_data)
+                else:
+                    depths_field = -bedlev_data
+
+                if apply_detrending:
+                    valid_mask = width_mask
+                else:
+                    valid_mask = (width_mask) & (bedlev_data < bed_threshold)
+
+                max_depths = []
+                for k in range(len(x_bins)-1):
+                    bin_mask = valid_mask & (face_x >= x_bins[k]) & (face_x < x_bins[k+1])
+                    if np.any(bin_mask):
+                        bin_depths = depths_field[bin_mask]
+                        valid_depths = bin_depths[~np.isnan(bin_depths)]
+                        if len(valid_depths) > 0:
+                            max_depths.append(np.percentile(valid_depths, depth_percentile))
+                        else:
+                            max_depths.append(np.nan)
+                    else:
+                        max_depths.append(np.nan)
+
+                baseline_comparison_results[snapshot_key][folder_str]['MaxDepth'] = np.array(max_depths)
+                baseline_comparison_results[snapshot_key][folder_str]['x_centers'] = x_centers
+
+            if compare_channel_width:
+                max_widths = []
+                for x_coord in x_targets:
+                    distances, bed_profile = get_bed_profile_at_x(
+                        ds, tree, x_coord, y_range, ts_idx,
+                        reference_bed=reference_bed if apply_detrending else None,
+                        detrend=apply_detrending
+                    )
+
+                    if apply_detrending:
+                        bed_profile[np.abs(bed_profile) > bed_threshold] = np.nan
+                    else:
+                        bed_profile[bed_profile > bed_threshold] = np.nan
+
+                    max_width = compute_max_channel_width(bed_profile, distances, safety_buffer)
+                    max_widths.append(max_width)
+
+                baseline_comparison_results[snapshot_key][folder_str]['ChannelWidth'] = np.array(max_widths)
+
+            if compare_hypsometric:
+                bedlev_data = ds['mesh2d_mor_bl'].isel(time=ts_idx).values.copy()
+
+                if apply_detrending:
+                    bedlev_data = bedlev_data - reference_bed
+                    valid_mask = width_mask
+                else:
+                    valid_mask = (width_mask) & (bedlev_data < bed_threshold)
+
+                elev_curve, area_curve, area_label = compute_hypsometric_curve(
+                    bedlev_data=bedlev_data,
+                    valid_mask=valid_mask,
+                    face_area=None,
+                )
+
+                baseline_comparison_results[snapshot_key][folder_str]['HypsoElevation'] = elev_curve
+                baseline_comparison_results[snapshot_key][folder_str]['HypsoArea'] = area_curve
+                baseline_comparison_results[snapshot_key][folder_str]['HypsoAreaLabel'] = area_label
+
+        ds.close()
+
 # %% --- 7. FINAL COMPARISON PLOT ---
 print("\nGenerating Comparison Plot...")
 
@@ -604,16 +677,37 @@ for snapshot_key, snapshot_results in comparison_results.items():
     if n_plots == 1:
         axes = [axes]
 
-    sorted_scenarios = sorted(snapshot_results.keys())
+    scenario_groups = group_snapshot_by_scenario(snapshot_results)
+    baseline_groups = group_snapshot_by_scenario(baseline_comparison_results.get(snapshot_key, {}))
+    sorted_scenarios = sort_scenario_keys(scenario_groups.keys())
     plot_idx = 0
 
     # Plot 1: Shear Stress BI
     if compare_braiding_index and 'BI_tau' in snapshot_results[first_key]:
-        for idx, scenario in enumerate(sorted_scenarios):
-            data = snapshot_results[scenario]
-            if 'BI_tau' in data:
-                axes[plot_idx].plot(x_targets/1000, data['BI_tau'],
-                                   label=_scenario_legend_label(scenario), color=_scenario_color(scenario), marker='o', ms=4)
+        for scenario in sorted_scenarios:
+            run_items = scenario_groups[scenario]
+            y_stack = stack_metric_arrays(run_items, 'BI_tau')
+            draw_metric_with_optional_envelope(
+                ax=axes[plot_idx],
+                x=x_targets / 1000,
+                y_stack=y_stack,
+                color=_scenario_color(scenario, SCENARIO_COLORS),
+                label=_scenario_label(scenario, SCENARIO_LABELS),
+                add_envelope=NOISY,
+                marker='o',
+            )
+            if scenario in baseline_groups:
+                y_base = stack_metric_arrays(baseline_groups[scenario], 'BI_tau')
+                draw_metric_with_optional_envelope(
+                    ax=axes[plot_idx],
+                    x=x_targets / 1000,
+                    y_stack=y_base,
+                    color=BASELINE_COLOR,
+                    label=f"{_scenario_label(scenario, SCENARIO_LABELS)} baseline",
+                    add_envelope=False,
+                    marker=None,
+                    linestyle='--',
+                )
         axes[plot_idx].set_title(f'BI ({var_tau}), fixed threshold: tau > {tau_threshold} N/m²')
         axes[plot_idx].set_ylabel('braiding index')
         axes[plot_idx].legend(loc='best')
@@ -622,11 +716,30 @@ for snapshot_key, snapshot_results in comparison_results.items():
 
     # Plot 2: Water Depth BI
     if compare_braiding_index and 'BI_depth' in snapshot_results[first_key]:
-        for idx, scenario in enumerate(sorted_scenarios):
-            data = snapshot_results[scenario]
-            if 'BI_depth' in data:
-                axes[plot_idx].plot(x_targets/1000, data['BI_depth'],
-                                   label=_scenario_legend_label(scenario), color=_scenario_color(scenario), marker='s', ms=4, linestyle='--')
+        for scenario in sorted_scenarios:
+            run_items = scenario_groups[scenario]
+            y_stack = stack_metric_arrays(run_items, 'BI_depth')
+            draw_metric_with_optional_envelope(
+                ax=axes[plot_idx],
+                x=x_targets / 1000,
+                y_stack=y_stack,
+                color=_scenario_color(scenario, SCENARIO_COLORS),
+                label=_scenario_label(scenario, SCENARIO_LABELS),
+                add_envelope=NOISY,
+                marker='s',
+            )
+            if scenario in baseline_groups:
+                y_base = stack_metric_arrays(baseline_groups[scenario], 'BI_depth')
+                draw_metric_with_optional_envelope(
+                    ax=axes[plot_idx],
+                    x=x_targets / 1000,
+                    y_stack=y_base,
+                    color=BASELINE_COLOR,
+                    label=f"{_scenario_label(scenario, SCENARIO_LABELS)} baseline",
+                    add_envelope=False,
+                    marker=None,
+                    linestyle='--',
+                )
         axes[plot_idx].set_title(f'BI ({var_depth}), relative threshold: {int(depth_threshold*100)}% above mean water depth')
         axes[plot_idx].set_ylabel('braiding index')
         axes[plot_idx].legend(loc='best')
@@ -635,11 +748,38 @@ for snapshot_key, snapshot_results in comparison_results.items():
 
     # Plot 3: Bed Level
     if compare_width_averaged_bedlevel:
-        for idx, scenario in enumerate(sorted_scenarios):
-            data = snapshot_results[scenario]
-            if 'BL' in data:
-                axes[plot_idx].plot(data['x_centers']/1000, data['BL'],
-                                   color=_scenario_color(scenario), linewidth=2, label=_scenario_legend_label(scenario))
+        for scenario in sorted_scenarios:
+            run_items = scenario_groups[scenario]
+            y_stack = stack_metric_arrays(run_items, 'BL')
+            if y_stack is None:
+                continue
+            first_with_x = next((d for _, d in run_items if 'x_centers' in d), None)
+            if first_with_x is None:
+                continue
+            x_vals = first_with_x['x_centers'] / 1000
+            draw_metric_with_optional_envelope(
+                ax=axes[plot_idx],
+                x=x_vals,
+                y_stack=y_stack,
+                color=_scenario_color(scenario, SCENARIO_COLORS),
+                label=_scenario_label(scenario, SCENARIO_LABELS),
+                add_envelope=NOISY,
+                marker=None,
+            )
+            if scenario in baseline_groups:
+                y_base = stack_metric_arrays(baseline_groups[scenario], 'BL')
+                base_x_data = next((d for _, d in baseline_groups[scenario] if 'x_centers' in d), None)
+                if base_x_data is not None:
+                    draw_metric_with_optional_envelope(
+                        ax=axes[plot_idx],
+                        x=base_x_data['x_centers'] / 1000,
+                        y_stack=y_base,
+                        color=BASELINE_COLOR,
+                        label=f"{_scenario_label(scenario, SCENARIO_LABELS)} baseline",
+                        add_envelope=False,
+                        marker=None,
+                        linestyle='--',
+                    )
         axes[plot_idx].set_title('width-averaged bed level')
         axes[plot_idx].set_ylabel('bed level [m]')
         axes[plot_idx].legend(loc='best')
@@ -648,11 +788,38 @@ for snapshot_key, snapshot_results in comparison_results.items():
 
     # Plot 4: Maximum Depth
     if compare_max_depth:
-        for idx, scenario in enumerate(sorted_scenarios):
-            data = snapshot_results[scenario]
-            if 'MaxDepth' in data:
-                axes[plot_idx].plot(data['x_centers']/1000, data['MaxDepth'],
-                                   color=_scenario_color(scenario), linewidth=2, label=_scenario_legend_label(scenario), marker='o', ms=3)
+        for scenario in sorted_scenarios:
+            run_items = scenario_groups[scenario]
+            y_stack = stack_metric_arrays(run_items, 'MaxDepth')
+            if y_stack is None:
+                continue
+            first_with_x = next((d for _, d in run_items if 'x_centers' in d), None)
+            if first_with_x is None:
+                continue
+            x_vals = first_with_x['x_centers'] / 1000
+            draw_metric_with_optional_envelope(
+                ax=axes[plot_idx],
+                x=x_vals,
+                y_stack=y_stack,
+                color=_scenario_color(scenario, SCENARIO_COLORS),
+                label=_scenario_label(scenario, SCENARIO_LABELS),
+                add_envelope=NOISY,
+                marker='o',
+            )
+            if scenario in baseline_groups:
+                y_base = stack_metric_arrays(baseline_groups[scenario], 'MaxDepth')
+                base_x_data = next((d for _, d in baseline_groups[scenario] if 'x_centers' in d), None)
+                if base_x_data is not None:
+                    draw_metric_with_optional_envelope(
+                        ax=axes[plot_idx],
+                        x=base_x_data['x_centers'] / 1000,
+                        y_stack=y_base,
+                        color=BASELINE_COLOR,
+                        label=f"{_scenario_label(scenario, SCENARIO_LABELS)} baseline",
+                        add_envelope=False,
+                        marker=None,
+                        linestyle='--',
+                    )
         axes[plot_idx].set_title(f'p{depth_percentile} channel depth')
         axes[plot_idx].set_ylabel('depth [m]')
         axes[plot_idx].legend(loc='best')
@@ -661,11 +828,30 @@ for snapshot_key, snapshot_results in comparison_results.items():
 
     # Plot 5: Channel Width
     if compare_channel_width:
-        for idx, scenario in enumerate(sorted_scenarios):
-            data = snapshot_results[scenario]
-            if 'ChannelWidth' in data:
-                axes[plot_idx].plot(x_targets/1000, data['ChannelWidth'],
-                                   color=_scenario_color(scenario), linewidth=2, label=_scenario_legend_label(scenario), marker='s', ms=3)
+        for scenario in sorted_scenarios:
+            run_items = scenario_groups[scenario]
+            y_stack = stack_metric_arrays(run_items, 'ChannelWidth')
+            draw_metric_with_optional_envelope(
+                ax=axes[plot_idx],
+                x=x_targets / 1000,
+                y_stack=y_stack,
+                color=_scenario_color(scenario, SCENARIO_COLORS),
+                label=_scenario_label(scenario, SCENARIO_LABELS),
+                add_envelope=NOISY,
+                marker='s',
+            )
+            if scenario in baseline_groups:
+                y_base = stack_metric_arrays(baseline_groups[scenario], 'ChannelWidth')
+                draw_metric_with_optional_envelope(
+                    ax=axes[plot_idx],
+                    x=x_targets / 1000,
+                    y_stack=y_base,
+                    color=BASELINE_COLOR,
+                    label=f"{_scenario_label(scenario, SCENARIO_LABELS)} baseline",
+                    add_envelope=False,
+                    marker=None,
+                    linestyle='--',
+                )
         axes[plot_idx].set_title(f'maximum channel width (threshold: mean depth - {int(safety_buffer*100)} cm)')
         axes[plot_idx].set_ylabel('width [m]')
         axes[plot_idx].legend(loc='best')
@@ -693,21 +879,71 @@ for snapshot_key, snapshot_results in comparison_results.items():
         area_labels = []
 
         for scenario in sorted_scenarios:
-            data = snapshot_results[scenario]
-            if 'HypsoElevation' not in data or 'HypsoArea' not in data:
-                continue
-            if data['HypsoElevation'].size == 0:
+            run_items = scenario_groups[scenario]
+            curves = []
+            for _, data in run_items:
+                if 'HypsoElevation' not in data or 'HypsoArea' not in data:
+                    continue
+                if data['HypsoElevation'].size == 0:
+                    continue
+                curves.append((np.asarray(data['HypsoArea']), np.asarray(data['HypsoElevation']), data.get('HypsoAreaLabel', 'Cumulative area')))
+
+            if not curves:
                 continue
 
             has_hypso = True
-            area_labels.append(data.get('HypsoAreaLabel', 'Cumulative area'))
-            ax_h.plot(
-                data['HypsoArea'],
-                data['HypsoElevation'],
-                linewidth=2,
-                color=_scenario_color(scenario),
-                label=_scenario_legend_label(scenario),
-            )
+            area_labels.extend([lbl for _, _, lbl in curves])
+            color = _scenario_color(scenario, SCENARIO_COLORS)
+            label = _scenario_label(scenario, SCENARIO_LABELS)
+
+            if NOISY and len(curves) > 1:
+                min_common = max(np.nanmin(a) for a, _, _ in curves)
+                max_common = min(np.nanmax(a) for a, _, _ in curves)
+                if np.isfinite(min_common) and np.isfinite(max_common) and max_common > min_common:
+                    area_grid = np.linspace(min_common, max_common, 300)
+                    elev_stack = []
+                    for area_vals, elev_vals, _ in curves:
+                        order = np.argsort(area_vals)
+                        area_sorted = area_vals[order]
+                        elev_sorted = elev_vals[order]
+                        elev_stack.append(np.interp(area_grid, area_sorted, elev_sorted))
+                    elev_stack = np.vstack(elev_stack)
+                    ax_h.fill_between(
+                        area_grid,
+                        np.nanmin(elev_stack, axis=0),
+                        np.nanmax(elev_stack, axis=0),
+                        color=color,
+                        alpha=0.18,
+                    )
+                    ax_h.plot(area_grid, np.nanmean(elev_stack, axis=0), linewidth=2, color=color, label=label)
+                else:
+                    area_vals, elev_vals, _ = curves[0]
+                    ax_h.plot(area_vals, elev_vals, linewidth=2, color=color, label=label)
+            else:
+                area_vals, elev_vals, _ = curves[0]
+                ax_h.plot(area_vals, elev_vals, linewidth=2, color=color, label=label)
+
+            if scenario in baseline_groups:
+                base_curves = []
+                for _, base_data in baseline_groups[scenario]:
+                    if 'HypsoElevation' not in base_data or 'HypsoArea' not in base_data:
+                        continue
+                    if base_data['HypsoElevation'].size == 0:
+                        continue
+                    base_curves.append((
+                        np.asarray(base_data['HypsoArea']),
+                        np.asarray(base_data['HypsoElevation']),
+                    ))
+                if base_curves:
+                    base_area, base_elev = base_curves[0]
+                    ax_h.plot(
+                        base_area,
+                        base_elev,
+                        linewidth=2,
+                        color=BASELINE_COLOR,
+                        linestyle='--',
+                        label=f"{label} baseline",
+                    )
 
         if has_hypso:
             x_label = area_labels[0] if len(set(area_labels)) == 1 else 'Cumulative area'
