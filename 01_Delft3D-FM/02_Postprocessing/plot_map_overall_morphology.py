@@ -14,10 +14,8 @@ sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Post
 from FUNCTIONS.F_general import (
     _date_to_filename_tag,
     _date_to_label,
-    _scenario_key_from_folder,
     _scenario_label,
     _scenario_color,
-    _scenario_legend_label,
     get_target_snapshot_dates,
     get_snapshot_matches_by_target_dates,
     get_mf_number,
@@ -297,16 +295,16 @@ for i, folder in enumerate(model_folders):
         comparison_labels[snapshot_key] = target_label
 
         width_mask = (face_y >= y_range[0]) & (face_y <= y_range[1])
+        bedlev_data_snapshot = ds['mesh2d_mor_bl'].isel(time=ts_idx).values.copy()
 
         # 4. WIDTH-AVERAGED BED LEVEL
         if compare_width_averaged_bedlevel:
             print(f"Computing Bed Level for {folder} ({snapshot_label})...")
-            var_name = "mesh2d_mor_bl"
             dx = 1000
             x_bins = np.arange(x_targets[0], x_targets[-1] + dx, dx)
             x_centers = (x_bins[:-1] + x_bins[1:]) / 2
 
-            bedlev_data = ds[var_name].isel(time=ts_idx).values.copy()
+            bedlev_data = bedlev_data_snapshot.copy()
 
             # Apply detrending if enabled
             if apply_detrending:
@@ -342,12 +340,11 @@ for i, folder in enumerate(model_folders):
         # 5. MAXIMUM DEPTH ANALYSIS (95th percentile)
         if compare_max_depth:
             print(f"Computing Maximum Depth for {folder} ({snapshot_label})...")
-            var_name = "mesh2d_mor_bl"
             dx = 1000
             x_bins = np.arange(x_targets[0], x_targets[-1] + dx, dx)
             x_centers = (x_bins[:-1] + x_bins[1:]) / 2
 
-            bedlev_data = ds[var_name].isel(time=ts_idx).values.copy()
+            bedlev_data = bedlev_data_snapshot.copy()
 
             # Apply detrending if enabled
             if apply_detrending:
@@ -438,7 +435,7 @@ for i, folder in enumerate(model_folders):
         # 7. HYPSOMETRIC CURVE
         if compare_hypsometric:
             print(f"Computing Hypsometric Curve for {folder_str} ({snapshot_label})...")
-            bedlev_data = ds['mesh2d_mor_bl'].isel(time=ts_idx).values.copy()
+            bedlev_data = bedlev_data_snapshot.copy()
 
             if apply_detrending:
                 bedlev_data = bedlev_data - reference_bed
@@ -554,14 +551,14 @@ if NOISY and DISCHARGE == 500 and ADD_NON_NOISY_BASELINE_Q500:
             comparison_labels[snapshot_key] = target_label
 
             width_mask = (face_y >= y_range[0]) & (face_y <= y_range[1])
+            bedlev_data_snapshot = ds['mesh2d_mor_bl'].isel(time=ts_idx).values.copy()
 
             if compare_width_averaged_bedlevel:
-                var_name = "mesh2d_mor_bl"
                 dx = 1000
                 x_bins = np.arange(x_targets[0], x_targets[-1] + dx, dx)
                 x_centers = (x_bins[:-1] + x_bins[1:]) / 2
 
-                bedlev_data = ds[var_name].isel(time=ts_idx).values.copy()
+                bedlev_data = bedlev_data_snapshot.copy()
                 if apply_detrending:
                     bedlev_data = bedlev_data - reference_bed
                     valid_mask = width_mask
@@ -577,12 +574,11 @@ if NOISY and DISCHARGE == 500 and ADD_NON_NOISY_BASELINE_Q500:
                 baseline_comparison_results[snapshot_key][folder_str]['x_centers'] = x_centers
 
             if compare_max_depth:
-                var_name = "mesh2d_mor_bl"
                 dx = 1000
                 x_bins = np.arange(x_targets[0], x_targets[-1] + dx, dx)
                 x_centers = (x_bins[:-1] + x_bins[1:]) / 2
 
-                bedlev_data = ds[var_name].isel(time=ts_idx).values.copy()
+                bedlev_data = bedlev_data_snapshot.copy()
                 if apply_detrending:
                     bedlev_data = bedlev_data - reference_bed
 
@@ -632,7 +628,7 @@ if NOISY and DISCHARGE == 500 and ADD_NON_NOISY_BASELINE_Q500:
                 baseline_comparison_results[snapshot_key][folder_str]['ChannelWidth'] = np.array(max_widths)
 
             if compare_hypsometric:
-                bedlev_data = ds['mesh2d_mor_bl'].isel(time=ts_idx).values.copy()
+                bedlev_data = bedlev_data_snapshot.copy()
 
                 if apply_detrending:
                     bedlev_data = bedlev_data - reference_bed
@@ -651,6 +647,7 @@ if NOISY and DISCHARGE == 500 and ADD_NON_NOISY_BASELINE_Q500:
                 baseline_comparison_results[snapshot_key][folder_str]['HypsoAreaLabel'] = area_label
 
         ds.close()
+
 
 # %% --- 7. FINAL COMPARISON PLOT ---
 print("\nGenerating Comparison Plot...")
