@@ -11,6 +11,21 @@ import time as timer
 from FUNCTIONS.F_tidalriverdominance import *
 from FUNCTIONS.F_cache import *
 
+def _cache_file_for_variable(cache_dir, scenario_num, run_id, his_file_paths, var_name):
+    """
+    Keep legacy cross-section cache filenames unchanged.
+    Write station variables to dedicated files to avoid mixing schemas.
+    """
+    with xr.open_dataset(his_file_paths[0]) as ds0:
+        if var_name not in ds0:
+            raise KeyError(f"Variable '{var_name}' not found in {his_file_paths[0]}")
+        dims = ds0[var_name].dims
+
+    if 'station' in dims:
+        return cache_dir / f"hisoutput_stations_{int(scenario_num)}_{run_id}.nc"
+
+    # Default and backward-compatible path for cross-section and other legacy vars.
+    return cache_dir / f"hisoutput_{int(scenario_num)}_{run_id}.nc"
 
 def get_stitched_run_parts(base_path, folder_name, timed_out_dir=None, variability_map=None, analyze_noisy=False):
     """

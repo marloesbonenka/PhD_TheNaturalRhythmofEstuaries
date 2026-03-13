@@ -20,7 +20,7 @@ import xarray as xr
 from pathlib import Path
 
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
-from FUNCTIONS.F_loaddata import load_and_cache_scenario, get_stitched_his_paths
+from FUNCTIONS.F_loaddata import load_and_cache_scenario, get_stitched_his_paths, _cache_file_for_variable
 
 # %% --- CONFIGURATION ---
 
@@ -29,7 +29,7 @@ VARIABLES_TO_CACHE = [
     'cross_section_discharge',
     'cross_section_bedload_sediment_transport',
     'cross_section_velocity',
-    # 'waterlevel',
+    'waterlevel',
     # 'cross_section_suspended_sediment_transport',
 ]
 
@@ -38,9 +38,9 @@ box_edges = np.arange(20, 50, 5)  # [20, 25, 30, 35, 40, 45]
 boxes = [(box_edges[i], box_edges[i + 1]) for i in range(len(box_edges) - 1)]
 
 # Scenario filters — match settings from your analysis script
-SCENARIOS_TO_PROCESS = ['0', '1', '2', '3', '4']
+SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']
 DISCHARGE = 500
-ANALYZE_NOISY = True
+ANALYZE_NOISY = False
 
 # %% --- PATHS ---
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
@@ -118,32 +118,18 @@ cache_dir = base_path / "cached_data"
 cache_dir.mkdir(exist_ok=True)
 
 # %% --- POPULATE CACHE ---
-def _cache_file_for_variable(cache_dir, scenario_num, run_id, his_file_paths, var_name):
-    """
-    Keep legacy cross-section cache filenames unchanged.
-    Write station variables to dedicated files to avoid mixing schemas.
-    """
-    with xr.open_dataset(his_file_paths[0]) as ds0:
-        if var_name not in ds0:
-            raise KeyError(f"Variable '{var_name}' not found in {his_file_paths[0]}")
-        dims = ds0[var_name].dims
+for scenario_dir, his_file_paths in run_his_paths.items():
+    scenario_name = Path(scenario_dir).name
+    scenario_num = scenario_name.split('_')[0]
+    run_id = '_'.join(scenario_name.split('_')[1:])
 
-    if 'station' in dims:
-        return cache_dir / f"hisoutput_stations_{int(scenario_num)}_{run_id}.nc"
-
-    # Default and backward-compatible path for cross-section and other legacy vars.
-    return cache_dir / f"hisoutput_{int(scenario_num)}_{run_id}.nc"
-
-
-for var_name in VARIABLES_TO_CACHE:
     print(f"\n{'='*60}")
-    print(f"Variable: {var_name}")
+    print(f"Scenario: {scenario_name}")
     print(f"{'='*60}")
 
-    for scenario_dir, his_file_paths in run_his_paths.items():
-        scenario_name = Path(scenario_dir).name
-        scenario_num = scenario_name.split('_')[0]
-        run_id = '_'.join(scenario_name.split('_')[1:])
+    # Group requested variables by destination cache file (stations vs cross-sections).
+    vars_by_cache_file = {}
+    for var_name in VARIABLES_TO_CACHE:
         cache_file = _cache_file_for_variable(
             cache_dir=cache_dir,
             scenario_num=scenario_num,
@@ -151,25 +137,28 @@ for var_name in VARIABLES_TO_CACHE:
             his_file_paths=his_file_paths,
             var_name=var_name,
         )
+        vars_by_cache_file.setdefault(cache_file, []).append(var_name)
 
-        # Check upfront so the summary is clear
-        already_cached = False
+    for cache_file, var_names in vars_by_cache_file.items():
+        existing_vars = set()
         if cache_file.exists():
             with xr.open_dataset(cache_file) as ds_check:
-                already_cached = var_name in ds_check
+                existing_vars = set(ds_check.data_vars)
 
-        if already_cached:
-            print(f"  [SKIP] '{var_name}' already in cache for {scenario_dir}")
-            continue
+        for var_name in var_names:
+            if var_name in existing_vars:
+                print(f"  [SKIP] '{var_name}' already in {cache_file.name}")
+                continue
 
-        print(f"  [LOAD] {scenario_dir}")
-        print(f"         -> {cache_file.name}")
-        load_and_cache_scenario(
-            scenario_dir=scenario_dir,
-            his_file_paths=his_file_paths,
-            cache_file=cache_file,
-            boxes=boxes,
-            var_name=var_name,
-        )
+            print(f"  [LOAD] {var_name}")
+            print(f"         -> {cache_file.name}")
+            load_and_cache_scenario(
+                scenario_dir=scenario_dir,
+                his_file_paths=his_file_paths,
+                cache_file=cache_file,
+                boxes=boxes,
+                var_name=var_name,
+            )
+            existing_vars.add(var_name)
 
 print(f"\nDone. Cache files are in: {cache_dir}")
