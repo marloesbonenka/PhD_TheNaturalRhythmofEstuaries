@@ -8,8 +8,9 @@ Frames: selected timesteps through the simulation
 Uses separated station cache files (hisoutput_stations_*.nc) when available,
 with fallback to HIS files.
 """
-
+#%%
 import sys
+import csv
 from pathlib import Path
 
 import matplotlib as mpl
@@ -32,7 +33,7 @@ mpl.rcParams.update({
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
 from FUNCTIONS.F_tidalrange_currentspeed import load_station_waterlevels_from_cache_or_his
 
-
+#%%
 # =============================================================================
 # CONFIG
 # =============================================================================
@@ -45,11 +46,29 @@ STATION_PATTERN = r'^Observation(?:Point|CrossSection)_Estuary_km(\d+)$'
 EXCLUDE_LAST_TIMESTEP = True
 
 # Animation settings
-FRAME_STRIDE = 24        # use every Nth timestep to keep GIF manageable
+FRAME_STRIDE = 1         # base stride within selected 1-day window
 FPS = 10
 FIGSIZE = (9, 5)
 LINEWIDTH = 2.0
 MARKERSIZE = 4
+MAX_FRAMES_PER_GIF = 240
+
+# Snapshot settings: create one 1-day GIF for each target moment
+SNAPSHOT_COUNT = 6
+EVENT_YEAR = 2055
+GIF_HALF_WINDOW = np.timedelta64(60, 'h')  # 5-day window centered on the selected event
+
+DISCHARGE_CSV_BASE = Path(
+    r"U:\PhDNaturalRhythmEstuaries\Models\ModelBoundaries_50hydroyears"
+)
+DISCHARGE_CSV_RELATIVE = Path('boundaryfiles_csv') / 'discharge_cumulative.csv'
+
+VARIABILITY_MAP = {
+        '1': f'01_baserun{DISCHARGE}',
+        '2': f'02_run{DISCHARGE}_seasonal',
+        '3': f'03_run{DISCHARGE}_flashy',
+        '4': f'04_run{DISCHARGE}_singlepeak'
+    }
 
 SCENARIO_LABELS = {
     '1': 'Constant',
@@ -121,25 +140,167 @@ cache_dir.mkdir(exist_ok=True)
 # =============================================================================
 # GIF CREATION
 # =============================================================================
-def create_profile_gif(*, km, wl, times, scenario_key, label, color, gif_path):
+def _read_discharge_csv(csv_path):
+    """Read discharge CSV with timestamp in col 1 and discharge [m3/s] in col 2."""
+    timestamps = []
+    discharges = []
+
+    with csv_path.open('r', newline='', encoding='utf-8-sig') as f:
+        reader = csv.reader(f)
+        for row in reader:
+            if len(row) < 2:
+                continue
+
+            raw_t = row[0].strip()
+            raw_q = row[1].strip()
+            if not raw_t or not raw_q:
+                continue
+
+            try:
+                q = float(raw_q)
+                t = np.datetime64(raw_t).astype('datetime64[ns]')
+            except Exception:
+                # Skip header rows and malformed lines.
+                continue
+
+            discharges.append(q)
+            timestamps.append(t)
+
+    if not timestamps:
+        raise ValueError(f'No valid discharge data found in: {csv_path}')
+
+    times_ns = np.asarray(timestamps, dtype='datetime64[ns]')
+    q_arr = np.asarray(discharges, dtype=float)
+
+    order = np.argsort(times_ns)
+    return times_ns[order], q_arr[order]
+
+
+def _local_extrema_indices(values):
+    """Return local peak and trough indices based on direct neighbours."""
+    if len(values) < 3:
+        return np.array([], dtype=int), np.array([], dtype=int)
+
+    prev_v = values[:-2]
+    mid_v = values[1:-1]
+    next_v = values[2:]
+
+    peak_mask = (mid_v >= prev_v) & (mid_v > next_v)
+    trough_mask = (mid_v <= prev_v) & (mid_v < next_v)
+
+    peak_idx = np.where(peak_mask)[0] + 1
+    trough_idx = np.where(trough_mask)[0] + 1
+    return peak_idx, trough_idx
+
+
+def _nearest_index(values, target):
+    return int(np.argmin(np.abs(values - target)))
+
+
+def _build_event_targets(times, discharge, count=SNAPSHOT_COUNT):
+    """Build exactly `count` representative event dates for one scenario."""
+    if len(times) == 0:
+        return []
+
+    q = np.asarray(discharge, dtype=float)
+    t = np.asarray(times).astype('datetime64[ns]')
+    peak_idx, trough_idx = _local_extrema_indices(q)
+
+    idx_max = int(np.argmax(q))
+    idx_min = int(np.argmin(q))
+    idx_q90 = _nearest_index(q, np.nanquantile(q, 0.90))
+    idx_q10 = _nearest_index(q, np.nanquantile(q, 0.10))
+    idx_q75 = _nearest_index(q, np.nanquantile(q, 0.75))
+
+    q50 = np.nanquantile(q, 0.50)
+    centered_gradient = np.gradient(q)
+    normal_score = np.abs(q - q50) + 0.2 * np.abs(centered_gradient)
+    normal_ranked_idx = np.argsort(normal_score)
+
+    selected = []
+    used_idx = set()
+
+    def _append_first_available(label, idx_candidates):
+        for idx in idx_candidates:
+            idx = int(idx)
+            if idx not in used_idx:
+                selected.append((label, idx))
+                used_idx.add(idx)
+                return True
+        return False
+
+    _append_first_available('peak_main', [idx_max])
+    _append_first_available('minimum_main', [idx_min])
+    _append_first_available('high_q90', [idx_q90])
+    _append_first_available('low_q10', [idx_q10])
+    _append_first_available('high_q75', [idx_q75])
+    _append_first_available('normal', normal_ranked_idx)
+
+    candidates = []
+
+    if len(peak_idx) > 0:
+        for i in peak_idx[np.argsort(q[peak_idx])[::-1]]:
+            candidates.append((f'peak_local_{len(candidates)}', int(i)))
+
+    if len(trough_idx) > 0:
+        for i in trough_idx[np.argsort(q[trough_idx])]:
+            candidates.append((f'trough_local_{len(candidates)}', int(i)))
+
+    # Add evenly spread fallback indices so we always end up with `count` unique targets.
+    spread_idx = np.linspace(0, len(t) - 1, num=max(count, 2), dtype=int)
+    for i in spread_idx:
+        candidates.append((f'spread_{i}', int(i)))
+
+    for label, idx in candidates:
+        if idx in used_idx:
+            continue
+        selected.append((label, idx))
+        used_idx.add(idx)
+        if len(selected) >= count:
+            break
+
+    return [{'label': label, 'target_dt': t[idx], 'idx': idx, 'q': float(q[idx])} for label, idx in selected]
+
+
+def _select_hydrodynamic_window(times, target_dt, half_window=GIF_HALF_WINDOW):
+    """Select one contiguous window around the nearest timestep to target date."""
+    times_ns = np.asarray(times).astype('datetime64[ns]')
+    if len(times_ns) == 0:
+        return np.array([], dtype=int), None, None
+
+    target_ns = np.datetime64(target_dt, 'ns')
+    nearest_idx = int(np.argmin(np.abs(times_ns - target_ns)))
+    center = times_ns[nearest_idx]
+    window_start = center - half_window
+    window_end = center + half_window
+
+    if window_start < times_ns[0]:
+        shift = times_ns[0] - window_start
+        window_start = times_ns[0]
+        window_end = window_end + shift
+    if window_end > times_ns[-1]:
+        shift = window_end - times_ns[-1]
+        window_end = times_ns[-1]
+        window_start = window_start - shift
+
+    mask = (times_ns >= window_start) & (times_ns <= window_end)
+    idx = np.where(mask)[0]
+    return idx, window_start, window_end
+
+
+def create_profile_gif(*, km, wl, times, scenario_key, label, color, gif_path, y_lim):
     """Create a water-level profile GIF for one scenario."""
     if wl.size == 0 or len(times) == 0:
         raise ValueError('No water-level data available for GIF creation')
 
-    frame_idx = np.arange(0, len(times), FRAME_STRIDE, dtype=int)
+    # Keep memory bounded by limiting total number of rendered frames.
+    adaptive_stride = max(FRAME_STRIDE, int(np.ceil(len(times) / max(1, MAX_FRAMES_PER_GIF))))
+    frame_idx = np.arange(0, len(times), adaptive_stride, dtype=int)
     if frame_idx[-1] != len(times) - 1:
         frame_idx = np.append(frame_idx, len(times) - 1)
 
     wl_frames = wl[frame_idx, :]
     t_frames = times[frame_idx]
-
-    y_min = float(np.nanmin(wl_frames))
-    y_max = float(np.nanmax(wl_frames))
-    if not np.isfinite(y_min) or not np.isfinite(y_max):
-        raise ValueError('Water-level array contains no finite values')
-
-    pad = 0.05 * max(1e-6, (y_max - y_min))
-    y_lim = (y_min - pad, y_max + pad)
 
     fig, ax = plt.subplots(figsize=FIGSIZE)
     line, = ax.plot([], [], color=color, linewidth=LINEWIDTH, marker='o', markersize=MARKERSIZE)
@@ -174,8 +335,19 @@ def create_profile_gif(*, km, wl, times, scenario_key, label, color, gif_path):
 
     writer = animation.PillowWriter(fps=FPS)
     ani.save(gif_path, writer=writer)
+    plt.close(ani._fig)
     plt.close(fig)
 
+
+def _extract_year(times, values, year):
+    years = times.astype('datetime64[Y]').astype(int) + 1970
+    mask = years == int(year)
+    return times[mask], values[mask]
+
+
+scenario_payload = {}
+global_wl_min = np.inf
+global_wl_max = -np.inf
 
 for folder in model_folders:
     scenario_key = str(int(folder.split('_')[0]))
@@ -201,21 +373,103 @@ for folder in model_folders:
     km = wl_data['station_km']
     wl = wl_data['waterlevel']
     times = wl_data['times']
+    times_ns = np.asarray(times).astype('datetime64[ns]')
 
     scenario_label = SCENARIO_LABELS.get(scenario_key, scenario_key)
     scenario_color = SCENARIO_COLORS.get(scenario_key, 'grey')
-    gif_path = output_dir / f"waterlevel_profile_Q{DISCHARGE}_{scenario_key}.gif"
 
-    create_profile_gif(
-        km=km,
-        wl=wl,
-        times=times,
-        scenario_key=scenario_key,
-        label=scenario_label,
-        color=scenario_color,
-        gif_path=gif_path,
-    )
+    csv_folder = VARIABILITY_MAP.get(scenario_key, folder)
+    discharge_csv = DISCHARGE_CSV_BASE / csv_folder / DISCHARGE_CSV_RELATIVE
+    if not discharge_csv.exists():
+        print(f"  [WARNING] Discharge CSV not found: {discharge_csv}")
+        continue
 
-    print(f"  Saved GIF: {gif_path}")
+    q_times, q_vals = _read_discharge_csv(discharge_csv)
+    q_times_yr, q_vals_yr = _extract_year(q_times, q_vals, EVENT_YEAR)
+    if len(q_times_yr) < 2:
+        print(f"  [WARNING] Not enough discharge data in {EVENT_YEAR} for {folder}")
+        continue
+
+    events = _build_event_targets(q_times_yr, q_vals_yr, count=SNAPSHOT_COUNT)
+    print(f"  Selected {len(events)} discharge-based event(s) for {EVENT_YEAR}.")
+
+    windows = []
+    for event in events:
+        idx_win, t0_win, t1_win = _select_hydrodynamic_window(times_ns, event['target_dt'], half_window=GIF_HALF_WINDOW)
+        if idx_win.size < 2:
+            print(f"  [SKIP] event {event['label']}: not enough timesteps in selected 5-day window")
+            continue
+
+        wl_win = wl[idx_win, :]
+        finite_vals = wl_win[np.isfinite(wl_win)]
+        if finite_vals.size > 0:
+            global_wl_min = min(global_wl_min, float(np.min(finite_vals)))
+            global_wl_max = max(global_wl_max, float(np.max(finite_vals)))
+
+        windows.append({
+            'event': event,
+            'idx': idx_win,
+            't0': t0_win,
+            't1': t1_win,
+        })
+
+    if windows:
+        scenario_payload[folder] = {
+            'scenario_key': scenario_key,
+            'scenario_label': scenario_label,
+            'scenario_color': scenario_color,
+            'km': km,
+            'wl': wl,
+            'times_ns': times_ns,
+            'windows': windows,
+        }
+
+if not np.isfinite(global_wl_min) or not np.isfinite(global_wl_max):
+    raise RuntimeError('Could not determine global y-axis limits from selected windows.')
+
+pad = 0.05 * max(1e-6, (global_wl_max - global_wl_min))
+global_y_lim = (global_wl_min - pad, global_wl_max + pad)
+
+for folder, payload in scenario_payload.items():
+    scenario_key = payload['scenario_key']
+    scenario_label = payload['scenario_label']
+    scenario_color = payload['scenario_color']
+    km = payload['km']
+    wl = payload['wl']
+    times_ns = payload['times_ns']
+    windows = payload['windows']
+
+    print(f"\n[SCENARIO {scenario_key}] Creating {len(windows)} GIF(s) with shared y-axis {global_y_lim}")
+    for win in windows:
+        event = win['event']
+        idx_win = win['idx']
+        t0_win = win['t0']
+        t1_win = win['t1']
+
+        wl_win = wl[idx_win, :]
+        times_win = times_ns[idx_win]
+
+        event_day = str(np.datetime_as_string(event['target_dt'], unit='D'))
+        event_tag = f"{event['label']}_{event_day}".replace(':', '-').replace(' ', '_')
+        gif_path = output_dir / f"waterlevel_profile_Q{DISCHARGE}_{scenario_key}_{event_tag}.gif"
+
+        print(
+            f"  [GIF] event={event['label']} | Q={event['q']:.2f} m3/s | "
+            f"target={event_day} | window={t0_win} -> {t1_win} | steps={len(times_win)}"
+        )
+        create_profile_gif(
+            km=km,
+            wl=wl_win,
+            times=times_win,
+            scenario_key=scenario_key,
+            label=f"{scenario_label} ({event['label']})",
+            color=scenario_color,
+            gif_path=gif_path,
+            y_lim=global_y_lim,
+        )
+
+        print(f"  Saved GIF: {gif_path}")
 
 print(f"\nDone. GIFs saved in: {output_dir}")
+
+# %%

@@ -30,6 +30,7 @@ VARIABLES_TO_CACHE = [
     'cross_section_bedload_sediment_transport',
     'cross_section_velocity',
     'waterlevel',
+    'bedlevel',
     # 'cross_section_suspended_sediment_transport',
 ]
 
