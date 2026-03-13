@@ -133,53 +133,56 @@ for folder in model_folders:
         print(f"Skipping {folder.name}: no data cached.")
         continue
 
-    if 'time' not in ds.dims or len(ds.time) == 0:
-        print(f"Skipping {folder.name}: no time dimension found.")
-        continue
+    try:
+        if 'time' not in ds.dims or len(ds.time) == 0:
+            print(f"Skipping {folder.name}: no time dimension found.")
+            continue
 
-    time_values = np.asarray(ds.time.values).astype('datetime64[ns]')
-    print(f"  Found {len(time_values)} timestep(s): {time_values[0]} -> {time_values[-1]}")
+        time_values = np.asarray(ds.time.values).astype('datetime64[ns]')
+        print(f"  Found {len(time_values)} timestep(s): {time_values[0]} -> {time_values[-1]}")
 
-    # --- Loop over all timesteps ---
-    for idx in range(len(time_values)):
-        actual_dt = np.datetime64(time_values[idx], 'ns')
-        actual_label = str(np.datetime_as_string(actual_dt, unit='s')).replace('T', ' ')
-        actual_tag = str(np.datetime_as_string(actual_dt, unit='D'))
-        print(f"  Plotting timestep {idx+1}/{len(time_values)}: {actual_label}")
+        # --- Loop over all timesteps ---
+        for idx in range(len(time_values)):
+            actual_dt = np.datetime64(time_values[idx], 'ns')
+            actual_label = str(np.datetime_as_string(actual_dt, unit='s')).replace('T', ' ')
+            actual_tag = str(np.datetime_as_string(actual_dt, unit='D'))
+            print(f"  Plotting timestep {idx+1}/{len(time_values)}: {actual_label}")
 
-        ds_t = ds.isel(time=idx)
+            ds_t = ds.isel(time=idx)
 
-        # --- Loop over all variables ---
-        for var_name in var_names:
-            if var_name not in ds_t:
-                print(f"    Skipping variable {var_name}: not found in dataset.")
-                continue
+            # --- Loop over all variables ---
+            for var_name in var_names:
+                if var_name not in ds_t:
+                    print(f"    Skipping variable {var_name}: not found in dataset.")
+                    continue
 
-            current_cfg = configs[var_name]
+                current_cfg = configs[var_name]
 
-            fig, ax = plt.subplots(figsize=(12, 8))
-            pc = ds_t[var_name].ugrid.plot(
-                ax=ax,
-                cmap=current_cfg['cmap'],
-                add_colorbar=False,
-                edgecolors='none',
-                vmin=current_cfg['vmin'],
-                vmax=current_cfg['vmax']
-            )
-            ax.set_aspect('equal')
-            ax.set_title(f"{current_cfg['label']} | {folder.name} | {actual_label}", color='black')
+                fig, ax = plt.subplots(figsize=(12, 8))
+                pc = ds_t[var_name].ugrid.plot(
+                    ax=ax,
+                    cmap=current_cfg['cmap'],
+                    add_colorbar=False,
+                    edgecolors='none',
+                    vmin=current_cfg['vmin'],
+                    vmax=current_cfg['vmax']
+                )
+                ax.set_aspect('equal')
+                ax.set_title(f"{current_cfg['label']} | {folder.name} | {actual_label}", color='black')
 
-            divider = make_axes_locatable(ax)
-            cax = divider.append_axes("right", size="3%", pad=0.1)
-            cbar = plt.colorbar(pc, cax=cax)
-            cbar.set_label(current_cfg['label'])
+                divider = make_axes_locatable(ax)
+                cax = divider.append_axes("right", size="3%", pad=0.1)
+                cbar = plt.colorbar(pc, cax=cax)
+                cbar.set_label(current_cfg['label'])
 
-            plt.tight_layout()
-            save_name = f"{current_cfg['file_tag']}_{actual_tag}_{folder.name}.png"
-            save_path = output_plots_dir / save_name
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-            plt.close(fig)  # prevents memory issues over many timesteps
-            print(f"    Saved: {save_name}")
+                plt.tight_layout()
+                save_name = f"{current_cfg['file_tag']}_{actual_tag}_{folder.name}.png"
+                save_path = output_plots_dir / save_name
+                plt.savefig(save_path, dpi=300, bbox_inches='tight')
+                plt.close(fig)  # prevents memory issues over many timesteps
+                print(f"    Saved: {save_name}")
+    finally:
+        ds.close()
 
 print("\n" + "="*30)
 print("BATCH PLOTTING COMPLETE")

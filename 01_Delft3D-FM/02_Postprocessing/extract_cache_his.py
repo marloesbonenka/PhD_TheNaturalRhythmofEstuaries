@@ -142,6 +142,7 @@ for scenario_dir, his_file_paths in run_his_paths.items():
     for cache_file, var_names in vars_by_cache_file.items():
         existing_vars = set()
         if cache_file.exists():
+            print(f"  Cache file exists: {cache_file.name}, opening to check existing variables...  ")
             with xr.open_dataset(cache_file) as ds_check:
                 existing_vars = set(ds_check.data_vars)
 

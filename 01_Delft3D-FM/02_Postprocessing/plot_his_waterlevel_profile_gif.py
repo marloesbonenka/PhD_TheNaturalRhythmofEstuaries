@@ -41,7 +41,7 @@ SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']
 OUTPUT_DIRNAME = 'plots_his_waterlevel_profiles'
 
 WATERLEVEL_VAR = 'waterlevel'
-STATION_PATTERN = r'^ObservationCrossSection_Estuary_km(\d+)$'
+STATION_PATTERN = r'^Observation(?:Point|CrossSection)_Estuary_km(\d+)$'
 EXCLUDE_LAST_TIMESTEP = True
 
 # Animation settings

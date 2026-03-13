@@ -147,31 +147,34 @@ try:
                 print(f"  Warning: No cached data for {folder.name}, skipping.")
                 continue
 
-            # --- Dataset summary ---
-            print(f"  [ds] variables : {list(ds.data_vars)}")
-            print(f"  [ds] time range: {ds.time.values[0]} -> {ds.time.values[-1]} "
-                  f"({len(ds.time)} timesteps)")
+            try:
+                # --- Dataset summary ---
+                print(f"  [ds] variables : {list(ds.data_vars)}")
+                print(f"  [ds] time range: {ds.time.values[0]} -> {ds.time.values[-1]} "
+                      f"({len(ds.time)} timesteps)")
 
-            if check_vars and not variables_checked:
-                check_available_variables_xarray(ds)
-                variables_checked = True
+                if check_vars and not variables_checked:
+                    check_available_variables_xarray(ds)
+                    variables_checked = True
 
-            start_timestamp   = pd.Timestamp(run_startdate)
-            times             = pd.to_datetime(ds['time'].values)
-            hydro_elapsed_years = np.array([(t - start_timestamp).days / 365.25 for t in times])
+                start_timestamp   = pd.Timestamp(run_startdate)
+                times             = pd.to_datetime(ds['time'].values)
+                hydro_elapsed_years = np.array([(t - start_timestamp).days / 365.25 for t in times])
 
-            areas        = ds[area_name]
-            bed_levels   = ds[var_name]
-            total_volume  = (bed_levels * areas).sum(dim=ds[var_name].dims[-1])
-            volume_change = total_volume - total_volume.isel(time=0)
+                areas        = ds[area_name]
+                bed_levels   = ds[var_name]
+                total_volume  = (bed_levels * areas).sum(dim=ds[var_name].dims[-1])
+                volume_change = total_volume - total_volume.isel(time=0)
 
-            scenario_num = str(int(folder.name.split('_')[0]))
-            label        = VARIABILITY_SCENARIOS.get(scenario_num, folder.name)
-            all_loaded_data[label] = {
-                'x_values':     list(hydro_elapsed_years),
-                'volume_change': list(volume_change.values),
-            }
-            print(f"  Processed {folder.name} ({label}): {len(hydro_elapsed_years)} timesteps")
+                scenario_num = str(int(folder.name.split('_')[0]))
+                label        = VARIABILITY_SCENARIOS.get(scenario_num, folder.name)
+                all_loaded_data[label] = {
+                    'x_values':     list(hydro_elapsed_years),
+                    'volume_change': list(volume_change.values),
+                }
+                print(f"  Processed {folder.name} ({label}): {len(hydro_elapsed_years)} timesteps")
+            finally:
+                ds.close()
 
     else:  # morfac
         for morfyears in load_tmorph_periods:
@@ -208,6 +211,7 @@ try:
                 try:
                     all_morph_years   = []
                     all_volume_change = []
+                    timed_out_end_timestamp = None
                     ds_timed_out      = None
 
                     # Process timed-out dataset first (if it exists)
@@ -228,31 +232,36 @@ try:
                             if ds_timed_out is None:
                                 raise RuntimeError("Timed-out cache returned no data")
 
-                            if check_vars and not variables_checked:
-                                check_available_variables_xarray(ds_timed_out)
-                                variables_checked = True
+                            try:
+                                if check_vars and not variables_checked:
+                                    check_available_variables_xarray(ds_timed_out)
+                                    variables_checked = True
 
-                            start_timestamp        = pd.Timestamp(morfac_run_startdate)
-                            times_to               = pd.to_datetime(ds_timed_out['time'].values)
-                            hydro_elapsed_years_to = np.array(
-                                [(t - start_timestamp).days / 365.25 for t in times_to])
-                            morfac_vals_to = (ds_timed_out['morfac'].values
-                                              if 'morfac' in ds_timed_out
-                                              else np.full_like(hydro_elapsed_years_to, current_mf))
-                            morph_years_to = hydro_elapsed_years_to * morfac_vals_to
+                                start_timestamp        = pd.Timestamp(morfac_run_startdate)
+                                times_to               = pd.to_datetime(ds_timed_out['time'].values)
+                                hydro_elapsed_years_to = np.array(
+                                    [(t - start_timestamp).days / 365.25 for t in times_to])
+                                morfac_vals_to = (ds_timed_out['morfac'].values
+                                                  if 'morfac' in ds_timed_out
+                                                  else np.full_like(hydro_elapsed_years_to, current_mf))
+                                morph_years_to = hydro_elapsed_years_to * morfac_vals_to
 
-                            areas_to      = ds_timed_out[area_name]
-                            bed_levels_to = ds_timed_out[var_name]
-                            total_volume_to  = (bed_levels_to * areas_to).sum(
-                                dim=ds_timed_out[var_name].dims[-1])
-                            volume_change_to = total_volume_to - total_volume_to.isel(time=0)
+                                areas_to      = ds_timed_out[area_name]
+                                bed_levels_to = ds_timed_out[var_name]
+                                total_volume_to  = (bed_levels_to * areas_to).sum(
+                                    dim=ds_timed_out[var_name].dims[-1])
+                                volume_change_to = total_volume_to - total_volume_to.isel(time=0)
 
-                            all_morph_years.extend(morph_years_to)
-                            all_volume_change.extend(volume_change_to.values)
+                                all_morph_years.extend(morph_years_to)
+                                all_volume_change.extend(volume_change_to.values)
+                                timed_out_end_timestamp = times_to[-1]
 
-                            initial_volume = total_volume_to.isel(time=0)
-                            print(f"  Timed-out: {len(morph_years_to)} timesteps, "
-                                  f"ends at Tmorph={morph_years_to[-1]:.1f}y")
+                                initial_volume = total_volume_to.isel(time=0)
+                                print(f"  Timed-out: {len(morph_years_to)} timesteps, "
+                                      f"ends at Tmorph={morph_years_to[-1]:.1f}y")
+                            finally:
+                                ds_timed_out.close()
+                                ds_timed_out = None
 
                         except Exception as e:
                             print(f"  Warning: Could not load timed-out data for {folder}: {e}")
@@ -277,54 +286,57 @@ try:
                         print(f"  Warning: No cached data for {folder}, skipping.")
                         continue
 
-                    if check_vars and not variables_checked:
-                        check_available_variables_xarray(ds)
-                        variables_checked = True
+                    try:
+                        if check_vars and not variables_checked:
+                            check_available_variables_xarray(ds)
+                            variables_checked = True
 
-                    start_timestamp     = pd.Timestamp(morfac_run_startdate)
-                    times               = pd.to_datetime(ds['time'].values)
-                    hydro_elapsed_years = np.array(
-                        [(t - start_timestamp).days / 365.25 for t in times])
-                    morfac_vals = (ds['morfac'].values
-                                   if 'morfac' in ds
-                                   else np.full_like(hydro_elapsed_years, current_mf))
-                    morph_years = hydro_elapsed_years * morfac_vals
+                        start_timestamp     = pd.Timestamp(morfac_run_startdate)
+                        times               = pd.to_datetime(ds['time'].values)
+                        hydro_elapsed_years = np.array(
+                            [(t - start_timestamp).days / 365.25 for t in times])
+                        morfac_vals = (ds['morfac'].values
+                                       if 'morfac' in ds
+                                       else np.full_like(hydro_elapsed_years, current_mf))
+                        morph_years = hydro_elapsed_years * morfac_vals
 
-                    if all_morph_years and ds_timed_out is not None:
-                        times_to_end = pd.to_datetime(ds_timed_out['time'].values[-1])
-                        hydro_adj    = np.array([(t - times_to_end).days / 365.25 for t in times])
-                        morph_years  = hydro_adj * morfac_vals + all_morph_years[-1]
-                        print(f"  DEBUG: Timed-out ended at Tmorph={all_morph_years[-1]:.1f}y, "
-                              f"real time={times_to_end}")
-                        print(f"  DEBUG: Main first morph_year={morph_years[0]:.1f}y, "
-                              f"last={morph_years[-1]:.1f}y")
+                        if all_morph_years and timed_out_end_timestamp is not None:
+                            times_to_end = pd.to_datetime(timed_out_end_timestamp)
+                            hydro_adj    = np.array([(t - times_to_end).days / 365.25 for t in times])
+                            morph_years  = hydro_adj * morfac_vals + all_morph_years[-1]
+                            print(f"  DEBUG: Timed-out ended at Tmorph={all_morph_years[-1]:.1f}y, "
+                                  f"real time={times_to_end}")
+                            print(f"  DEBUG: Main first morph_year={morph_years[0]:.1f}y, "
+                                  f"last={morph_years[-1]:.1f}y")
 
-                    areas        = ds[area_name]
-                    bed_levels   = ds[var_name]
-                    total_volume = (bed_levels * areas).sum(dim=ds[var_name].dims[-1])
+                        areas        = ds[area_name]
+                        bed_levels   = ds[var_name]
+                        total_volume = (bed_levels * areas).sum(dim=ds[var_name].dims[-1])
 
-                    if initial_volume is not None:
-                        final_to_vc   = all_volume_change[-1] if all_volume_change else 0
-                        volume_change = (total_volume - total_volume.isel(time=0)) + final_to_vc
-                    else:
-                        volume_change = total_volume - total_volume.isel(time=0)
+                        if initial_volume is not None:
+                            final_to_vc   = all_volume_change[-1] if all_volume_change else 0
+                            volume_change = (total_volume - total_volume.isel(time=0)) + final_to_vc
+                        else:
+                            volume_change = total_volume - total_volume.isel(time=0)
 
-                    all_morph_years.extend(morph_years)
-                    all_volume_change.extend(volume_change.values)
+                        all_morph_years.extend(morph_years)
+                        all_volume_change.extend(volume_change.values)
 
-                    data_key = (tmorph_period, int(current_mf))
-                    all_loaded_data[data_key] = {
-                        'x_values':     all_morph_years,
-                        'volume_change': all_volume_change,
-                    }
+                        data_key = (tmorph_period, int(current_mf))
+                        all_loaded_data[data_key] = {
+                            'x_values':     all_morph_years,
+                            'volume_change': all_volume_change,
+                        }
 
-                    if initial_volume is not None:
-                        print(f"  Main: {len(morph_years)} timesteps, "
-                              f"continues Tmorph={morph_years[0]:.1f}y to {morph_years[-1]:.1f}y")
-                    else:
-                        print(f"  Main: {len(morph_years)} timesteps, "
-                              f"Tmorph={morph_years[0]:.1f}-{morph_years[-1]:.1f}y")
-                    print(f"Processed MF{int(current_mf)}: {len(all_morph_years)} total timesteps")
+                        if initial_volume is not None:
+                            print(f"  Main: {len(morph_years)} timesteps, "
+                                  f"continues Tmorph={morph_years[0]:.1f}y to {morph_years[-1]:.1f}y")
+                        else:
+                            print(f"  Main: {len(morph_years)} timesteps, "
+                                  f"Tmorph={morph_years[0]:.1f}-{morph_years[-1]:.1f}y")
+                        print(f"Processed MF{int(current_mf)}: {len(all_morph_years)} total timesteps")
+                    finally:
+                        ds.close()
 
                 except Exception as e:
                     print(f"Error processing {folder}: {e}")
