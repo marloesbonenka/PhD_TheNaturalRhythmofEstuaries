@@ -13,11 +13,15 @@ from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 #%% --- 1. SETTINGS ---
 # Which scenarios to process (set to None or empty list for all)
 SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']  # Use all scenarios
-DISCHARGE = 500
+DISCHARGE = 1000
 # --- Variable selection ---
-var_names = ['mesh2d_mor_bl', 'mesh2d_s1', 'mesh2d_taus']  # e.g. ['mesh2d_mor_bl'] or all three
+var_names = ['mesh2d_mor_bl']#, 'mesh2d_s1', 'mesh2d_taus']  # e.g. ['mesh2d_mor_bl'] or all three
 time_to_extract = None
 target_hydrodynamic_date = None #'2055-12-31' # e.g. '2055-12-31'; when set, nearest timestep is used per run
+
+# Detrending settings (applies to bed level variable only)
+apply_detrending = True
+reference_time_idx = 0
 
 # Cache settings
 CACHE_BBOX = [1, 1, 45000, 15000] # xmin, ymin, xmax, ymax
@@ -116,6 +120,18 @@ for folder in model_folders:
         time_values = np.asarray(ds.time.values).astype('datetime64[ns]')
         print(f"  Found {len(time_values)} timestep(s): {time_values[0]} -> {time_values[-1]}")
 
+        reference_bed = None
+        if apply_detrending and 'mesh2d_mor_bl' in ds:
+            if 'time' not in ds['mesh2d_mor_bl'].dims:
+                print("  [WARNING] Cannot detrend mesh2d_mor_bl: no time dimension found.")
+            elif reference_time_idx >= len(time_values):
+                print(
+                    f"  [WARNING] reference_time_idx={reference_time_idx} out of range "
+                    f"for {len(time_values)} timestep(s); skipping detrending."
+                )
+            else:
+                reference_bed = ds['mesh2d_mor_bl'].isel(time=reference_time_idx).values.copy()
+
         # --- Loop over all timesteps ---
         for idx in range(len(time_values)):
             actual_dt = np.datetime64(time_values[idx], 'ns')
@@ -132,9 +148,17 @@ for folder in model_folders:
                     continue
 
                 current_cfg = configs[var_name]
+                data_to_plot = ds_t[var_name]
+                detrend_suffix = ""
+                file_detrend_tag = ""
+
+                if var_name == 'mesh2d_mor_bl' and apply_detrending and reference_bed is not None:
+                    data_to_plot = data_to_plot - reference_bed
+                    detrend_suffix = " (Detrended)"
+                    file_detrend_tag = "_detrended"
 
                 fig, ax = plt.subplots(figsize=(12, 8))
-                pc = ds_t[var_name].ugrid.plot(
+                pc = data_to_plot.ugrid.plot(
                     ax=ax,
                     cmap=current_cfg['cmap'],
                     add_colorbar=False,
@@ -143,7 +167,7 @@ for folder in model_folders:
                     vmax=current_cfg['vmax']
                 )
                 ax.set_aspect('equal')
-                ax.set_title(f"{current_cfg['label']} | {folder.name} | {actual_label}", color='black')
+                ax.set_title(f"{current_cfg['label']}{detrend_suffix} | {folder.name} | {actual_label}", color='black')
 
                 divider = make_axes_locatable(ax)
                 cax = divider.append_axes("right", size="3%", pad=0.1)
@@ -151,7 +175,7 @@ for folder in model_folders:
                 cbar.set_label(current_cfg['label'])
 
                 plt.tight_layout()
-                save_name = f"{current_cfg['file_tag']}_{actual_tag}_{folder.name}.png"
+                save_name = f"{current_cfg['file_tag']}{file_detrend_tag}_{actual_tag}_{folder.name}.png"
                 save_path = output_plots_dir / save_name
                 plt.savefig(save_path, dpi=300, bbox_inches='tight')
                 plt.close(fig)  # prevents memory issues over many timesteps

@@ -66,6 +66,7 @@ if ANALYSIS_MODE == "variability":
     base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
     config = f'Model_Output/Q{DISCHARGE}'
     VARIABILITY_MAP = None
+    
     # Which scenarios to process (set to None or empty list for all)
     SCENARIOS_TO_PROCESS = None  # e.g., ['1'] for Q500 or ['01'] for Q1000 baserun only, None for all
     use_folder_morfac = False
@@ -76,6 +77,13 @@ elif ANALYSIS_MODE == "morfac":
     config = r'TestingBoundaries_and_SensitivityAnalyses\Test_MORFAC\02_seasonal\Tmorph_50years'
     use_folder_morfac = True  # Extract MORFAC from folder name (MF1, MF2, etc.)
     default_morfac = 1.0
+
+if ANALYSIS_MODE == "variability":
+    discharge_file_tag = f"_Q{DISCHARGE}"
+    discharge_title_tag = f" | $Q_{{mean}}$ = {DISCHARGE} m³/s"
+else:
+    discharge_file_tag = ""
+    discharge_title_tag = ""
 
 timed_out_dir = base_directory / config / "timed-out"
 
@@ -360,26 +368,26 @@ for folder in model_folders:
             final_profile = Z[-1, :]
 
             if PLOT_MORPH_ACTIVITY:
-                outpath = output_dir / f"{folder}_{cs_name}_cumactivity.png"
+                outpath = output_dir / f"{folder}_{cs_name}_cumactivity{discharge_file_tag}.png"
                 plot_activity_and_first_profile(
                     dist_m=dist,
                     first_profile=first_profile,
                     final_profile=final_profile,
                     cumact=cum,
                     morph_years=morph_years,
-                    title=f"{folder}: {cs_name}",
+                    title=f"{folder}: {cs_name}{discharge_title_tag}",
                     outpath=outpath,
                     show=True,
                     profile_xlim=profile_xlim,
                 )
 
             if PLOT_BEDLEVEL:
-                outpath = output_dir / f"{folder}_{cs_name}_bedevolution.png"
+                outpath = output_dir / f"{folder}_{cs_name}_bedevolution{discharge_file_tag}.png"
                 plot_bedlevel_evolution(
                     dist_m=dist,
                     bedlevel_stack=Z,
                     morph_years=morph_years,
-                    title=f"{folder}: {cs_name}",
+                    title=f"{folder}: {cs_name}{discharge_title_tag}",
                     outpath=outpath,
                     cmap=create_bedlevel_colormap(),
                     show=True,
@@ -389,12 +397,12 @@ for folder in model_folders:
                 )
 
             if PLOT_BEDLEVEL_DETRENDED:
-                outpath = output_dir / f"{folder}_{cs_name}_detrended_bedevolution.png"
+                outpath = output_dir / f"{folder}_{cs_name}_detrended_bedevolution{discharge_file_tag}.png"
                 plot_bedlevel_evolution(
                     dist_m=dist,
                     bedlevel_stack=Z_detrended,
                     morph_years=morph_years,
-                    title=f"{folder}: {cs_name}",
+                    title=f"{folder}: {cs_name}{discharge_title_tag}",
                     outpath=outpath,
                     cmap=create_terrain_colormap(),
                     show=True,
@@ -402,12 +410,12 @@ for folder in model_folders:
                 )
 
             if PLOT_RELATIVE_BEDCHANGE:
-                outpath = output_dir / f"{folder}_{cs_name}_relative_bedchange.png"
+                outpath = output_dir / f"{folder}_{cs_name}_relative_bedchange{discharge_file_tag}.png"
                 plot_bedlevel_evolution(
                     dist_m=dist,
                     bedlevel_stack=rel_change,
                     morph_years=morph_years,
-                    title=f"{folder}: {cs_name} (Relative Bed Change)",
+                    title=f"{folder}: {cs_name} (Relative Bed Change){discharge_title_tag}",
                     outpath=outpath,
                     cmap='seismic',
                     show=True,
