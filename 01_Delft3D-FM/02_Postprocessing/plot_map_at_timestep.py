@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-from FUNCTIONS.F_general import create_bedlevel_colormap, create_water_colormap, create_shear_stress_colormap
+from FUNCTIONS.F_general import create_bedlevel_colormap, create_terrain_colormap, create_water_colormap, create_shear_stress_colormap
 from FUNCTIONS.F_general import get_variability_map, find_variability_model_folders
 from FUNCTIONS.F_map_cache import cache_tag_from_bbox, load_or_update_map_cache_multi
 from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
@@ -13,7 +13,7 @@ from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 #%% --- 1. SETTINGS ---
 # Which scenarios to process (set to None or empty list for all)
 SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']  # Use all scenarios
-DISCHARGE = 1000
+DISCHARGE = 500
 # --- Variable selection ---
 var_names = ['mesh2d_mor_bl']#, 'mesh2d_s1', 'mesh2d_taus']  # e.g. ['mesh2d_mor_bl'] or all three
 time_to_extract = None
@@ -22,6 +22,7 @@ target_hydrodynamic_date = None #'2055-12-31' # e.g. '2055-12-31'; when set, nea
 # Detrending settings (applies to bed level variable only)
 apply_detrending = True
 reference_time_idx = 0
+detrend_land_threshold = 6.0
 
 # Cache settings
 CACHE_BBOX = [1, 1, 45000, 15000] # xmin, ymin, xmax, ymax
@@ -120,7 +121,7 @@ for folder in model_folders:
         time_values = np.asarray(ds.time.values).astype('datetime64[ns]')
         print(f"  Found {len(time_values)} timestep(s): {time_values[0]} -> {time_values[-1]}")
 
-        reference_bed = None
+        initial_center_value = None
         if apply_detrending and 'mesh2d_mor_bl' in ds:
             if 'time' not in ds['mesh2d_mor_bl'].dims:
                 print("  [WARNING] Cannot detrend mesh2d_mor_bl: no time dimension found.")
@@ -130,7 +131,25 @@ for folder in model_folders:
                     f"for {len(time_values)} timestep(s); skipping detrending."
                 )
             else:
-                reference_bed = ds['mesh2d_mor_bl'].isel(time=reference_time_idx).values.copy()
+                reference_bed = ds['mesh2d_mor_bl'].isel(time=reference_time_idx).values
+
+                # Detrend using one scalar: initial bed value at geometric map center.
+                center_idx = None
+                try:
+                    if 'mesh2d_face_x' in ds and 'mesh2d_face_y' in ds:
+                        face_x = np.asarray(ds['mesh2d_face_x'].values)
+                        face_y = np.asarray(ds['mesh2d_face_y'].values)
+                        center_x = np.nanmean(face_x)
+                        center_y = np.nanmean(face_y)
+                        dist2 = (face_x - center_x) ** 2 + (face_y - center_y) ** 2
+                        center_idx = int(np.nanargmin(dist2))
+                except Exception:
+                    center_idx = None
+
+                if center_idx is None:
+                    center_idx = int(reference_bed.size // 2)
+
+                initial_center_value = float(reference_bed[center_idx])
 
         # --- Loop over all timesteps ---
         for idx in range(len(time_values)):
@@ -151,20 +170,31 @@ for folder in model_folders:
                 data_to_plot = ds_t[var_name]
                 detrend_suffix = ""
                 file_detrend_tag = ""
+                cmap_to_use = current_cfg['cmap']
+                vmin_to_use = current_cfg['vmin']
+                vmax_to_use = current_cfg['vmax']
 
-                if var_name == 'mesh2d_mor_bl' and apply_detrending and reference_bed is not None:
-                    data_to_plot = data_to_plot - reference_bed
+                if var_name == 'mesh2d_mor_bl' and apply_detrending and initial_center_value is not None:
+                    raw_bed = np.asarray(data_to_plot.values)
+                    detrended_bed = raw_bed - initial_center_value
+                    detrended_bed[raw_bed > detrend_land_threshold] = np.nan
+                    data_to_plot = data_to_plot.copy(data=detrended_bed)
                     detrend_suffix = " (Detrended)"
                     file_detrend_tag = "_detrended"
+                    cmap_to_use = create_terrain_colormap()
+                    # Keep color mapping centered at zero so white corresponds to zero change.
+                    detrended_limit = max(abs(current_cfg['vmin']), abs(current_cfg['vmax']))
+                    vmin_to_use = -detrended_limit
+                    vmax_to_use = detrended_limit
 
                 fig, ax = plt.subplots(figsize=(12, 8))
                 pc = data_to_plot.ugrid.plot(
                     ax=ax,
-                    cmap=current_cfg['cmap'],
+                    cmap=cmap_to_use,
                     add_colorbar=False,
                     edgecolors='none',
-                    vmin=current_cfg['vmin'],
-                    vmax=current_cfg['vmax']
+                    vmin=vmin_to_use,
+                    vmax=vmax_to_use
                 )
                 ax.set_aspect('equal')
                 ax.set_title(f"{current_cfg['label']}{detrend_suffix} | {folder.name} | {actual_label}", color='black')

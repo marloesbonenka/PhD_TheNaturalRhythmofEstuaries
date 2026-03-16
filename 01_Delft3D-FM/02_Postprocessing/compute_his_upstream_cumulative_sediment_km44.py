@@ -24,7 +24,7 @@ SED_VAR = "cross_section_bedload_sediment_transport"
 RIVER_KM = 44
 
 SCENARIOS_TO_PROCESS = ["1", "2", "3", "4"]
-DISCHARGE = 1000
+DISCHARGE = 500
 ANALYZE_NOISY = False
 
 SCENARIO_LABELS = {
