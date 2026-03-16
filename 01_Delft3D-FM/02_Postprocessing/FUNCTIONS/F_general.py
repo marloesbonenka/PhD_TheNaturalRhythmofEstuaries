@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import os
 import re
+from pathlib import Path
 from matplotlib.colors import LinearSegmentedColormap
 
 #%%
@@ -31,6 +32,88 @@ def get_mf_number(folder_name):
     folder_str = os.fspath(folder_name)
     match = re.search(r'MF_?(\d+)', folder_str)
     return int(match.group(1)) if match else 999
+
+
+def normalize_scenario_key(scenario):
+    """Normalize scenario identifiers so both '1' and '01' map to '1'."""
+    try:
+        return str(int(str(scenario)))
+    except Exception:
+        return str(scenario)
+
+
+def get_variability_map(discharge):
+    """Return a normalized variability map with both padded and non-padded keys."""
+    try:
+        q = int(discharge)
+    except Exception as exc:
+        raise ValueError(f"Invalid discharge value: {discharge}") from exc
+
+    base_map = {
+        '1': f'01_baserun{q}',
+        '2': f'02_run{q}_seasonal',
+        '3': f'03_run{q}_flashy',
+        '4': f'04_run{q}_singlepeak',
+    }
+
+    # Support both '1' and '01' lookups to avoid per-script key assumptions.
+    normalized_map = {}
+    for key, value in base_map.items():
+        normalized_map[key] = value
+        normalized_map[str(int(key)).zfill(2)] = value
+    return normalized_map
+
+
+def find_variability_model_folders(base_path, discharge, scenarios_to_process=None, analyze_noisy=False):
+    """Find variability run folders with discharge-specific naming conventions."""
+    base_path = Path(base_path)
+    if not base_path.exists():
+        raise FileNotFoundError(f"Base path not found: {base_path}")
+
+    try:
+        q = int(discharge)
+    except Exception as exc:
+        raise ValueError(f"Invalid discharge value: {discharge}") from exc
+
+    if q == 500:
+        if analyze_noisy:
+            model_folders = [
+                f for f in base_path.iterdir()
+                if f.is_dir() and f.name and f.name[0].isdigit() and 'noisy' in f.name.lower()
+            ]
+        else:
+            model_folders = [
+                f for f in base_path.iterdir()
+                if f.is_dir() and f.name and f.name[0].isdigit() and '_rst' in f.name.lower()
+            ]
+    elif q == 1000:
+        if analyze_noisy:
+            model_folders = [
+                f for f in base_path.iterdir()
+                if f.is_dir() and f.name and f.name[0].isdigit() and 'noisy' in f.name.lower()
+            ]
+        else:
+            model_folders = [
+                f for f in base_path.iterdir()
+                if f.is_dir() and f.name and f.name[0].isdigit()
+            ]
+    else:
+        raise ValueError(f"Unsupported DISCHARGE for variability mode: {q}")
+
+    model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
+
+    if scenarios_to_process:
+        scenario_filter = {
+            int(normalize_scenario_key(s))
+            for s in scenarios_to_process
+            if str(normalize_scenario_key(s)).isdigit()
+        }
+        model_folders = [
+            f for f in model_folders
+            if int(normalize_scenario_key(f.name.split('_')[0])) in scenario_filter
+        ]
+
+    return model_folders
 
 # --- EXTRACT COMPUTATION TIME FROM .dia FILE ---
 def extract_computation_time(dia_file_path):

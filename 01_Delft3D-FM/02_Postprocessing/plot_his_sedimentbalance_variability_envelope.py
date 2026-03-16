@@ -16,6 +16,7 @@ from pathlib import Path
 
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
 from FUNCTIONS.F_loaddata import load_and_cache_scenario, get_stitched_his_paths
+from FUNCTIONS.F_general import get_variability_map, find_variability_model_folders
 
 #%% --- CONFIGURATION ---
 var_name = 'cross_section_bedload_sediment_transport' # cumulative bed load sediment transport [kg]
@@ -49,21 +50,7 @@ VARIABILITY_SCENARIOS = {
     '4': 'singlepeak',
 }
 
-# Timed-out folder name map — same as extract_cache_his.py
-if DISCHARGE == 500:
-    VARIABILITY_MAP = {
-        '1': f'01_baserun{DISCHARGE}',
-        '2': f'02_run{DISCHARGE}_seasonal',
-        '3': f'03_run{DISCHARGE}_flashy',
-        '4': f'04_run{DISCHARGE}_singlepeak',
-    }
-elif DISCHARGE == 1000:
-    VARIABILITY_MAP = {
-        '01': f'01_baserun{DISCHARGE}',
-        '02': f'02_run{DISCHARGE}_seasonal',
-        '03': f'03_run{DISCHARGE}_flashy',
-        '04': f'04_run{DISCHARGE}_singlepeak',
-    }
+VARIABILITY_MAP = get_variability_map(DISCHARGE)
 
 #%% --- PATHS ---
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
@@ -95,21 +82,12 @@ def load_runs(base_path, cache_dir, analyze_noisy, scenario_filter=None):
     if not timed_out_dir.exists():
         timed_out_dir = None
 
-    if DISCHARGE == 500:
-        if analyze_noisy:
-            folders = [f for f in base_path.iterdir()
-                       if f.is_dir() and f.name[0].isdigit() and 'noisy' in f.name.lower()]
-        else:
-            folders = [f for f in base_path.iterdir()
-                       if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
-    else:  # Q1000
-        folders = [f for f in base_path.iterdir()
-                   if f.is_dir() and f.name[0].isdigit()]
-
-    folders.sort(key=lambda x: int(x.name.split('_')[0]))
-
-    if scenario_filter is not None:
-        folders = [f for f in folders if int(f.name.split('_')[0]) in scenario_filter]
+    folders = find_variability_model_folders(
+        base_path=base_path,
+        discharge=DISCHARGE,
+        scenarios_to_process=scenario_filter,
+        analyze_noisy=analyze_noisy,
+    )
 
     cache_dir.mkdir(exist_ok=True)
     runs = {}

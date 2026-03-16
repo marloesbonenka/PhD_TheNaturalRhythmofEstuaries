@@ -14,6 +14,7 @@ from FUNCTIONS.F_map_cache import (
     load_or_update_map_cache_multi,
 )
 from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
+from FUNCTIONS.F_general import get_variability_map, find_variability_model_folders
 #%%
 # =============================================================================
 # 1. SETUP & PATHS
@@ -57,30 +58,8 @@ if SNAPSHOT_COUNT is not None:
 else:
     TARGET_DATES = None
 
-# Mapping: restart folder prefix -> timed-out folder prefix
-if DISCHARGE == 500:
-    VARIABILITY_MAP = {
-        '1': f'01_baserun{DISCHARGE}',
-        '2': f'02_run{DISCHARGE}_seasonal',
-        '3': f'03_run{DISCHARGE}_flashy',
-        '4': f'04_run{DISCHARGE}_singlepeak'
-    }
-    # Find run folders starting with a digit (e.g. 1_rst, 2_rst)
-    model_folders = [f for f in base_path.iterdir() 
-                    if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
-    model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
-
-if DISCHARGE == 1000:
-    VARIABILITY_MAP = {
-        '01': f'01_baserun{DISCHARGE}',
-        '02': f'02_run{DISCHARGE}_seasonal',
-        '03': f'03_run{DISCHARGE}_flashy',
-        '04': f'04_run{DISCHARGE}_singlepeak'
-    }
-    # Find run folders starting with a digit (e.g. 1_rst, 2_rst)
-    model_folders = [f for f in base_path.iterdir() 
-                    if f.is_dir() and f.name[0].isdigit()]
-    model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
+VARIABILITY_MAP = get_variability_map(DISCHARGE)
+model_folders = find_variability_model_folders(base_path, DISCHARGE)
 
 # Directories
 output_dir = base_path / 'cached_data'

@@ -39,6 +39,7 @@ sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Post
 from FUNCTIONS.F_loaddata import (
     load_cross_section_data, load_cross_section_data_from_cache,
 )
+from FUNCTIONS.F_general import get_variability_map, find_variability_model_folders
 
 # ── CONFIGURATION ──────────────────────────────────────────────────────────────
 dis_var        = 'cross_section_discharge'
@@ -72,20 +73,16 @@ timed_out_dir = base_path / "timed-out"
 if not timed_out_dir.exists():
     timed_out_dir = None
 
-VARIABILITY_MAP = {
-    '1': f'01_baserun{DISCHARGE}',
-    '2': f'02_run{DISCHARGE}_seasonal',
-    '3': f'03_run{DISCHARGE}_flashy',
-    '4': f'04_run{DISCHARGE}_singlepeak',
-}
+VARIABILITY_MAP = get_variability_map(DISCHARGE)
 
 # ── FIND RUN FOLDERS ───────────────────────────────────────────────────────────
-model_folders = [f.name for f in base_path.iterdir()
-                 if f.is_dir() and f.name[0].isdigit()]
-if SCENARIOS_TO_PROCESS:
-    scenario_filter = set(int(s) for s in SCENARIOS_TO_PROCESS)
-    model_folders = [f for f in model_folders if int(f.split('_')[0]) in scenario_filter]
-model_folders.sort(key=lambda x: int(x.split('_')[0]))
+folders = find_variability_model_folders(
+    base_path=base_path,
+    discharge=DISCHARGE,
+    scenarios_to_process=SCENARIOS_TO_PROCESS,
+    analyze_noisy=False,
+)
+model_folders = [f.name for f in folders]
 
 # ── BUILD HIS FILE PATH MAP ────────────────────────────────────────────────────
 run_his_paths = {}

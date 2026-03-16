@@ -31,14 +31,7 @@ if ANALYSIS_MODE == "variability":
     base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
     config = f'Model_Output/Q{DISCHARGE}'
     default_morfac = 100  # All variability scenarios use MORFAC=100
-    # Mapping: restart folder prefix -> timed-out folder prefix
-    # 1 = constant (baserun), 2 = seasonal, 3 = flashy, 4 = singlepeak
-    VARIABILITY_MAP = {
-        '1': f'01_baserun{DISCHARGE}',
-        '2': f'02_run{DISCHARGE}_seasonal',
-        '3': f'03_run{DISCHARGE}_flashy',
-        '4': f'04_run{DISCHARGE}_singlepeak',
-    }
+    VARIABILITY_MAP = get_variability_map(DISCHARGE)
     # Which scenarios to process (set to None or empty list for all)
     SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']  # e.g., ['1'] for baserun only, ['1', '2'] for multiple, None for all
 
@@ -82,14 +75,13 @@ cache_settings = {
 # For variability: restart folders start with digit (e.g., "1_Q500_rst...")
 # For morfac: restart folders start with "MF" (e.g., "MF1_restart...")
 if ANALYSIS_MODE == "variability":
-    # Find restart folders: start with digit and contain "_rst"
-    model_folders = [f.name for f in base_path.iterdir() 
-                     if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
-    # Filter by SCENARIOS_TO_PROCESS if specified
-    if SCENARIOS_TO_PROCESS:
-        model_folders = [f for f in model_folders if f.split('_')[0] in SCENARIOS_TO_PROCESS]
-    # Sort by leading number (e.g., "1_Q500..." -> 1)
-    model_folders.sort(key=lambda x: int(x.split('_')[0]))
+    folders = find_variability_model_folders(
+        base_path=base_path,
+        discharge=DISCHARGE,
+        scenarios_to_process=SCENARIOS_TO_PROCESS,
+        analyze_noisy=False,
+    )
+    model_folders = [f.name for f in folders]
 elif ANALYSIS_MODE == "morfac":
     model_folders = [f.name for f in base_path.iterdir() 
                      if f.is_dir() and f.name.startswith('MF')]

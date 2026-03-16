@@ -11,7 +11,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 # Add the current working directory (where FUNCTIONS is located)
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
 
-from FUNCTIONS.F_general import get_mf_number
+from FUNCTIONS.F_general import get_mf_number, get_variability_map, find_variability_model_folders
 from FUNCTIONS.F_cache import load_results_cache, save_results_cache
 from FUNCTIONS.F_map_cache import cache_tag_from_bbox, load_or_update_map_cache_multi
 from FUNCTIONS.F_morphological_activity import cumulative_activity, morph_years_from_datetimes
@@ -28,14 +28,7 @@ DISCHARGE = 500 # Adjust this to match your specific discharge scenario (e.g., 5
 if ANALYSIS_MODE == "variability":
     base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
     config = f'Model_Output/Q{DISCHARGE}'
-    # Mapping: restart folder prefix -> timed-out folder prefix
-    # 1 = constant (baserun), 2 = seasonal, 3 = flashy, 4 = singlepeak
-    VARIABILITY_MAP = {
-        '1': f'01_baserun{DISCHARGE}',
-        '2': f'02_run{DISCHARGE}_seasonal',
-        '3': f'03_run{DISCHARGE}_flashy',
-        '4': f'04_run{DISCHARGE}_singlepeak',
-    }
+    VARIABILITY_MAP = get_variability_map(DISCHARGE)
     SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']  # e.g., ['1'] for baserun only, None for all
     use_folder_morfac = False
     default_morfac = 100  # MORFAC used in variability runs
@@ -100,11 +93,13 @@ if not base_path.exists():
     raise FileNotFoundError(f"Base path not found: {base_path}")
 
 if ANALYSIS_MODE == "variability":
-    model_folders = [f.name for f in base_path.iterdir()
-                     if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
-    if SCENARIOS_TO_PROCESS:
-        model_folders = [f for f in model_folders if f.split('_')[0] in SCENARIOS_TO_PROCESS]
-    model_folders.sort(key=lambda x: int(x.split('_')[0]))
+    folders = find_variability_model_folders(
+        base_path=base_path,
+        discharge=DISCHARGE,
+        scenarios_to_process=SCENARIOS_TO_PROCESS,
+        analyze_noisy=False,
+    )
+    model_folders = [f.name for f in folders]
 elif ANALYSIS_MODE == "morfac":
     model_folders = [f.name for f in base_path.iterdir()
                      if f.is_dir() and f.name.startswith('MF')]

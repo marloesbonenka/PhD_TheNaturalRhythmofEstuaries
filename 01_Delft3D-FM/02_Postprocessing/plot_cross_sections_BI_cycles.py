@@ -37,12 +37,7 @@ if ANALYSIS_MODE == "variability":
     base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
     config = f'Model_Output/Q{DISCHARGE}'
     default_morfac = 100  # All variability scenarios use MORFAC=100
-    VARIABILITY_MAP = {
-        '1': f'01_baserun{DISCHARGE}',
-        '2': f'02_run{DISCHARGE}_seasonal',
-        '3': f'03_run{DISCHARGE}_flashy',
-        '4': f'04_run{DISCHARGE}_singlepeak',
-    }
+    VARIABILITY_MAP = get_variability_map(DISCHARGE)
     SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']  # e.g., ['1'] for baserun only
 
 elif ANALYSIS_MODE == "morfac":
@@ -90,11 +85,13 @@ cache_settings = {
 if __name__ == "__main__":
     # For variability: restart folders start with digit
     if ANALYSIS_MODE == "variability":
-        model_folders = [f.name for f in base_path.iterdir() 
-                         if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
-        if SCENARIOS_TO_PROCESS:
-            model_folders = [f for f in model_folders if f.split('_')[0] in SCENARIOS_TO_PROCESS]
-        model_folders.sort(key=lambda x: int(x.split('_')[0]))
+        folders = find_variability_model_folders(
+            base_path=base_path,
+            discharge=DISCHARGE,
+            scenarios_to_process=SCENARIOS_TO_PROCESS,
+            analyze_noisy=False,
+        )
+        model_folders = [f.name for f in folders]
     elif ANALYSIS_MODE == "morfac":
         model_folders = [f.name for f in base_path.iterdir() 
                          if f.is_dir() and f.name.startswith('MF')]

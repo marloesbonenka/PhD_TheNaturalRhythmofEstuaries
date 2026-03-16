@@ -16,6 +16,7 @@ import matplotlib as mpl
 import sys
 
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
+from FUNCTIONS.F_general import get_variability_map, find_variability_model_folders
 from FUNCTIONS.F_map_cache import cache_tag_from_bbox, load_or_update_map_cache_multi
 from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
@@ -85,34 +86,13 @@ summary_output_dir = base_path / 'output_plots' / output_dirname
 summary_output_dir.mkdir(parents=True, exist_ok=True)
 
 # %% --- FIND RUN FOLDERS (discharge-dependent logic) ---
-if DISCHARGE == 500:
-    VARIABILITY_MAP = {
-        '1': f'01_baserun{DISCHARGE}',
-        '2': f'02_run{DISCHARGE}_seasonal',
-        '3': f'03_run{DISCHARGE}_flashy',
-        '4': f'04_run{DISCHARGE}_singlepeak',
-    }
-    model_folders = [f for f in base_path.iterdir()
-                     if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
-    model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
-
-if DISCHARGE == 1000:
-    VARIABILITY_MAP = {
-        '01': f'01_baserun{DISCHARGE}',
-        '02': f'02_run{DISCHARGE}_seasonal',
-        '03': f'03_run{DISCHARGE}_flashy',
-        '04': f'04_run{DISCHARGE}_singlepeak',
-    }
-    model_folders = [f for f in base_path.iterdir()
-                     if f.is_dir() and f.name[0].isdigit()]
-    model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
-
-if SCENARIOS_TO_PROCESS:
-    try:
-        scenario_filter = set(int(s) for s in SCENARIOS_TO_PROCESS)
-    except Exception:
-        scenario_filter = set()
-    model_folders = [f for f in model_folders if int(f.name.split('_')[0]) in scenario_filter]
+VARIABILITY_MAP = get_variability_map(DISCHARGE)
+model_folders = find_variability_model_folders(
+    base_path=base_path,
+    discharge=DISCHARGE,
+    scenarios_to_process=SCENARIOS_TO_PROCESS,
+    analyze_noisy=False,
+)
 
 print(f"Found {len(model_folders)} run folders in: {base_path}")
 

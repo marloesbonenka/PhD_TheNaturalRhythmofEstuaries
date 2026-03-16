@@ -20,6 +20,7 @@ from FUNCTIONS.F_loaddata import (
     get_stitched_his_paths, load_cross_section_data, load_cross_section_data_from_cache,
     find_mf_run_folder, get_his_paths_for_run,
 )
+from FUNCTIONS.F_general import get_variability_map, find_variability_model_folders
 from FUNCTIONS.F_tidalriverdominance import *
 
 #%%===========================================================================
@@ -46,20 +47,7 @@ if ANALYSIS_MODE == 'variability':
     config = f"Model_Output/Q{DISCHARGE}"
     run_base_path = base_directory / config
 
-    if DISCHARGE == 500:
-        VARIABILITY_MAP = {
-            '1': f'01_baserun{DISCHARGE}',
-            '2': f'02_run{DISCHARGE}_seasonal',
-            '3': f'03_run{DISCHARGE}_flashy',
-            '4': f'04_run{DISCHARGE}_singlepeak',
-        }
-    elif DISCHARGE == 1000:
-        VARIABILITY_MAP = {
-            '01': f'01_baserun{DISCHARGE}',
-            '02': f'02_run{DISCHARGE}_seasonal',
-            '03': f'03_run{DISCHARGE}_flashy',
-            '04': f'04_run{DISCHARGE}_singlepeak',
-        }
+    VARIABILITY_MAP = get_variability_map(DISCHARGE)
 
     VARIABILITY_SCENARIOS = {
         '1': 'baserun',
@@ -73,18 +61,12 @@ if ANALYSIS_MODE == 'variability':
         timed_out_dir = None
         print('[WARNING] Timed-out directory not found.')
 
-    # Folder discovery — same logic as extract_cache_his.py (noisy excluded)
-    if DISCHARGE == 500:
-        model_folders = [f for f in run_base_path.iterdir()
-                         if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
-    else:  # Q1000
-        model_folders = [f for f in run_base_path.iterdir()
-                         if f.is_dir() and f.name[0].isdigit()]
-    model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
-
-    if SCENARIOS_TO_PROCESS:
-        scenario_filter = {int(s) for s in SCENARIOS_TO_PROCESS}
-        model_folders = [f for f in model_folders if int(f.name.split('_')[0]) in scenario_filter]
+    model_folders = find_variability_model_folders(
+        base_path=run_base_path,
+        discharge=DISCHARGE,
+        scenarios_to_process=SCENARIOS_TO_PROCESS,
+        analyze_noisy=False,
+    )
 
     print(f"Found {len(model_folders)} run folders in: {run_base_path}")
 

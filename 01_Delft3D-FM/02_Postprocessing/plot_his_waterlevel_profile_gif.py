@@ -17,6 +17,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import numpy as np
+import xarray as xr
 
 # Force white style for consistency with other scripts
 plt.style.use('default')
@@ -31,7 +32,8 @@ mpl.rcParams.update({
 })
 
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
-from FUNCTIONS.F_tidalrange_currentspeed import load_station_waterlevels_from_cache_or_his
+from FUNCTIONS.F_general import get_variability_map, find_variability_model_folders
+from FUNCTIONS.F_tidalrange_currentspeed import load_station_waterlevels_from_cache_or_his, decode_name_array
 
 #%%
 # =============================================================================
@@ -42,6 +44,7 @@ SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']
 OUTPUT_DIRNAME = 'plots_his_waterlevel_profiles'
 
 WATERLEVEL_VAR = 'waterlevel'
+BEDLEVEL_VAR = 'bedlevel'
 STATION_PATTERN = r'^Observation(?:Point|CrossSection)_Estuary_km(\d+)$'
 EXCLUDE_LAST_TIMESTEP = True
 
@@ -63,12 +66,7 @@ DISCHARGE_CSV_BASE = Path(
 )
 DISCHARGE_CSV_RELATIVE = Path('boundaryfiles_csv') / 'discharge_cumulative.csv'
 
-VARIABILITY_MAP = {
-        '1': f'01_baserun{DISCHARGE}',
-        '2': f'02_run{DISCHARGE}_seasonal',
-        '3': f'03_run{DISCHARGE}_flashy',
-        '4': f'04_run{DISCHARGE}_singlepeak'
-    }
+VARIABILITY_MAP = get_variability_map(DISCHARGE)
 
 SCENARIO_LABELS = {
     '1': 'Constant',
@@ -83,6 +81,9 @@ SCENARIO_COLORS = {
     '3': '#2ca02c',
     '4': '#d62728',
 }
+
+# Keep bed line color consistent across all plots/GIFs.
+BEDLEVEL_COLOR = '#b8860b'
 
 
 # =============================================================================
@@ -99,18 +100,13 @@ timed_out_dir = base_path / 'timed-out'
 if not timed_out_dir.exists():
     timed_out_dir = None
 
-VARIABILITY_MAP = {
-    '1': f'01_baserun{DISCHARGE}',
-    '2': f'02_run{DISCHARGE}_seasonal',
-    '3': f'03_run{DISCHARGE}_flashy',
-    '4': f'04_run{DISCHARGE}_singlepeak',
-}
-
-model_folders = [f.name for f in base_path.iterdir() if f.is_dir() and f.name[0].isdigit()]
-if SCENARIOS_TO_PROCESS:
-    scenario_filter = set(int(s) for s in SCENARIOS_TO_PROCESS)
-    model_folders = [f for f in model_folders if int(f.split('_')[0]) in scenario_filter]
-model_folders.sort(key=lambda x: int(x.split('_')[0]))
+folders = find_variability_model_folders(
+    base_path=base_path,
+    discharge=DISCHARGE,
+    scenarios_to_process=SCENARIOS_TO_PROCESS,
+    analyze_noisy=False,
+)
+model_folders = [f.name for f in folders]
 
 run_his_paths = {}
 for folder in model_folders:
@@ -288,7 +284,92 @@ def _select_hydrodynamic_window(times, target_dt, half_window=GIF_HALF_WINDOW):
     return idx, window_start, window_end
 
 
-def create_profile_gif(*, km, wl, times, scenario_key, label, color, gif_path, y_lim):
+def _normalize_station_name(name):
+    cleaned = str(name).replace('\x00', '').strip()
+    return ''.join(ch for ch in cleaned if ch.isprintable())
+
+
+def _load_station_bedlevels_from_his(
+    his_file_paths,
+    station_labels,
+    bedlevel_var=BEDLEVEL_VAR,
+    exclude_last_timestep=True,
+):
+    """Load bedlevel for selected station labels and stitch across HIS parts."""
+    with xr.open_dataset(his_file_paths[0]) as ds0:
+        if 'station_name' not in ds0:
+            raise KeyError('station_name not found in HIS file')
+        if bedlevel_var not in ds0:
+            raise KeyError(f"{bedlevel_var} not found in HIS file")
+
+        station_names = [_normalize_station_name(s) for s in decode_name_array(ds0['station_name'].values)]
+
+    label_to_idx = {name: i for i, name in enumerate(station_names)}
+    station_idx = []
+    missing = []
+    for label in station_labels:
+        key = _normalize_station_name(label)
+        if key in label_to_idx:
+            station_idx.append(label_to_idx[key])
+        else:
+            missing.append(label)
+
+    if missing:
+        raise KeyError(f"Could not map {len(missing)} station label(s) to HIS station_name for bedlevel")
+
+    station_idx = np.asarray(station_idx, dtype=int)
+
+    bl_parts = []
+    time_parts = []
+    last_time = None
+
+    for p in his_file_paths:
+        with xr.open_dataset(p) as ds:
+            bl = ds[bedlevel_var].isel(station=station_idx)
+            tt = ds['time'].values
+
+            if last_time is not None and len(tt) > 1:
+                dt = tt[1] - tt[0]
+                offset = (last_time - tt[0]) + dt
+                tt = tt + offset
+
+            bl_parts.append(bl.values)
+            time_parts.append(tt)
+            if len(tt) > 0:
+                last_time = tt[-1]
+
+    bl_all = np.concatenate(bl_parts, axis=0)
+    t_all = np.concatenate(time_parts)
+
+    if exclude_last_timestep and len(t_all) > 1:
+        bl_all = bl_all[:-1, :]
+        t_all = t_all[:-1]
+
+    return {
+        'times': np.asarray(t_all).astype('datetime64[ns]'),
+        'bedlevel': bl_all,
+    }
+
+
+def _align_to_reference_times(ref_times, series_times, series_values):
+    """Align series to reference timestamps using exact match when possible, else nearest."""
+    ref_ns = np.asarray(ref_times).astype('datetime64[ns]')
+    s_ns = np.asarray(series_times).astype('datetime64[ns]')
+
+    if len(ref_ns) == len(s_ns) and np.all(ref_ns == s_ns):
+        return series_values
+
+    idx = np.searchsorted(s_ns, ref_ns)
+    idx = np.clip(idx, 0, len(s_ns) - 1)
+
+    left_idx = np.clip(idx - 1, 0, len(s_ns) - 1)
+    pick_left = np.abs(ref_ns - s_ns[left_idx]) <= np.abs(s_ns[idx] - ref_ns)
+    idx = np.where(pick_left, left_idx, idx)
+
+    return series_values[idx, :]
+
+
+def create_profile_gif(*, km, wl, bed, times, scenario_key, label, color, gif_path, y_lim):
     """Create a water-level profile GIF for one scenario."""
     if wl.size == 0 or len(times) == 0:
         raise ValueError('No water-level data available for GIF creation')
@@ -300,29 +381,34 @@ def create_profile_gif(*, km, wl, times, scenario_key, label, color, gif_path, y
         frame_idx = np.append(frame_idx, len(times) - 1)
 
     wl_frames = wl[frame_idx, :]
+    bed_frames = bed[frame_idx, :] if bed is not None else np.full_like(wl_frames, np.nan)
     t_frames = times[frame_idx]
 
     fig, ax = plt.subplots(figsize=FIGSIZE)
-    line, = ax.plot([], [], color=color, linewidth=LINEWIDTH, marker='o', markersize=MARKERSIZE)
+    wl_line, = ax.plot([], [], color=color, linewidth=LINEWIDTH, marker='o', markersize=MARKERSIZE, label='Water level')
+    bed_line, = ax.plot([], [], color=BEDLEVEL_COLOR, linewidth=LINEWIDTH, linestyle='--', label='Bed level')
 
     ax.set_xlim(float(np.nanmin(km)), float(np.nanmax(km)))
     ax.set_ylim(*y_lim)
     ax.set_xlabel('Estuary distance [km from sea]')
-    ax.set_ylabel('Water level [m]')
+    ax.set_ylabel('Level [m]')
     ax.grid(alpha=0.3)
+    ax.legend(loc='best')
 
     title = ax.set_title('')
 
     def _init():
-        line.set_data([], [])
-        title.set_text(f"{label} - water-level profile")
-        return line, title
+        wl_line.set_data([], [])
+        bed_line.set_data([], [])
+        title.set_text(f"{label} - water/bed profile")
+        return wl_line, bed_line, title
 
     def _update(i):
-        line.set_data(km, wl_frames[i, :])
-        t_years = (t_frames[i] - t_frames[0]) / np.timedelta64(1, 'D') / 365.25
-        title.set_text(f"{label} - water-level profile | t={t_years:.2f} years")
-        return line, title
+        wl_line.set_data(km, wl_frames[i, :])
+        bed_line.set_data(km, bed_frames[i, :])
+        t_hours = (t_frames[i] - t_frames[0]) / np.timedelta64(1, 'h')
+        title.set_text(f"{label} - water/bed profile | t={t_hours:.1f} hours")
+        return wl_line, bed_line, title
 
     ani = animation.FuncAnimation(
         fig,
@@ -372,8 +458,21 @@ for folder in model_folders:
 
     km = wl_data['station_km']
     wl = wl_data['waterlevel']
+    station_labels = wl_data['station_labels']
     times = wl_data['times']
     times_ns = np.asarray(times).astype('datetime64[ns]')
+
+    try:
+        bed_data = _load_station_bedlevels_from_his(
+            his_file_paths=his_file_paths,
+            station_labels=station_labels,
+            bedlevel_var=BEDLEVEL_VAR,
+            exclude_last_timestep=EXCLUDE_LAST_TIMESTEP,
+        )
+        bed = _align_to_reference_times(times_ns, bed_data['times'], bed_data['bedlevel'])
+    except Exception as exc:
+        print(f"  [WARNING] Could not load bedlevel from HIS ({BEDLEVEL_VAR}): {exc}")
+        bed = np.full_like(wl, np.nan)
 
     scenario_label = SCENARIO_LABELS.get(scenario_key, scenario_key)
     scenario_color = SCENARIO_COLORS.get(scenario_key, 'grey')
@@ -401,7 +500,11 @@ for folder in model_folders:
             continue
 
         wl_win = wl[idx_win, :]
-        finite_vals = wl_win[np.isfinite(wl_win)]
+        bed_win = bed[idx_win, :]
+        finite_vals = np.concatenate([
+            wl_win[np.isfinite(wl_win)],
+            bed_win[np.isfinite(bed_win)],
+        ])
         if finite_vals.size > 0:
             global_wl_min = min(global_wl_min, float(np.min(finite_vals)))
             global_wl_max = max(global_wl_max, float(np.max(finite_vals)))
@@ -420,6 +523,7 @@ for folder in model_folders:
             'scenario_color': scenario_color,
             'km': km,
             'wl': wl,
+            'bed': bed,
             'times_ns': times_ns,
             'windows': windows,
         }
@@ -436,6 +540,7 @@ for folder, payload in scenario_payload.items():
     scenario_color = payload['scenario_color']
     km = payload['km']
     wl = payload['wl']
+    bed = payload['bed']
     times_ns = payload['times_ns']
     windows = payload['windows']
 
@@ -447,6 +552,7 @@ for folder, payload in scenario_payload.items():
         t1_win = win['t1']
 
         wl_win = wl[idx_win, :]
+        bed_win = bed[idx_win, :]
         times_win = times_ns[idx_win]
 
         event_day = str(np.datetime_as_string(event['target_dt'], unit='D'))
@@ -460,6 +566,7 @@ for folder, payload in scenario_payload.items():
         create_profile_gif(
             km=km,
             wl=wl_win,
+            bed=bed_win,
             times=times_win,
             scenario_key=scenario_key,
             label=f"{scenario_label} ({event['label']})",

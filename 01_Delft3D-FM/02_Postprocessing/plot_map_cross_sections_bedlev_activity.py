@@ -29,7 +29,9 @@ sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Post
 from FUNCTIONS.F_general import (
     get_mf_number,
     create_bedlevel_colormap,
-    create_terrain_colormap
+    create_terrain_colormap,
+    get_variability_map,
+    find_variability_model_folders,
     )
 from FUNCTIONS.F_cache import (
     DatasetCache,
@@ -60,19 +62,12 @@ PLOT_RELATIVE_BEDCHANGE = False
 
 
 if ANALYSIS_MODE == "variability":
-    DISCHARGE = 500  # or 1000, etc.
+    DISCHARGE = 1000  # or 1000, etc.
     base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
     config = f'Model_Output/Q{DISCHARGE}'
-    # Mapping: restart folder prefix -> timed-out folder prefix
-    # 1 = constant (baserun), 2 = seasonal, 3 = flashy, 4 = singlepeak
-    VARIABILITY_MAP = {
-        '1': f'01_baserun{DISCHARGE}',
-        '2': f'02_run{DISCHARGE}_seasonal',
-        '3': f'03_run{DISCHARGE}_flashy',
-        '4': f'04_run{DISCHARGE}_singlepeak',
-    }
+    VARIABILITY_MAP = None
     # Which scenarios to process (set to None or empty list for all)
-    SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']  # e.g., ['1'] for baserun only, None for all
+    SCENARIOS_TO_PROCESS = None  # e.g., ['1'] for Q500 or ['01'] for Q1000 baserun only, None for all
     use_folder_morfac = False
     default_morfac = 100  # MORFAC used in variability runs
 
@@ -129,12 +124,14 @@ if not base_path.exists():
     raise FileNotFoundError(f"Base path not found: {base_path}")
 
 if ANALYSIS_MODE == "variability":
-    # Find restart folders: start with digit and contain "_rst"
-    model_folders = [f.name for f in base_path.iterdir() 
-                     if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
-    # Filter by SCENARIOS_TO_PROCESS if specified
-    if SCENARIOS_TO_PROCESS:
-        model_folders = [f for f in model_folders if f.split('_')[0] in SCENARIOS_TO_PROCESS]
+    VARIABILITY_MAP = get_variability_map(DISCHARGE)
+    folders = find_variability_model_folders(
+        base_path=base_path,
+        discharge=DISCHARGE,
+        scenarios_to_process=SCENARIOS_TO_PROCESS,
+        analyze_noisy=False,
+    )
+    model_folders = [f.name for f in folders]
     # Sort by leading number
     model_folders.sort(key=lambda x: int(x.split('_')[0]))
 elif ANALYSIS_MODE == "morfac":

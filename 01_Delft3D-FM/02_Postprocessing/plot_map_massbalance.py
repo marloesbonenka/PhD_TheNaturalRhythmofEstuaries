@@ -63,30 +63,13 @@ if ANALYSIS_MODE == 'variability':
         timed_out_dir = None
         print('[WARNING] Timed-out directory not found.')
 
-    if DISCHARGE == 500:
-        VARIABILITY_MAP = {
-            '1': f'01_baserun{DISCHARGE}',
-            '2': f'02_run{DISCHARGE}_seasonal',
-            '3': f'03_run{DISCHARGE}_flashy',
-            '4': f'04_run{DISCHARGE}_singlepeak',
-        }
-        model_folders = [f for f in run_base_path.iterdir()
-                         if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
-    elif DISCHARGE == 1000:
-        VARIABILITY_MAP = {
-            '01': f'01_baserun{DISCHARGE}',
-            '02': f'02_run{DISCHARGE}_seasonal',
-            '03': f'03_run{DISCHARGE}_flashy',
-            '04': f'04_run{DISCHARGE}_singlepeak',
-        }
-        model_folders = [f for f in run_base_path.iterdir()
-                         if f.is_dir() and f.name[0].isdigit()]
-    model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
-
-    if SCENARIOS_TO_PROCESS:
-        scenario_filter = {int(s) for s in SCENARIOS_TO_PROCESS}
-        model_folders = [f for f in model_folders
-                         if int(f.name.split('_')[0]) in scenario_filter]
+    VARIABILITY_MAP = get_variability_map(DISCHARGE)
+    model_folders = find_variability_model_folders(
+        base_path=run_base_path,
+        discharge=DISCHARGE,
+        scenarios_to_process=SCENARIOS_TO_PROCESS,
+        analyze_noisy=False,
+    )
 
     assessment_dir = run_base_path / 'cached_data'
     assessment_dir.mkdir(parents=True, exist_ok=True)

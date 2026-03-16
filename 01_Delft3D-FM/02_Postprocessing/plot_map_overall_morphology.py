@@ -16,6 +16,8 @@ from FUNCTIONS.F_general import (
     _date_to_label,
     _scenario_label,
     _scenario_color,
+    get_variability_map,
+    find_variability_model_folders,
     get_target_snapshot_dates,
     get_snapshot_matches_by_target_dates,
     get_mf_number,
@@ -34,9 +36,9 @@ from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
 #%% --- CONFIGURATION ---
 # Model output
-DISCHARGE = 500  # or 1000, etc.
-NOISY = True
-ADD_NON_NOISY_BASELINE_Q500 = True
+DISCHARGE = 1000  # or 1000, etc.
+NOISY = False
+ADD_NON_NOISY_BASELINE_Q500 = False
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
 config = f'Model_Output/Q{DISCHARGE}'
 
@@ -116,44 +118,18 @@ BASELINE_COLOR = next(iter(SCENARIO_COLORS.values()))
 #%% --- SEARCH & SORT FOLDERS ---
 base_path = base_directory / config
 
-if DISCHARGE == 500 and NOISY is False:
-    VARIABILITY_MAP = {
-        '1': f'01_baserun{DISCHARGE}',
-        '2': f'02_run{DISCHARGE}_seasonal',
-        '3': f'03_run{DISCHARGE}_flashy',
-        '4': f'04_run{DISCHARGE}_singlepeak'
-    }
-    # Find run folders starting with a digit (e.g. 1_rst, 2_rst)
-    model_folders = [f for f in base_path.iterdir() 
-                    if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
-    model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
-
-if DISCHARGE == 500 and NOISY is True:
-    VARIABILITY_MAP = {
-        '1': f'01_baserun{DISCHARGE}',
-        '2': f'02_run{DISCHARGE}_seasonal',
-        '3': f'03_run{DISCHARGE}_flashy',
-        '4': f'04_run{DISCHARGE}_singlepeak'
-    }
+VARIABILITY_MAP = get_variability_map(DISCHARGE)
+if DISCHARGE == 500 and NOISY:
     noisy_base_path = base_path / f'0_Noise_Q{DISCHARGE}'
     if noisy_base_path.exists() and noisy_base_path.is_dir():
         base_path = noisy_base_path
 
-    model_folders = [f for f in base_path.iterdir()
-                    if f.is_dir() and f.name[0].isdigit() and 'noisy' in f.name.lower()]
-    model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
-
-if DISCHARGE == 1000:
-    VARIABILITY_MAP = {
-        '01': f'01_baserun{DISCHARGE}',
-        '02': f'02_run{DISCHARGE}_seasonal',
-        '03': f'03_run{DISCHARGE}_flashy',
-        '04': f'04_run{DISCHARGE}_singlepeak'
-    }
-    # Find run folders starting with a digit (e.g. 1_rst, 2_rst)
-    model_folders = [f for f in base_path.iterdir() 
-                    if f.is_dir() and f.name[0].isdigit()]
-    model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
+model_folders = find_variability_model_folders(
+    base_path=base_path,
+    discharge=DISCHARGE,
+    scenarios_to_process=None,
+    analyze_noisy=NOISY,
+)
 
 
 # Directories
@@ -477,9 +453,12 @@ if NOISY and DISCHARGE == 500 and ADD_NON_NOISY_BASELINE_Q500:
     baseline_assessment_dir = baseline_base_path / 'cached_data'
     baseline_assessment_dir.mkdir(parents=True, exist_ok=True)
 
-    baseline_model_folders = [f for f in baseline_base_path.iterdir()
-                              if f.is_dir() and f.name[0].isdigit() and '_rst' in f.name.lower()]
-    baseline_model_folders.sort(key=lambda x: int(x.name.split('_')[0]))
+    baseline_model_folders = find_variability_model_folders(
+        base_path=baseline_base_path,
+        discharge=DISCHARGE,
+        scenarios_to_process=None,
+        analyze_noisy=False,
+    )
 
     print(f"\nLoading non-noisy Q500 baseline runs: {len(baseline_model_folders)} found")
 
