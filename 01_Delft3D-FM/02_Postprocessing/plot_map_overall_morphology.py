@@ -136,7 +136,7 @@ model_folders = find_variability_model_folders(
 assessment_dir = base_path / 'cached_data'
 assessment_dir.mkdir(parents=True, exist_ok=True)
 timed_out_dir = base_path / 'timed-out'
-summary_output_dir = base_path / 'output_plots'
+summary_output_dir = base_path / 'output_plots' / 'plots_map_overall_morphology'
 summary_output_dir.mkdir(parents=True, exist_ok=True)
 
 # --- OPTIONAL: GLOBAL REFERENCE FROM MF50 ---

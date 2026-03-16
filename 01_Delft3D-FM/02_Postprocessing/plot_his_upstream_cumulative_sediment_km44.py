@@ -49,7 +49,7 @@ if ANALYZE_NOISY:
 else:
     BASE_PATH = BASE_DIRECTORY / CONFIG
 
-OUTPUT_DIR = BASE_PATH / "output_plots" / "metrics_upstream_sediment_km44"
+OUTPUT_DIR = BASE_PATH / "output_plots" / "plots_his_sedimentsupply_km44"
 CACHE_DIR = BASE_PATH / "cached_data"
 TIMED_OUT_DIR = BASE_PATH / "timed-out"
 

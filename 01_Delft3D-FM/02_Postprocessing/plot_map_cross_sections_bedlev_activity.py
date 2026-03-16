@@ -120,7 +120,7 @@ n_slices = 5
 safety_buffer = 0.20
 
 # Output
-output_dirname = "output_plots_crosssections_activity"
+output_dirname = "output_plots" / "plots_crosssections_activity"
 
 
 # =============================================================================
