@@ -308,9 +308,9 @@ for i, folder in enumerate(model_folders):
                 plt.ylabel(f'Width-averaged Bed Level [m]{detrend_label}')
                 plt.title(f'Width-averaged Bed Level: {scenario_label} ({snapshot_label})')
                 plt.grid(True, alpha=0.3)
-                plt.savefig(save_dir / f'width_averaged_bedlevel_map_{actual_label}_{folder_str}.png')
+                plt.savefig(save_dir / f'width_averaged_bedlevel_map_{actual_label}_{folder_str}_Q{DISCHARGE}.png')
                 if ts_idx == last_snapshot_idx:
-                    plt.savefig(save_dir / f'width_averaged_bedlevel_map_final_{folder_str}.png')
+                    plt.savefig(save_dir / f'width_averaged_bedlevel_map_final_{folder_str}_Q{DISCHARGE}.png')
                 plt.close()
 
         # 5. MAXIMUM DEPTH ANALYSIS (95th percentile)
@@ -366,9 +366,9 @@ for i, folder in enumerate(model_folders):
                 plt.ylabel(f'{depth_percentile}th Percentile {depth_label} [m]{detrend_label}')
                 plt.title(f'Maximum Channel Depth: {scenario_label} ({snapshot_label})')
                 plt.grid(True, alpha=0.3)
-                plt.savefig(save_dir / f'max_depth_map_{actual_label}_{folder_str}.png')
+                plt.savefig(save_dir / f'max_depth_map_{actual_label}_{folder_str}_Q{DISCHARGE}.png')
                 if ts_idx == last_snapshot_idx:
-                    plt.savefig(save_dir / f'max_depth_map_final_{folder_str}.png')
+                    plt.savefig(save_dir / f'max_depth_map_final_{folder_str}_Q{DISCHARGE}.png')
                 plt.close()
 
         # 6. CHANNEL WIDTH ANALYSIS
@@ -403,21 +403,23 @@ for i, folder in enumerate(model_folders):
                 detrend_label = ' (Detrended)' if apply_detrending else ''
                 plt.title(f'Maximum Channel Width: {scenario_label}{detrend_label} ({snapshot_label})')
                 plt.grid(True, alpha=0.3)
-                plt.savefig(save_dir / f'channel_width_map_{actual_label}_{folder_str}.png')
+                plt.savefig(save_dir / f'channel_width_map_{actual_label}_{folder_str}_Q{DISCHARGE}.png')
                 if ts_idx == last_snapshot_idx:
-                    plt.savefig(save_dir / f'channel_width_map_final_{folder_str}.png')
+                    plt.savefig(save_dir / f'channel_width_map_final_{folder_str}_Q{DISCHARGE}.png')
                 plt.close()
 
         # 7. HYPSOMETRIC CURVE
         if compare_hypsometric:
             print(f"Computing Hypsometric Curve for {folder_str} ({snapshot_label})...")
             bedlev_data = bedlev_data_snapshot.copy()
+            x_mask = (face_x >= x_targets[0]) & (face_x <= x_targets[-1])
+            domain_mask = width_mask & x_mask
 
             if apply_detrending:
                 bedlev_data = bedlev_data - reference_bed
-                valid_mask = width_mask
+                valid_mask = domain_mask
             else:
-                valid_mask = (width_mask) & (bedlev_data < bed_threshold)
+                valid_mask = domain_mask & (bedlev_data < bed_threshold)
 
             elev_curve, area_curve, area_label = compute_hypsometric_curve(
                 bedlev_data=bedlev_data,
@@ -439,9 +441,9 @@ for i, folder in enumerate(model_folders):
                 if not apply_detrending:
                     plt.axhline(y=bed_threshold, color='red', linestyle='--', alpha=0.7)
                 plt.grid(True, alpha=0.3)
-                plt.savefig(save_dir / f'hypsometric_curve_{actual_label}_{folder_str}.png')
+                plt.savefig(save_dir / f'hypsometric_curve_{actual_label}_{folder_str}_Q{DISCHARGE}.png')
                 if ts_idx == last_snapshot_idx:
-                    plt.savefig(save_dir / f'hypsometric_curve_final_{folder_str}.png')
+                    plt.savefig(save_dir / f'hypsometric_curve_final_{folder_str}_Q{DISCHARGE}.png')
                 plt.close()
 
     ds.close()
@@ -608,12 +610,14 @@ if NOISY and DISCHARGE == 500 and ADD_NON_NOISY_BASELINE_Q500:
 
             if compare_hypsometric:
                 bedlev_data = bedlev_data_snapshot.copy()
+                x_mask = (face_x >= x_targets[0]) & (face_x <= x_targets[-1])
+                domain_mask = width_mask & x_mask
 
                 if apply_detrending:
                     bedlev_data = bedlev_data - reference_bed
-                    valid_mask = width_mask
+                    valid_mask = domain_mask
                 else:
-                    valid_mask = (width_mask) & (bedlev_data < bed_threshold)
+                    valid_mask = domain_mask & (bedlev_data < bed_threshold)
 
                 elev_curve, area_curve, area_label = compute_hypsometric_curve(
                     bedlev_data=bedlev_data,
@@ -953,16 +957,16 @@ for snapshot_key, snapshot_results in comparison_results.items():
         axes[plot_idx].grid(True, alpha=0.2)
 
     axes[-1].set_xlabel('x-coordinate along estuary [km]')
-    fig.suptitle(f"Hydrodynamic snapshot around {comparison_labels.get(snapshot_key, snapshot_key)}", fontsize=12)
+    fig.suptitle(f"Hydrodynamic snapshot around {comparison_labels.get(snapshot_key, snapshot_key)} for $Q_{{mean}}$ = {DISCHARGE} m³/s", fontsize=12)
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.97])
 
     snapshot_date = comparison_labels.get(snapshot_key, snapshot_key)
 
     if apply_detrending:
-        plt.savefig(summary_output_dir / f'overall_morphology_variability_comparison_detrended_{snapshot_date}.png', dpi=300)
+        plt.savefig(summary_output_dir / f'overall_morphology_variability_comparison_detrended_{snapshot_date}_Q{DISCHARGE}.png', dpi=300)
     else:
-        plt.savefig(summary_output_dir / f'overall_morphology_variability_comparison_{snapshot_date}.png', dpi=300)
+        plt.savefig(summary_output_dir / f'overall_morphology_variability_comparison_{snapshot_date}_Q{DISCHARGE}.png', dpi=300)
     plt.show()
 
     print(f'Saved comparison plot at {summary_output_dir} for {snapshot_key}')
@@ -1154,9 +1158,9 @@ for snapshot_key, snapshot_results in comparison_results.items():
         fig_ref.tight_layout(rect=[0, 0.03, 1, 0.97])
 
         if apply_detrending:
-            fig_ref.savefig(summary_output_dir / f'overall_morphology_variability_overlay_detrended_{snapshot_date}.png', dpi=300)
+            fig_ref.savefig(summary_output_dir / f'overall_morphology_variability_overlay_detrended_{snapshot_date}_Q{DISCHARGE}.png', dpi=300)
         else:
-            fig_ref.savefig(summary_output_dir / f'overall_morphology_variability_overlay_{snapshot_date}.png', dpi=300)
+            fig_ref.savefig(summary_output_dir / f'overall_morphology_variability_overlay_{snapshot_date}_Q{DISCHARGE}.png', dpi=300)
         plt.show()
         print(f'Saved noisy-envelope + variability overlay comparison at {summary_output_dir} for {snapshot_key}')
 
@@ -1237,7 +1241,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
             x_label = area_labels[0] if len(set(area_labels)) == 1 else 'Cumulative area'
             ax_h.set_xlabel(x_label)
             ax_h.set_ylabel('Bed elevation [m]')
-            ax_h.set_title(f'Hypsometric curves around {comparison_labels.get(snapshot_key, snapshot_key)}')
+            ax_h.set_title(f'Hypsometric curves around {comparison_labels.get(snapshot_key, snapshot_key)}  for $Q_{{mean}}$ = {DISCHARGE} m³/s')
             if not apply_detrending:
                 ax_h.axhline(y=bed_threshold, color='red', linestyle='--', alpha=0.7)
             ax_h.grid(True, alpha=0.2)
@@ -1245,9 +1249,9 @@ for snapshot_key, snapshot_results in comparison_results.items():
             fig_h.tight_layout()
             snapshot_date = comparison_labels.get(snapshot_key, snapshot_key)
             if apply_detrending:
-                fig_h.savefig(summary_output_dir / f'hypsometric_comparison_detrended_{snapshot_date}.png', dpi=300)
+                fig_h.savefig(summary_output_dir / f'hypsometric_comparison_detrended_{snapshot_date}_Q{DISCHARGE}.png', dpi=300)
             else:
-                fig_h.savefig(summary_output_dir / f'hypsometric_comparison_{snapshot_date}.png', dpi=300)
+                fig_h.savefig(summary_output_dir / f'hypsometric_comparison_{snapshot_date}_Q{DISCHARGE}.png', dpi=300)
             plt.show()
             print(f'Saved hypsometric comparison plot at {summary_output_dir} for {snapshot_key}')
         else:
