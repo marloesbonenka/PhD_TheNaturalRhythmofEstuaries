@@ -89,7 +89,7 @@ timed_out_dir = base_directory / config / "timed-out"
 
 # --- CROSS-SECTION SETTINGS ---
 # X-coordinates in meters (km value * 1000)
-selected_x_coords = [20000, 30000, 40000]
+selected_x_coords = [20000, 25000, 30000, 40000]
 
 # Y-range of the estuary (min, max) and sampling resolution
 # Compute exactly 5 km width to capture channel widening dynamics

@@ -50,10 +50,10 @@ VELOCITY_VAR = 'cross_section_velocity'
 WATERLEVEL_VAR = 'waterlevel'
 
 # Station filter (only longitudinal estuary stations used for slope/range)
-STATION_PATTERN = r'^ObservationCrossSection_Estuary_km(\d+)$'
+STATION_PATTERN = r'^Observation(?:Point|CrossSection)_Estuary_km(\d+)$'
 
 # Tidal-cycle settings
-TIDAL_CYCLE_HOURS = 12.42
+TIDAL_CYCLE_HOURS = 12
 EXCLUDE_LAST_TIMESTEP = True
 
 SCENARIO_LABELS = {
@@ -281,3 +281,4 @@ fig.savefig(output_dir / f"water_surface_slope_comparison_Q{DISCHARGE}.png", dpi
 plt.show()
 
 print(f"\nSaved outputs in: {output_dir}")
+#%%
