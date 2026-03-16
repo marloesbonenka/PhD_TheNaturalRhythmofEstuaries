@@ -27,12 +27,12 @@ from FUNCTIONS.F_general import get_variability_map, find_variability_model_fold
 
 # Variables to add to the cache. Add as many as needed.
 VARIABLES_TO_CACHE = [
-    # 'cross_section_discharge',
-    # 'cross_section_bedload_sediment_transport',
-    # 'cross_section_velocity',
-    # 'waterlevel',
+    'cross_section_discharge',
+    'cross_section_bedload_sediment_transport',
+    'cross_section_velocity',
+    'waterlevel',
     'bedlevel',
-    # 'cross_section_suspended_sediment_transport',
+    'cross_section_suspended_sediment_transport',
 ]
 
 # Box edges for buffer volume computation (only used for transport variables)
@@ -41,7 +41,7 @@ boxes = [(box_edges[i], box_edges[i + 1]) for i in range(len(box_edges) - 1)]
 
 # Scenario filters — match settings from your analysis script
 SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']
-DISCHARGE = 500
+DISCHARGE = 1000
 ANALYZE_NOISY = False
 
 # %% --- PATHS ---

@@ -20,7 +20,7 @@ from FUNCTIONS.F_general import get_variability_map, find_variability_model_fold
 
 #%% --- CONFIGURATION ---
 var_name = 'cross_section_bedload_sediment_transport' # cumulative bed load sediment transport [kg]
-output_dirname = Path("output_plots") / "plots_his_sedimentbuffer_envelope"
+output_dirname = Path("output_plots") / "plots_his_sedimentbuffer"
 
 mpl.rcParams['figure.figsize'] = (10, 5)
 
@@ -262,7 +262,7 @@ for box_key in boxes:
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
 
-    fig_path = output_dir / f"envelope_box_{box_start}_{box_end}km.png"
+    fig_path = output_dir / f"Q{DISCHARGE}_sedimentbuffer_box_{box_start}_{box_end}km.png"
     plt.savefig(fig_path, dpi=300, bbox_inches='tight')
     print(f"Saved: {fig_path}")
     plt.show()
