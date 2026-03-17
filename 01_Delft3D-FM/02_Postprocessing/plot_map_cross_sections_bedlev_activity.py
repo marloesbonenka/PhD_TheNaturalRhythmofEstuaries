@@ -11,10 +11,11 @@ Notes
 -----
 - Uses restart stitching pattern for complete time series
 - Supports both MORFAC sensitivity analysis and discharge variability analysis
-- Includes disk caching for fast reruns
+- Includes caching for fast reruns
 """
-
+#%%
 import sys
+import traceback
 from pathlib import Path
 
 import numpy as np
@@ -47,7 +48,7 @@ from FUNCTIONS.F_morphological_activity import (
     relative_bed_change,
 )
 
-
+#%%
 # =============================================================================
 # Configuration
 # =============================================================================
@@ -89,8 +90,8 @@ timed_out_dir = base_directory / config / "timed-out"
 
 # --- CROSS-SECTION SETTINGS ---
 # X-coordinates in meters (km value * 1000)
-selected_x_coords = [20000, 25000, 30000, 40000]
-
+selected_x_coords = [20000, 25000, 30000, 35000, 40000]
+#%%
 # Y-range of the estuary (min, max) and sampling resolution
 # Compute exactly 5 km width to capture channel widening dynamics
 # Based on MAP file: mesh2d_face_y ranges from 337.5 to 15000.5 m
@@ -120,8 +121,7 @@ n_slices = 5
 safety_buffer = 0.20
 
 # Output
-output_dirname = "output_plots" / "plots_crosssections_activity"
-
+output_dirname = Path("output_plots") / "plots_crosssections_activity"
 
 # =============================================================================
 # Search & Sort Folders
@@ -149,7 +149,7 @@ elif ANALYSIS_MODE == "morfac":
 
 print(f"Found {len(model_folders)} run folders in: {base_path}")
 
-
+#%%
 # =============================================================================
 # Main Processing Loop
 # =============================================================================
@@ -321,6 +321,7 @@ for folder in model_folders:
 
         except Exception as e:
             print(f"Error processing {folder}: {e}")
+            traceback.print_exc()
             continue
         finally:
             for ds in loaded_datasets:
@@ -435,3 +436,5 @@ dataset_cache.close_all()
 
 print("\n" + "="*60)
 print("ALL FOLDERS COMPLETED.")
+
+# %%

@@ -7,7 +7,7 @@ Assess along-estuary hydrodynamics from HIS output:
 This script follows the same scenario stitching logic as other HIS postprocessing
 scripts in this folder.
 """
-
+#%%
 import sys
 from pathlib import Path
 
@@ -29,11 +29,12 @@ mpl.rcParams.update({
 
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
 from FUNCTIONS.F_general import get_variability_map, find_variability_model_folders
+from FUNCTIONS.F_loaddata import select_representative_days
 from FUNCTIONS.F_tidalrange_currentspeed import (
     compute_cycle_windows,
     compute_slope_cm_per_km,
     cycle_metric,
-    load_station_waterlevels,
+    load_station_waterlevels_from_cache_or_his,
     load_velocity_from_his_or_cache,
 )
 
@@ -41,7 +42,7 @@ from FUNCTIONS.F_tidalrange_currentspeed import (
 # =============================================================================
 # CONFIG
 # =============================================================================
-DISCHARGE = 500
+DISCHARGE = 1000
 SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']
 OUTPUT_DIRNAME = 'plots_his_tidalrange_currentspeed'
 
@@ -55,6 +56,11 @@ STATION_PATTERN = r'^Observation(?:Point|CrossSection)_Estuary_km(\d+)$'
 # Tidal-cycle settings
 TIDAL_CYCLE_HOURS = 12
 EXCLUDE_LAST_TIMESTEP = True
+
+# Runtime/workability settings
+USE_REPRESENTATIVE_DAYS = True
+N_REPRESENTATIVE_PERIODS = 6
+SHOW_FIGURES = False
 
 SCENARIO_LABELS = {
     '1': 'Constant',
@@ -119,6 +125,18 @@ cache_dir = base_path / 'cached_data'
 cache_dir.mkdir(exist_ok=True)
 
 
+def subset_to_representative_days(times, matrix, n_periods):
+    """Reduce (time, x) arrays to one representative day per period."""
+    if (not USE_REPRESENTATIVE_DAYS) or len(times) < 2:
+        return times, matrix
+
+    idx = select_representative_days(times, n_periods=n_periods)
+    if idx.size == 0:
+        return times, matrix
+
+    return times[idx], matrix[idx, :]
+
+
 # =============================================================================
 # LOAD + PROCESS
 # =============================================================================
@@ -128,6 +146,7 @@ for folder in model_folders:
     scenario_key = str(int(folder.split('_')[0]))
     run_id = '_'.join(folder.split('_')[1:])
     cache_file = cache_dir / f"hisoutput_{int(scenario_key)}_{run_id}.nc"
+    station_cache_file = cache_dir / f"hisoutput_stations_{int(scenario_key)}_{run_id}.nc"
     his_file_paths = run_his_paths.get(folder)
 
     if his_file_paths is None:
@@ -147,7 +166,8 @@ for folder in model_folders:
     v = v_data[VELOCITY_VAR].values
 
     # 2) Water level (stations)
-    wl_data = load_station_waterlevels(
+    wl_data = load_station_waterlevels_from_cache_or_his(
+        station_cache_file,
         his_file_paths,
         waterlevel_var=WATERLEVEL_VAR,
         station_pattern=STATION_PATTERN,
@@ -156,6 +176,10 @@ for folder in model_folders:
     wl_times = wl_data['times']
     wl = wl_data['waterlevel']
     wl_km = wl_data['station_km']
+
+    # Use same reduced-time logic for both velocity and water level to keep this workable.
+    v_times, v = subset_to_representative_days(v_times, v, N_REPRESENTATIVE_PERIODS)
+    wl_times, wl = subset_to_representative_days(wl_times, wl, N_REPRESENTATIVE_PERIODS)
 
     # 3) Per-tidal-cycle metrics
     tr_times, tidal_range = cycle_metric(
@@ -197,6 +221,8 @@ for folder in model_folders:
 
     print(f"  Tidal range cycles: {len(tr_times)} | stations: {len(wl_km)}")
     print(f"  Speed cycles:       {len(cs_times)} | cross-sections: {len(v_km)}")
+    if USE_REPRESENTATIVE_DAYS:
+        print(f"  Representative-day mode: {N_REPRESENTATIVE_PERIODS} periods")
 
 
 # =============================================================================
@@ -229,7 +255,10 @@ for scenario_key in sorted(scenario_results.keys()):
     ax1.set_title(f"{d['label']} - tidal range per tidal cycle")
     fig1.tight_layout()
     fig1.savefig(output_dir / f"tidal_range_heatmap_Q{DISCHARGE}_{scenario_key}.png", dpi=300, bbox_inches='tight')
-    plt.show()
+    if SHOW_FIGURES:
+        plt.show()
+    else:
+        plt.close(fig1)
 
     # --- Heatmap: current speed ---
     fig2, ax2 = plt.subplots(figsize=(10, 5))
@@ -247,7 +276,10 @@ for scenario_key in sorted(scenario_results.keys()):
     ax2.set_title(f"{d['label']} - current speed per tidal cycle")
     fig2.tight_layout()
     fig2.savefig(output_dir / f"current_speed_heatmap_Q{DISCHARGE}_{scenario_key}.png", dpi=300, bbox_inches='tight')
-    plt.show()
+    if SHOW_FIGURES:
+        plt.show()
+    else:
+        plt.close(fig2)
 
     # --- Time series: water-surface slope ---
     fig3, ax3 = plt.subplots(figsize=(10, 4))
@@ -259,7 +291,10 @@ for scenario_key in sorted(scenario_results.keys()):
     ax3.grid(alpha=0.3)
     fig3.tight_layout()
     fig3.savefig(output_dir / f"water_surface_slope_Q{DISCHARGE}_{scenario_key}.png", dpi=300, bbox_inches='tight')
-    plt.show()
+    if SHOW_FIGURES:
+        plt.show()
+    else:
+        plt.close(fig3)
 
 
 # --- Cross-scenario comparison: slope ---
@@ -278,7 +313,10 @@ ax.grid(alpha=0.3)
 ax.legend()
 fig.tight_layout()
 fig.savefig(output_dir / f"water_surface_slope_comparison_Q{DISCHARGE}.png", dpi=300, bbox_inches='tight')
-plt.show()
+if SHOW_FIGURES:
+    plt.show()
+else:
+    plt.close(fig)
 
 print(f"\nSaved outputs in: {output_dir}")
 #%%

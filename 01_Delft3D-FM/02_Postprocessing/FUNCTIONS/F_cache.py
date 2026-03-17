@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 import json
 from typing import Any, Hashable, Iterable, Tuple
+from uuid import uuid4
 
 import numpy as np
 import pandas as pd
@@ -220,10 +221,36 @@ def _list_groups(cache_path: Path, root: str) -> list[str]:
 
 
 def _profiles_to_dataset(data: dict) -> xr.Dataset:
-    profiles = np.asarray(data.get('profiles'))
-    times = np.asarray(data.get('times') or data.get('time_series'))
+    profiles_raw = data.get('profiles')
+    profiles = np.asarray(profiles_raw)
+    # Avoid boolean evaluation of pandas objects (e.g., DatetimeIndex).
+    times_raw = data.get('times')
+    if times_raw is None:
+        times_raw = data.get('time_series')
+    times = np.asarray(times_raw)
     dist = np.asarray(data.get('dist'))
     morfac = data.get('morfac')
+
+    if profiles.ndim != 2:
+        raise ValueError(
+            f"Expected 2D profiles array [time, dist], got shape {profiles.shape}"
+        )
+    if times.ndim != 1:
+        raise ValueError(
+            f"Expected 1D time coordinate, got shape {times.shape}"
+        )
+    if dist.ndim != 1:
+        raise ValueError(
+            f"Expected 1D dist coordinate, got shape {dist.shape}"
+        )
+    if profiles.shape[0] != times.shape[0]:
+        raise ValueError(
+            f"Profiles/time mismatch: {profiles.shape[0]} profile rows vs {times.shape[0]} times"
+        )
+    if profiles.shape[1] != dist.shape[0]:
+        raise ValueError(
+            f"Profiles/dist mismatch: {profiles.shape[1]} profile cols vs {dist.shape[0]} dist points"
+        )
 
     ds = xr.Dataset(
         data_vars={
@@ -249,6 +276,155 @@ def _dataset_to_profile(ds: xr.Dataset) -> dict:
     if 'morfac' in ds:
         result['morfac'] = ds['morfac'].values.item() if ds['morfac'].size == 1 else ds['morfac'].values
     return result
+
+
+def _profile_var_name(cs_name: str) -> str:
+    return f"profiles_{cs_name}"
+
+
+def _time_var_name(cs_name: str) -> str:
+    return f"time_{cs_name}"
+
+
+def _dist_var_name(cs_name: str) -> str:
+    return f"dist_{cs_name}"
+
+
+def _is_flat_profile_cache(ds: xr.Dataset) -> bool:
+    return any(name.startswith("profiles_") for name in ds.data_vars)
+
+
+def _read_flat_profile_cache(ds: xr.Dataset, required_x_coords: list) -> tuple[dict, list]:
+    found = {}
+    missing = []
+
+    for x_coord in required_x_coords:
+        cs_name = f"km{int(x_coord / 1000)}"
+        p_name = _profile_var_name(cs_name)
+        t_name = _time_var_name(cs_name)
+        d_name = _dist_var_name(cs_name)
+
+        if p_name not in ds.data_vars or t_name not in ds.variables or d_name not in ds.variables:
+            missing.append(x_coord)
+            continue
+
+        times = ds[t_name].values
+        dist = ds[d_name].values
+        profiles = ds[p_name].values
+
+        # Drop NaT/NaN padding introduced by outer alignment on shared dimensions.
+        if np.issubdtype(times.dtype, np.datetime64):
+            valid_t = ~np.isnat(times)
+        else:
+            valid_t = ~np.isnan(times)
+
+        if np.issubdtype(dist.dtype, np.floating):
+            valid_d = ~np.isnan(dist)
+        else:
+            valid_d = np.ones(dist.shape, dtype=bool)
+
+        times_clean = times[valid_t]
+        dist_clean = dist[valid_d]
+        profiles_clean = profiles[np.ix_(valid_t, valid_d)]
+
+        found[cs_name] = {
+            'profiles': profiles_clean,
+            'times': times_clean,
+            'dist': dist_clean,
+            'morfac': ds.attrs.get(f'morfac_{cs_name}', ds.attrs.get('morfac')),
+        }
+
+    return found, missing
+
+
+def _read_all_flat_profile_cache(ds: xr.Dataset) -> dict:
+    found = {}
+
+    for p_name in ds.data_vars:
+        if not p_name.startswith("profiles_"):
+            continue
+
+        cs_name = p_name.replace("profiles_", "", 1)
+        t_name = _time_var_name(cs_name)
+        d_name = _dist_var_name(cs_name)
+
+        if t_name not in ds.variables or d_name not in ds.variables:
+            continue
+
+        times = ds[t_name].values
+        dist = ds[d_name].values
+        profiles = ds[p_name].values
+
+        if np.issubdtype(times.dtype, np.datetime64):
+            valid_t = ~np.isnat(times)
+        else:
+            valid_t = ~np.isnan(times)
+
+        if np.issubdtype(dist.dtype, np.floating):
+            valid_d = ~np.isnan(dist)
+        else:
+            valid_d = np.ones(dist.shape, dtype=bool)
+
+        found[cs_name] = {
+            'profiles': profiles[np.ix_(valid_t, valid_d)],
+            'times': times[valid_t],
+            'dist': dist[valid_d],
+            'morfac': ds.attrs.get(f'morfac_{cs_name}', ds.attrs.get('morfac')),
+        }
+
+    return found
+
+
+def _build_flat_profile_cache_dataset(results: dict, settings: dict | None) -> xr.Dataset:
+    data_vars = {}
+    attrs = {
+        'settings_json': _encode_attrs(settings or {}),
+        'cache_format': 'profiles_flat_v1',
+    }
+
+    for cs_name, data in results.items():
+        profiles = np.asarray(data['profiles'])
+        times_raw = data.get('times')
+        if times_raw is None:
+            times_raw = data.get('time_series')
+        times = np.asarray(times_raw)
+        dist = np.asarray(data['dist'])
+
+        if profiles.ndim != 2:
+            raise ValueError(
+                f"Expected 2D profiles array [time, dist], got shape {profiles.shape}"
+            )
+        if times.ndim != 1:
+            raise ValueError(
+                f"Expected 1D time coordinate, got shape {times.shape}"
+            )
+        if dist.ndim != 1:
+            raise ValueError(
+                f"Expected 1D dist coordinate, got shape {dist.shape}"
+            )
+        if profiles.shape[0] != times.shape[0]:
+            raise ValueError(
+                f"Profiles/time mismatch for {cs_name}: {profiles.shape[0]} profile rows vs {times.shape[0]} times"
+            )
+        if profiles.shape[1] != dist.shape[0]:
+            raise ValueError(
+                f"Profiles/dist mismatch for {cs_name}: {profiles.shape[1]} profile cols vs {dist.shape[0]} dist points"
+            )
+
+        t_dim = f"time_{cs_name}"
+        d_dim = f"dist_{cs_name}"
+        p_name = _profile_var_name(cs_name)
+        t_name = _time_var_name(cs_name)
+        d_name = _dist_var_name(cs_name)
+
+        data_vars[t_name] = xr.DataArray(times, dims=[t_dim])
+        data_vars[d_name] = xr.DataArray(dist, dims=[d_dim])
+        data_vars[p_name] = xr.DataArray(profiles, dims=[t_dim, d_dim])
+
+        if data.get('morfac') is not None:
+            attrs[f'morfac_{cs_name}'] = _to_jsonable(data['morfac'])
+
+    return xr.Dataset(data_vars=data_vars, attrs=attrs)
 
 
 def load_profile_cache(
@@ -278,24 +454,14 @@ def load_profile_cache(
         return {}, required_x_coords
     
     try:
-        found = {}
-        missing = []
-
-        for x_coord in required_x_coords:
-            cs_name = f"km{int(x_coord / 1000)}"
-            group_path = f"profiles/{cs_name}"
-            try:
-                ds = xr.open_dataset(cache_path, group=group_path)
-            except Exception:
-                ds = None
-
-            if ds is not None and 'profiles' in ds:
-                found[cs_name] = _dataset_to_profile(ds)
-                ds.close()
-            else:
-                missing.append(x_coord)
-
-        return found, missing
+        ds_root = xr.open_dataset(cache_path)
+        try:
+            if not _is_flat_profile_cache(ds_root):
+                print(f"  Cache file exists but is not flat profile cache format: {cache_path}")
+                return {}, required_x_coords
+            return _read_flat_profile_cache(ds_root, required_x_coords)
+        finally:
+            ds_root.close()
 
     except Exception as e:
         print(f"  Warning: Could not load cache {cache_path}: {e}")
@@ -314,24 +480,49 @@ def save_profile_cache(cache_path: Path, results: dict, settings: dict = None) -
     settings : dict, optional
         Settings used to generate the data.
     """
-    # Load existing cache if present (to merge)
+    # Load existing cache if present (flat format only) to merge partial updates.
     existing = {}
     if cache_path.exists():
-        for cs_name in _list_groups(cache_path, 'profiles'):
-            ds = xr.open_dataset(cache_path, group=f"profiles/{cs_name}")
-            existing[cs_name] = _dataset_to_profile(ds)
-            ds.close()
+        ds_existing_root = xr.open_dataset(cache_path)
+        try:
+            if _is_flat_profile_cache(ds_existing_root):
+                existing = _read_all_flat_profile_cache(ds_existing_root)
+            else:
+                print(f"  Existing cache not flat profile format, ignoring old content: {cache_path}")
+        finally:
+            ds_existing_root.close()
 
     # Merge: new results overwrite existing for same cross-sections
     merged = {**existing, **results}
 
-    root_ds = xr.Dataset()
-    root_ds.attrs['settings_json'] = _encode_attrs(settings or {})
-    root_ds.to_netcdf(cache_path, mode='w', engine='netcdf4')
+    # Do not overwrite cache with an empty skeleton file.
+    if not merged:
+        print(f"  Warning: No profile results to cache, skipping write: {cache_path}")
+        return
 
-    for cs_name, data in merged.items():
-        ds = _profiles_to_dataset(data)
-        ds.to_netcdf(cache_path, mode='a', group=f"profiles/{cs_name}", engine='netcdf4')
+    tmp_path = cache_path.with_name(f"{cache_path.stem}.{uuid4().hex}.tmp{cache_path.suffix}")
+
+    # Write one flat dataset to a temp file first, then replace target atomically.
+    try:
+        ds_out = _build_flat_profile_cache_dataset(merged, settings)
+        comp = dict(zlib=True, complevel=4)
+        encoding = {
+            name: comp
+            for name in ds_out.data_vars
+            if name.startswith('profiles_')
+        }
+        ds_out.to_netcdf(tmp_path, mode='w', engine='netcdf4', encoding=encoding)
+
+        tmp_path.replace(cache_path)
+        print(f"  Saved profile cache: {cache_path} ({len(merged)} cross-sections)")
+    except Exception as exc:
+        raise RuntimeError(f"Failed writing profile cache to {cache_path}") from exc
+    finally:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except Exception:
+                pass
 
 
 # =============================================================================
