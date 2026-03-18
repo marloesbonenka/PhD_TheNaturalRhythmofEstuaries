@@ -164,7 +164,21 @@ def create_terrain_colormap():
     ]
     return LinearSegmentedColormap.from_list("custom_terrain", colors)
 
-terrain_cmap = create_terrain_colormap()
+def create_detrended_blev_colormap():
+    colors = [
+        (0.00, "#000066"),  # deep navy
+        (0.15, "#0000ff"),  # pure blue
+        (0.35, "#00ccff"),  # cyan-blue
+        (0.46, "#aaeeff"),  # pale cyan
+        (0.50, "#ffffff"),  # white — zero
+        (0.54, "#ffffaa"),  # pale yellow
+        (0.65, "#ffdd00"),  # yellow
+        (0.85, "#ffcc00"),  # gold
+        (1.00, "#cc9900"),  # deep gold
+    ]
+    return LinearSegmentedColormap.from_list(
+        "tidal_diverging", colors
+    )
 
 def create_bedlevel_colormap():
     colors = [

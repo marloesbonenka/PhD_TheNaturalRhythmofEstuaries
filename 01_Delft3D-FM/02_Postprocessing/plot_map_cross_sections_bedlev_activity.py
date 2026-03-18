@@ -30,7 +30,7 @@ sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Post
 from FUNCTIONS.F_general import (
     get_mf_number,
     create_bedlevel_colormap,
-    create_terrain_colormap,
+    create_detrended_blev_colormap,
     get_variability_map,
     find_variability_model_folders,
     )
@@ -63,7 +63,7 @@ PLOT_RELATIVE_BEDCHANGE = False
 
 
 if ANALYSIS_MODE == "variability":
-    DISCHARGE = 1000  # or 1000, etc.
+    DISCHARGE = 500  # or 1000, etc.
     base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
     config = f'Model_Output/Q{DISCHARGE}'
     VARIABILITY_MAP = None
@@ -405,9 +405,11 @@ for folder in model_folders:
                     morph_years=morph_years,
                     title=f"{folder}: {cs_name}{discharge_title_tag}",
                     outpath=outpath,
-                    cmap=create_terrain_colormap(),
+                    cmap=create_detrended_blev_colormap(),
                     show=True,
-                    profile_xlim=profile_xlim
+                    profile_xlim=profile_xlim,
+                    vmax = 3,
+                    vmin = -3
                 )
 
             if PLOT_RELATIVE_BEDCHANGE:

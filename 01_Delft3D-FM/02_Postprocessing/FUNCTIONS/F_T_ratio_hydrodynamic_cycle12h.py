@@ -7,8 +7,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import xarray as xr
 
-from FUNCTIONS.F_loaddata import load_cross_section_data
+from FUNCTIONS.F_loaddata import load_cross_section_data, load_cross_section_data_from_cache
 
 
 # =============================================================================
@@ -112,15 +113,39 @@ def _select_window_values(df, *, year_start=None, year_duration=1.0, col='T_hydr
 def load_hydro_cross_section_data(
 	his_paths,
 	*,
+	cache_file=None,
 	estuary_only=True,
 	km_range=(20, 45),
 	exclude_last_timestep=True,
 	exclude_last_n_days=0,
 	dataset_cache=None,
 ):
+	q_var = 'cross_section_discharge'
+
+	if cache_file is not None:
+		cache_path = Path(cache_file)
+		if cache_path.exists():
+			try:
+				with xr.open_dataset(cache_path) as ds_cache:
+					if q_var not in ds_cache:
+						print(f"  [cache] {cache_path.name} exists but misses '{q_var}'; falling back to raw HIS.")
+					else:
+						print(f"  [cache] Using {cache_path.name} ({q_var})")
+						return load_cross_section_data_from_cache(
+							cache_path,
+							q_var=q_var,
+							select_cycles_hydrodynamic=False,
+							select_max_flood=False,
+							select_max_flood_per_cycle=False,
+							exclude_last_timestep=exclude_last_timestep,
+							exclude_last_n_days=exclude_last_n_days,
+						)
+			except Exception as exc:
+				print(f"  [cache] Failed to load {cache_path.name}: {exc}. Falling back to raw HIS.")
+
 	return load_cross_section_data(
 		his_paths,
-		q_var='cross_section_discharge',
+		q_var=q_var,
 		estuary_only=estuary_only,
 		km_range=km_range,
 		select_cycles_hydrodynamic=False,
@@ -141,7 +166,10 @@ def compute_T_hydro_cycle_based(
 	amp_percentiles=(5, 95),
 ):
 	"""Compute hydrodynamic T ratio per fixed-length cycle."""
-	discharge = data['discharge']
+	# Support both legacy and current loader keys.
+	discharge = data.get('cross_section_discharge', data.get('discharge'))
+	if discharge is None:
+		raise KeyError("Missing discharge data. Expected key 'cross_section_discharge' (or legacy 'discharge').")
 	km_positions = np.asarray(data['km_positions'])
 	time_hours = np.asarray(data['time_hours'])
 
@@ -235,6 +263,94 @@ def plot_Thydro_vs_morfac_min_mean_max(*, min_df, mean_df, max_df, title, output
 	ax.axhline(1.0, color='black', linewidth=1, linestyle='--', alpha=0.6)
 	ax.set_xlabel('MORFAC [-]', fontsize=11, fontweight='bold')
 	ax.set_ylabel(r'T$_{hydro}$ [-]', fontsize=11, fontweight='bold')
+	ax.set_title(title, fontsize=12, fontweight='bold')
+	ax.grid(True, alpha=0.4, linestyle=':')
+	ax.legend(loc='best', fontsize=9)
+	plt.tight_layout()
+	fig.savefig(output_path, dpi=300, bbox_inches='tight')
+	if show:
+		plt.show()
+	else:
+		plt.close(fig)
+
+
+def plot_Thydro_vs_run(df, *, x_col, xlabel, title, output_path: Path, show=False):
+	fig, ax = plt.subplots(figsize=(6, 4))
+	if not df.empty:
+		ax.plot(df[x_col], df['T_hydro'], 'o-', linewidth=2)
+	ax.axhline(1.0, color='black', linewidth=1, linestyle='--', alpha=0.6)
+	ax.set_xlabel(xlabel, fontsize=11, fontweight='bold')
+	ax.set_ylabel(r'T$_{hydro}$ [-]', fontsize=11, fontweight='bold')
+	ax.set_title(title, fontsize=12, fontweight='bold')
+	ax.grid(True, alpha=0.4, linestyle=':')
+	plt.tight_layout()
+	fig.savefig(output_path, dpi=300, bbox_inches='tight')
+	if show:
+		plt.show()
+	else:
+		plt.close(fig)
+
+
+def plot_Thydro_vs_run_min_mean_max(*, min_df, mean_df, max_df, x_col, xlabel, title, output_path: Path, show=False):
+	fig, ax = plt.subplots(figsize=(6, 4))
+	if not min_df.empty:
+		ax.plot(min_df[x_col], min_df['T_hydro'], 'o-', linewidth=2, label='min')
+	if not mean_df.empty:
+		ax.plot(mean_df[x_col], mean_df['T_hydro'], 'o-', linewidth=2, label='mean')
+	if not max_df.empty:
+		ax.plot(max_df[x_col], max_df['T_hydro'], 'o-', linewidth=2, label='max')
+	ax.axhline(1.0, color='black', linewidth=1, linestyle='--', alpha=0.6)
+	ax.set_xlabel(xlabel, fontsize=11, fontweight='bold')
+	ax.set_ylabel(r'T$_{hydro}$ [-]', fontsize=11, fontweight='bold')
+	ax.set_title(title, fontsize=12, fontweight='bold')
+	ax.grid(True, alpha=0.4, linestyle=':')
+	ax.legend(loc='best', fontsize=9)
+	plt.tight_layout()
+	fig.savefig(output_path, dpi=300, bbox_inches='tight')
+	if show:
+		plt.show()
+	else:
+		plt.close(fig)
+
+
+def plot_exceedance_by_run(results, *, run_values, run_labels, title, output_path: Path, year_start=None, year_duration=1.0, show=False):
+	fig, ax = plt.subplots(figsize=(7, 4))
+	for run_id in run_values:
+		df = results.get(run_id)
+		vals = _select_window_values(df, year_start=year_start, year_duration=year_duration, col='T_hydro')
+		if vals.size == 0:
+			continue
+		vals = np.sort(vals)
+		n = vals.size
+		exc = 1.0 - (np.arange(1, n + 1) / n)
+		label = run_labels.get(run_id, str(run_id))
+		ax.plot(vals, exc, linewidth=2, label=label)
+	ax.axvline(1.0, color='black', linewidth=1, linestyle='--', alpha=0.6)
+	ax.set_xlabel('T [-]', fontsize=11, fontweight='bold')
+	ax.set_ylabel('Exceedance P(T > x) [-]', fontsize=11, fontweight='bold')
+	ax.set_title(title, fontsize=12, fontweight='bold')
+	ax.grid(True, alpha=0.4, linestyle=':')
+	ax.legend(loc='best', fontsize=9)
+	plt.tight_layout()
+	fig.savefig(output_path, dpi=300, bbox_inches='tight')
+	if show:
+		plt.show()
+	else:
+		plt.close(fig)
+
+
+def plot_pdf_by_run(results, *, run_values, run_labels, title, output_path: Path, year_start=None, year_duration=1.0, bins=30, show=False):
+	fig, ax = plt.subplots(figsize=(7, 4))
+	for run_id in run_values:
+		df = results.get(run_id)
+		vals = _select_window_values(df, year_start=year_start, year_duration=year_duration, col='T_hydro')
+		if vals.size == 0:
+			continue
+		label = run_labels.get(run_id, str(run_id))
+		ax.hist(vals, bins=bins, density=True, histtype='step', linewidth=2, label=label)
+	ax.axvline(1.0, color='black', linewidth=1, linestyle='--', alpha=0.6)
+	ax.set_xlabel('T [-]', fontsize=11, fontweight='bold')
+	ax.set_ylabel('PDF [-]', fontsize=11, fontweight='bold')
 	ax.set_title(title, fontsize=12, fontweight='bold')
 	ax.grid(True, alpha=0.4, linestyle=':')
 	ax.legend(loc='best', fontsize=9)
