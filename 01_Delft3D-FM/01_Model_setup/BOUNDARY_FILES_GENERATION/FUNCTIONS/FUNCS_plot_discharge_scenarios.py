@@ -110,9 +110,10 @@ def plot_discharge_scenarios_first_year(
 
     plt.figure(figsize=(12,6))
     for idx, (scenario_name, df_year) in enumerate(series_data):
-        cv = compute_CV(df_year)
-        flashiness = compute_p90_p10(df_year)
-        label_name = f"{get_scenario_label(scenario_name)}\nCV={cv:.2f}, $p_{{90}}/p_{{10}}$={flashiness:.2f}"
+        # cv = compute_CV(df_year)
+        # flashiness = compute_p90_p10(df_year)
+        compute_p95_mean_value = compute_p95_mean(df_year)
+        label_name = f"{get_scenario_label(scenario_name)}\nCV={cv:.2f}, $p_{{95}}/p_{{mean}}$={compute_p95_mean_value:.2f}"
         color = get_scenario_color(scenario_name)
         plt.plot(
             df_year["timestamp"],
@@ -139,6 +140,85 @@ def plot_discharge_scenarios_first_year(
     plt.close()
 
 
+def plot_normalized_discharge_variability_one_case(
+    scenario_csv_paths,
+    output_dir,
+    output_filename="discharge_variability_normalized_one_case.png",
+):
+    """
+    Plot normalized discharge variability for one discharge case.
+
+    Normalization is done with the mean discharge of the first simulation year
+    for each scenario to provide a dimensionless, one-plot-fits-all comparison.
+    """
+    if not scenario_csv_paths:
+        raise ValueError("No scenario CSV paths provided.")
+
+    scenario_items = list(scenario_csv_paths.items())
+    first_year = None
+    series_data = []
+
+    for scenario_name, csv_path in scenario_items:
+        csv_path = Path(csv_path)
+        if not csv_path.exists():
+            raise FileNotFoundError(f"CSV not found: {csv_path}")
+
+        df = pd.read_csv(csv_path)
+        if "timestamp" not in df.columns or "discharge_m3s" not in df.columns:
+            raise ValueError(f"CSV missing required columns: {csv_path}")
+
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df = df.sort_values("timestamp")
+
+        if first_year is None:
+            first_year = df["timestamp"].min().year
+
+        df_year = df[df["timestamp"].dt.year == first_year].copy()
+        if df_year.empty:
+            continue
+
+        mean_q = df_year["discharge_m3s"].mean()
+        if mean_q == 0:
+            df_year["discharge_norm"] = 0.0
+        else:
+            df_year["discharge_norm"] = df_year["discharge_m3s"] / mean_q
+
+        df_year["day_of_year"] = df_year["timestamp"].dt.dayofyear
+        series_data.append((scenario_name, df_year))
+
+    if not series_data:
+        raise ValueError("No valid first-year data found in the provided CSV files.")
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    fig, ax = plt.subplots(figsize=(11, 5.5))
+    for scenario_name, df_year in series_data:
+        compute_p95_mean_value = compute_p95_mean(df_year)
+        label_name = (
+            f"{get_scenario_label(scenario_name)}:"
+            f"(p95/mean={compute_p95_mean_value:.2f})"
+        )
+        color = get_scenario_color(scenario_name)
+        ax.plot(
+            df_year["day_of_year"],
+            df_year["discharge_norm"],
+            label=label_name,
+            color=color,
+            linewidth=2,
+        )
+
+    ax.set_xlabel("day of year")
+    ax.set_ylabel("normalized discharge [-]")
+    ax.set_xlim(1, 366)
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="upper right")
+
+    fig.tight_layout()
+    fig.savefig(output_dir / output_filename, dpi=300, transparent=True)
+    plt.close(fig)
+
+
 def compute_CV(df):
     """
     Compute the coefficient of variation (CV) as a measure of flashiness.
@@ -156,4 +236,12 @@ def compute_p90_p10(df):
     p90 = df["discharge_m3s"].quantile(0.9)
     p10 = df["discharge_m3s"].quantile(0.1)
     return p90/p10
+
+def compute_p95_mean(df):
+    """
+    Compute the 95th and mean percentiles of discharge.
+    """
+    p95 = df["discharge_m3s"].quantile(0.95)
+    mean = df["discharge_m3s"].mean()
+    return p95/mean
 

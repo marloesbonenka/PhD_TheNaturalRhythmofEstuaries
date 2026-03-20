@@ -5,7 +5,10 @@ import sys
 # Add the FUNCTIONS directory to the path
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\01_Model_setup\BOUNDARY_FILES_GENERATION")
 
-from FUNCTIONS.FUNCS_plot_discharge_scenarios import plot_discharge_scenarios_first_year
+from FUNCTIONS.FUNCS_plot_discharge_scenarios import (
+    plot_discharge_scenarios_first_year,
+    plot_normalized_discharge_variability_one_case,
+)
 #%%
 
 # Base directory containing all scenario subfolders
@@ -62,5 +65,30 @@ for discharge_val, scenario_csv_paths in scenario_groups.items():
 print(f"All plots saved to: {output_base_dir}")
 
 # %%
+# Plot normalized discharge variability for one selected case.
+# Set this to a specific discharge value like "250", "500" or "1000".
+target_discharge_case = "500"
+
+if target_discharge_case not in scenario_groups:
+    available_cases = sorted(scenario_groups.keys())
+    raise ValueError(
+        f"target_discharge_case '{target_discharge_case}' not found. "
+        f"Available cases: {available_cases}"
+    )
+
+target_scenarios = scenario_groups[target_discharge_case]
+if not target_scenarios:
+    raise ValueError(f"No scenarios found for discharge case {target_discharge_case}.")
+
+normalized_output_dir = output_base_dir / f"discharge_{target_discharge_case}"
+print(
+    "Creating normalized variability plot for one case: "
+    f"Q={target_discharge_case} m³/s"
+)
+plot_normalized_discharge_variability_one_case(
+    target_scenarios,
+    normalized_output_dir,
+    output_filename=f"discharge_variability_normalized_Q{target_discharge_case}.png",
+)
 
 
