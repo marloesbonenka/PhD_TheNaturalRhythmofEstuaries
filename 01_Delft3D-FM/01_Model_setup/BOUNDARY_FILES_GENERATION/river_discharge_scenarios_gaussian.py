@@ -37,13 +37,17 @@ ZOOM_WINDOW_DAYS = 50
 ZOOM_CENTER_DAY = days / 2
 
 #%% --- 2. Define Combinations ---
-# Format: Name: (Peak_Ratio, Number_of_Events)
+# Format: Name: (Peak_Ratio, Number_of_Events, Mode)
+# Mode:
+# - "positive": classic pulses above low-flow base
+# - "bipolar": paired positive and negative Gaussian pulses around Q_mean_target
+#              (equal area, so yearly mean stays near target)
 scenarios = {
-    "Constant": (1.0, 0),
-    "Seasonal": (2.0, 2),
-    "Wet/dry":  (3.0, 5),
-    "Flashy":   (3.5, 1),
-    "Episodic": (5.0, 1) # Single massive event
+    "Constant": (1.0, 0, "positive"),
+    "Seasonal": (1.0, 2, "bipolar"),
+    "Wet/dry":  (3.0, 5, "positive"),
+    "Flashy":   (3.5, 2, "positive"),
+    "Episodic": (5.0, 1, "positive"),
 }
 
 SCENARIO_COLORS = {
@@ -95,43 +99,63 @@ fig_m_zoom, (ax_m_zoom_q, ax_m_zoom_t) = plt.subplots(
 
 scenario_hd_series = {}
 
-for name, (ratio, n_events) in scenarios.items():
+for name, (ratio, n_events, mode) in scenarios.items():
     color = SCENARIO_COLORS[name]
 
     if name == "Constant":
         q_vals = np.full(days, Q_mean_target)
     else:
-        Q_peak = Q_mean_target * ratio
-        A = Q_peak - Q_base
-        V_event = V_total_excess / n_events
-        sigma = V_event / (A * np.sqrt(2 * np.pi))
+        if mode == "positive":
+            Q_peak = Q_mean_target * ratio
+            A = Q_peak - Q_base
+            V_event = V_total_excess / n_events
+            sigma = V_event / (A * np.sqrt(2 * np.pi))
 
-        # Place events at the center of n equal segments, avoiding the edges
-        segment = days / n_events
-        event_centers = np.linspace(segment / 2, days - segment / 2, n_events)
-        q_vals = np.full(days, Q_base)
-        for t0 in event_centers:
-            q_vals += A * np.exp(-(t_hd - t0)**2 / (2 * sigma**2))
+            # Place events at the center of n equal segments, avoiding the edges
+            segment = days / n_events
+            event_centers = np.linspace(segment / 2, days - segment / 2, n_events)
+            q_vals = np.full(days, Q_base)
+            for t0 in event_centers:
+                q_vals += A * np.exp(-(t_hd - t0)**2 / (2 * sigma**2))
+        elif mode == "bipolar":
+            # Build anomaly around mean with paired +/- Gaussians.
+            # The anomaly is de-meaned to keep the yearly mean exactly at Q_mean_target.
+            anomaly = np.zeros(days, dtype=float)
+            A = (ratio - 1.0) * Q_mean_target
+            segment = days / n_events
+            event_centers = np.linspace(segment / 2, days - segment / 2, n_events)
+            sigma = max(1.0, segment / 8.0)
+            separation = max(1.5 * sigma, segment / 4.0)
+
+            for t0 in event_centers:
+                t_pos = t0 - separation / 2.0
+                t_neg = t0 + separation / 2.0
+                anomaly += A * np.exp(-(t_hd - t_pos) ** 2 / (2 * sigma ** 2))
+                anomaly -= A * np.exp(-(t_hd - t_neg) ** 2 / (2 * sigma ** 2))
+
+            anomaly -= anomaly.mean()
+            q_vals = Q_mean_target + anomaly
+        else:
+            raise ValueError(f"Unknown scenario mode '{mode}' for scenario '{name}'.")
 
     scenario_hd_series[name] = q_vals
 
     # Hydrodynamic discharge: full-period and zoomed
-    ax_h_full.plot(t_hd, q_vals, lw=2, color=color, label=f'{name} (n={n_events}, P/M={ratio})')
-    ax_h_zoom_q.plot(t_hd, q_vals, lw=2, color=color, label=f'{name} (n={n_events}, P/M={ratio})')
+    ax_h_full.plot(t_hd, q_vals, lw=2, color=color, label=f'{name} (n={n_events}, P/M={ratio}, {mode})')
+    ax_h_zoom_q.plot(t_hd, q_vals, lw=2, color=color, label=f'{name} (n={n_events}, P/M={ratio}, {mode})')
 
     # Morphodynamic discharge: full-period and zoomed
     q_stepped = np.append(q_vals, q_vals[-1])
     ax_m_full.step(t_md, q_stepped, where='post', color=color, alpha=0.7, lw=1.5,
-                   label=f'{name} (n={n_events}, P/M={ratio})')
+                                     label=f'{name} (n={n_events}, P/M={ratio}, {mode})')
     ax_m_zoom_q.step(t_md, q_stepped, where='post', color=color, alpha=0.7, lw=1.5,
-                     label=f'{name} (n={n_events}, P/M={ratio})')
+                                         label=f'{name} (n={n_events}, P/M={ratio}, {mode})')
 
 # Plot tidal signals in zoomed figures
 ax_h_zoom_t.plot(t_tide_hd, tide_hd, color='k', lw=1.0)
 ax_m_zoom_t.step(t_tide_md, tide_md, where='post', color='k', lw=1.0)
 
 # --- 4. Formatting full-period discharge figures ---
-ax_h_full.set_ylim(0, Q_mean_target * 5.5)
 ax_h_full.set_xlim(0, days)
 ax_h_full.set_title("Hydrodynamic time: magnitude & frequency combinations", fontsize=14)
 ax_h_full.set_xlabel("Hydrodynamic time [days]")
@@ -139,7 +163,6 @@ ax_h_full.set_ylabel("Discharge [m³/s]")
 ax_h_full.legend(loc='best')
 ax_h_full.grid(True, alpha=0.2)
 
-ax_m_full.set_ylim(0, Q_mean_target * 5.5)
 ax_m_full.set_xlim(0, days * mf)
 ax_m_full.set_title(f"Morphodynamic time (morfac = {mf})", fontsize=14)
 ax_m_full.set_xlabel("Morphodynamic time [days]")
@@ -148,7 +171,6 @@ ax_m_full.legend(loc='best')
 ax_m_full.grid(True, alpha=0.2)
 
 # --- 5. Formatting zoomed hydrodynamic figure ---
-ax_h_zoom_q.set_ylim(0, Q_mean_target * 5.5)
 ax_h_zoom_q.set_xlim(zoom_start_hd, zoom_end_hd)
 ax_h_zoom_q.set_title(
     f"Hydrodynamic zoom ({ZOOM_WINDOW_DAYS} days, centered near mid-year)",
@@ -165,7 +187,6 @@ ax_h_zoom_t.set_ylabel("Tide [m]")
 ax_h_zoom_t.grid(True, alpha=0.2)
 
 # --- 6. Formatting zoomed morphodynamic figure ---
-ax_m_zoom_q.set_ylim(0, Q_mean_target * 5.5)
 ax_m_zoom_q.set_xlim(zoom_start_md, zoom_end_md)
 ax_m_zoom_q.set_title(
     f"Morphodynamic zoom ({ZOOM_WINDOW_DAYS} hydro-days, centered near mid-year, morfac = {mf})",
@@ -194,9 +215,9 @@ for name, q_vals in scenario_hd_series.items():
     ax_norm.plot(t_hd + 1, q_norm, lw=2, color=color, label=label_name)
 
 ax_norm.set_xlim(1, days)
-ax_norm.set_xlabel("Day of year")
-ax_norm.set_ylabel("Normalized discharge [-]")
-ax_norm.set_title("Hydrodynamic discharge variability (normalized by yearly mean)", fontsize=14)
+ax_norm.set_xlabel("day of year")
+ax_norm.set_ylabel("normalized discharge [-]")
+# ax_norm.set_title("Hydrodynamic discharge variability (normalized by yearly mean)", fontsize=14)
 ax_norm.grid(True, alpha=0.2)
 ax_norm.legend(loc='best', labelcolor='linecolor')
 
