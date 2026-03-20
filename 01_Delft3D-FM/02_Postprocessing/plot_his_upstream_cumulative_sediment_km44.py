@@ -21,10 +21,10 @@ from FUNCTIONS.F_general import get_variability_map, find_variability_model_fold
 # Configuration
 # =========================
 SED_VAR = "cross_section_bedload_sediment_transport"
-RIVER_KM = 44
+RIVER_KM = 42
 
 SCENARIOS_TO_PROCESS = ["1", "2", "3", "4"]
-DISCHARGE = 500
+DISCHARGE = 1000
 ANALYZE_NOISY = False
 
 SCENARIO_LABELS = {
@@ -150,8 +150,7 @@ for folder, his_paths in run_his_paths.items():
     km_actual = float(km_positions[idx_upstream])
 
     time = pd.to_datetime(np.asarray(data["t"]))
-    cumulative = np.asarray(data[SED_VAR])[:, idx_upstream]
-    cumulative_change = cumulative - cumulative[0]
+    sediment_transport = np.asarray(data[SED_VAR])[:, idx_upstream]
 
     scenario_label = SCENARIO_LABELS.get(scenario_num, folder.name)
 
@@ -162,14 +161,14 @@ for folder, his_paths in run_his_paths.items():
             "run_folder": folder.name,
             "km_actual": km_actual,
             "time": time,
-            "cumulative_change": cumulative_change,
-            "final_change": float(cumulative_change[-1]),
+            "sediment_transport": sediment_transport,
+            "final_value": float(sediment_transport[-1]),
         }
     )
 
     print(
         f"{folder.name}: km target={RIVER_KM}, km actual={km_actual:.2f}, "
-        f"final change={cumulative_change[-1]:.3e}"
+        f"final value={sediment_transport[-1]:.3e}"
     )
 
 if comparison_series:
@@ -182,16 +181,16 @@ if comparison_series:
             f"{series['scenario_label']} ({series['run_folder']}, "
             f"km={series['km_actual']:.2f})"
         )
-        ax.plot(series["time"], series["cumulative_change"], lw=1.8, color=color, label=label)
+        ax.plot(series["time"], series["sediment_transport"], lw=1.8, color=color, label=label)
 
-    ax.set_title(f"Upstream cumulative sediment change at km {RIVER_KM} | $Q_{{mean}}$ = {DISCHARGE} m³/s")
+    ax.set_title(f"Upstream bedload sediment transport at km {RIVER_KM} | $Q_{{mean}}$ = {DISCHARGE} m³/s")
     ax.set_xlabel("Time")
-    ax.set_ylabel("Cumulative sediment change from start")
+    ax.set_ylabel("cross_section_bedload_sediment_transport")
     ax.grid(alpha=0.3)
     ax.legend(loc="best", fontsize=9)
     fig.tight_layout()
 
-    fig_path = OUTPUT_DIR / f"comparison_upstream_km{RIVER_KM}_cumulative_sediment_Q{DISCHARGE}.png"
+    fig_path = OUTPUT_DIR / f"comparison_upstream_km{RIVER_KM}_bedload_transport_Q{DISCHARGE}.png"
     fig.savefig(fig_path, dpi=300, bbox_inches="tight")
     plt.show()
     print(f"Saved comparison plot: {fig_path}")

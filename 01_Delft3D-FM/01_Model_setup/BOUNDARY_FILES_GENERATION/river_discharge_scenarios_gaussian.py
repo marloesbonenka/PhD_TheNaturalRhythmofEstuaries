@@ -17,13 +17,15 @@ Q_base = 700.0
 V_total_excess = (Q_mean_target - Q_base) * days
 
 # Optional output settings
-SAVE_HYDRO_DISCHARGE_FIG = False
-SAVE_MORPHO_DISCHARGE_FIG = False
-SAVE_HYDRO_ZOOM_FIG = False
-SAVE_MORPHO_ZOOM_FIG = False
+SAVE_HYDRO_DISCHARGE_FIG = True
+SAVE_MORPHO_DISCHARGE_FIG = True
+SAVE_HYDRO_ZOOM_FIG = True
+SAVE_MORPHO_ZOOM_FIG = True
 FIG_DPI = 300
 
-OUTPUT_DIR = Path(__file__).resolve().parent
+OUTPUT_DIR = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Input\Gaussian_scenarios_figures")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
 HYDRO_DISCHARGE_FIG_NAME = "river_discharge_scenarios_hydro.png"
 MORPHO_DISCHARGE_FIG_NAME = "river_discharge_scenarios_morpho.png"
 HYDRO_ZOOM_FIG_NAME = "river_discharge_scenarios_hydro_zoom50d_with_tide.png"

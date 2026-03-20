@@ -46,7 +46,7 @@ dis_var        = 'cross_section_discharge'
 output_dirname = "plots_his_max_floodintrusion"
 
 SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']
-DISCHARGE            = 1000
+DISCHARGE            = 500
 
 SCENARIO_LABELS = {
     '1': 'Constant',
@@ -263,6 +263,73 @@ ax.grid(alpha=0.3)
 
 fig.tight_layout()
 fname = f"moving_avg_{MA_PERIOD}_flood_intrusion_km_over_time_Q{DISCHARGE}.png"
+fig.savefig(output_dir / fname, dpi=300, bbox_inches='tight')
+plt.show()
+print(f"\nSaved: {output_dir / fname}")
+
+# %%
+# ── SEPARATE P50 PLOT ────────────────────────────────────────────────────────
+fig, ax = plt.subplots(figsize=(10, 10))
+
+for scenario_key in sorted(processed.keys()):
+    d = processed[scenario_key]
+
+    t = np.array(d['t_years'])
+    flood = np.array(d['max_flood_km'])
+
+    dt = np.median(np.diff(t))
+    window = max(1, round(period_years / dt))
+
+    flood_p50 = pd.Series(flood).rolling(window=window, center=True, min_periods=1).quantile(0.5)
+
+    ax.plot(flood, t, color=d['color'], linewidth=0.5, alpha=0.3)
+    ax.plot(flood_p50, t, color=d['color'], linewidth=2.0, linestyle='--', label=d['label'])
+
+ax.set_xlim(20, 45)
+ax.set_xlabel('Flood intrusion (km from sea)', fontsize=11)
+ax.set_ylabel('Simulation time (years)', fontsize=11)
+ax.set_title(
+    f'Maximum flood intrusion point over time  (Q{DISCHARGE}, {MA_PERIOD} rolling p50)',
+    fontsize=12
+)
+ax.legend(fontsize=10)
+ax.grid(alpha=0.3)
+
+fig.tight_layout()
+fname = f"moving_p50_{MA_PERIOD}_flood_intrusion_km_over_time_Q{DISCHARGE}.png"
+fig.savefig(output_dir / fname, dpi=300, bbox_inches='tight')
+plt.show()
+print(f"\nSaved: {output_dir / fname}")
+# %%
+# ── SEPARATE P40 PLOT ────────────────────────────────────────────────────────
+fig, ax = plt.subplots(figsize=(10, 10))
+
+for scenario_key in sorted(processed.keys()):
+    d = processed[scenario_key]
+
+    t = np.array(d['t_years'])
+    flood = np.array(d['max_flood_km'])
+
+    dt = np.median(np.diff(t))
+    window = max(1, round(period_years / dt))
+
+    flood_p40 = pd.Series(flood).rolling(window=window, center=True, min_periods=1).quantile(0.4)
+
+    ax.plot(flood, t, color=d['color'], linewidth=0.5, alpha=0.3)
+    ax.plot(flood_p40, t, color=d['color'], linewidth=2.0, linestyle='--', label=d['label'])
+
+ax.set_xlim(20, 45)
+ax.set_xlabel('Flood intrusion (km from sea)', fontsize=11)
+ax.set_ylabel('Simulation time (years)', fontsize=11)
+ax.set_title(
+    f'Maximum flood intrusion point over time  (Q{DISCHARGE}, {MA_PERIOD} rolling p40)',
+    fontsize=12
+)
+ax.legend(fontsize=10)
+ax.grid(alpha=0.3)
+
+fig.tight_layout()
+fname = f"moving_p40_{MA_PERIOD}_flood_intrusion_km_over_time_Q{DISCHARGE}.png"
 fig.savefig(output_dir / fname, dpi=300, bbox_inches='tight')
 plt.show()
 print(f"\nSaved: {output_dir / fname}")
