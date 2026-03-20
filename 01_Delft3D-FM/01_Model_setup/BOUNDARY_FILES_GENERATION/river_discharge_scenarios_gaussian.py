@@ -21,6 +21,7 @@ SAVE_HYDRO_DISCHARGE_FIG = True
 SAVE_MORPHO_DISCHARGE_FIG = True
 SAVE_HYDRO_ZOOM_FIG = True
 SAVE_MORPHO_ZOOM_FIG = True
+SAVE_NORMALIZED_DISCHARGE_FIG = True
 FIG_DPI = 300
 
 OUTPUT_DIR = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Input\Gaussian_scenarios_figures")
@@ -30,6 +31,7 @@ HYDRO_DISCHARGE_FIG_NAME = "river_discharge_scenarios_hydro.png"
 MORPHO_DISCHARGE_FIG_NAME = "river_discharge_scenarios_morpho.png"
 HYDRO_ZOOM_FIG_NAME = "river_discharge_scenarios_hydro_zoom50d_with_tide.png"
 MORPHO_ZOOM_FIG_NAME = "river_discharge_scenarios_morpho_zoom50d_with_tide.png"
+NORMALIZED_DISCHARGE_FIG_NAME = "river_discharge_scenarios_hydro_normalized.png"
 
 ZOOM_WINDOW_DAYS = 50
 ZOOM_CENTER_DAY = days / 2
@@ -91,6 +93,8 @@ fig_m_zoom, (ax_m_zoom_q, ax_m_zoom_t) = plt.subplots(
     sharex=False,
 )
 
+scenario_hd_series = {}
+
 for name, (ratio, n_events) in scenarios.items():
     color = SCENARIO_COLORS[name]
 
@@ -108,6 +112,8 @@ for name, (ratio, n_events) in scenarios.items():
         q_vals = np.full(days, Q_base)
         for t0 in event_centers:
             q_vals += A * np.exp(-(t_hd - t0)**2 / (2 * sigma**2))
+
+    scenario_hd_series[name] = q_vals
 
     # Hydrodynamic discharge: full-period and zoomed
     ax_h_full.plot(t_hd, q_vals, lw=2, color=color, label=f'{name} (n={n_events}, P/M={ratio})')
@@ -175,10 +181,30 @@ ax_m_zoom_t.set_xlabel("Morphodynamic time [days]")
 ax_m_zoom_t.set_ylabel("Tide [m]")
 ax_m_zoom_t.grid(True, alpha=0.2)
 
+# --- 7. Normalized discharge figure (hydrodynamic) ---
+fig_norm, ax_norm = plt.subplots(1, 1, figsize=(10, 6))
+
+for name, q_vals in scenario_hd_series.items():
+    q_mean = np.mean(q_vals)
+    q_peak = np.max(q_vals)
+    peak_pmean = 0.0 if q_mean == 0 else q_peak / q_mean
+    q_norm = np.zeros_like(q_vals) if q_mean == 0 else q_vals / q_mean
+    color = SCENARIO_COLORS[name]
+    label_name = f"{name}\n$peak/p_{{mean}}$={peak_pmean:.2f}"
+    ax_norm.plot(t_hd + 1, q_norm, lw=2, color=color, label=label_name)
+
+ax_norm.set_xlim(1, days)
+ax_norm.set_xlabel("Day of year")
+ax_norm.set_ylabel("Normalized discharge [-]")
+ax_norm.set_title("Hydrodynamic discharge variability (normalized by yearly mean)", fontsize=14)
+ax_norm.grid(True, alpha=0.2)
+ax_norm.legend(loc='best', labelcolor='linecolor')
+
 fig_h_full.tight_layout()
 fig_m_full.tight_layout()
 fig_h_zoom.tight_layout()
 fig_m_zoom.tight_layout()
+fig_norm.tight_layout()
 
 if SAVE_HYDRO_DISCHARGE_FIG:
     fig_h_full.savefig(OUTPUT_DIR / HYDRO_DISCHARGE_FIG_NAME, dpi=FIG_DPI, bbox_inches='tight')
@@ -191,6 +217,9 @@ if SAVE_HYDRO_ZOOM_FIG:
 
 if SAVE_MORPHO_ZOOM_FIG:
     fig_m_zoom.savefig(OUTPUT_DIR / MORPHO_ZOOM_FIG_NAME, dpi=FIG_DPI, bbox_inches='tight')
+
+if SAVE_NORMALIZED_DISCHARGE_FIG:
+    fig_norm.savefig(OUTPUT_DIR / NORMALIZED_DISCHARGE_FIG_NAME, dpi=FIG_DPI, bbox_inches='tight')
 
 plt.show()
 #%%

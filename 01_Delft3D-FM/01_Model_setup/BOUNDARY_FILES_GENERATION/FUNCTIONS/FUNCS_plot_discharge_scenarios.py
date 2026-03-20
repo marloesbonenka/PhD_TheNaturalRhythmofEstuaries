@@ -108,12 +108,12 @@ def plot_discharge_scenarios_first_year(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    plt.figure(figsize=(12,6))
+    plt.figure(figsize=(10,6))
     for idx, (scenario_name, df_year) in enumerate(series_data):
         # cv = compute_CV(df_year)
         # flashiness = compute_p90_p10(df_year)
         compute_p95_mean_value = compute_p95_mean(df_year)
-        label_name = f"{get_scenario_label(scenario_name)}\nCV={cv:.2f}, $p_{{95}}/p_{{mean}}$={compute_p95_mean_value:.2f}"
+        label_name = f"{get_scenario_label(scenario_name)}\n$p_{{95}}/p_{{mean}}$={compute_p95_mean_value:.2f}"
         color = get_scenario_color(scenario_name)
         plt.plot(
             df_year["timestamp"],
@@ -127,7 +127,7 @@ def plot_discharge_scenarios_first_year(
     plt.xlabel("date")
     plt.ylabel("discharge [m³/s]")
     plt.grid(True, alpha=0.3)
-    plt.legend(loc="center left", bbox_to_anchor=(1, 0.5), labelcolor="linecolor")
+    plt.legend(loc="upper right", labelcolor="linecolor")
 
     ax = plt.gca()
     ax.tick_params(axis="both", which="major")
@@ -192,12 +192,11 @@ def plot_normalized_discharge_variability_one_case(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    fig, ax = plt.subplots(figsize=(11, 5.5))
+    fig, ax = plt.subplots(figsize=(10, 6))
     for scenario_name, df_year in series_data:
-        compute_p95_mean_value = compute_p95_mean(df_year)
+        # compute_p95_mean_value = compute_p95_mean(df_year)
         label_name = (
-            f"{get_scenario_label(scenario_name)}:"
-            f"(p95/mean={compute_p95_mean_value:.2f})"
+            f"{get_scenario_label(scenario_name)}"
         )
         color = get_scenario_color(scenario_name)
         ax.plot(
@@ -212,7 +211,7 @@ def plot_normalized_discharge_variability_one_case(
     ax.set_ylabel("normalized discharge [-]")
     ax.set_xlim(1, 366)
     ax.grid(True, alpha=0.3)
-    ax.legend(loc="upper right")
+    ax.legend(loc="upper right", labelcolor="linecolor")
 
     fig.tight_layout()
     fig.savefig(output_dir / output_filename, dpi=300, transparent=True)
