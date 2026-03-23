@@ -46,7 +46,7 @@ dis_var        = 'cross_section_discharge'
 output_dirname = "plots_his_max_floodintrusion"
 
 SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']
-DISCHARGE            = 500
+DISCHARGE            = 1000
 
 SCENARIO_LABELS = {
     '1': 'Constant',
@@ -270,7 +270,7 @@ print(f"\nSaved: {output_dir / fname}")
 
 # %%
 # ── SEPARATE P50 PLOT ────────────────────────────────────────────────────────
-fig, ax = plt.subplots(figsize=(10, 10))
+fig, ax = plt.subplots(figsize=(10, 6))
 
 for scenario_key in sorted(processed.keys()):
     d = processed[scenario_key]
@@ -283,10 +283,11 @@ for scenario_key in sorted(processed.keys()):
 
     flood_p50 = pd.Series(flood).rolling(window=window, center=True, min_periods=1).quantile(0.5)
 
-    ax.plot(flood, t, color=d['color'], linewidth=0.5, alpha=0.3)
-    ax.plot(flood_p50, t, color=d['color'], linewidth=2.0, linestyle='--', label=d['label'])
+    ax.plot(flood, 100 * t, color=d['color'], linewidth=0.5, alpha=0.3)
+    ax.plot(flood_p50, 100 * t, color=d['color'], linewidth=2.0, linestyle='--', label=d['label'])
 
-ax.set_xlim(20, 45)
+ax.set_xlim(19.5, 45)
+ax.set_ylim(0, 3100)
 ax.set_xlabel('flood intrusion (x-coordinate along estuary)', fontsize=11)
 ax.set_ylabel('years', fontsize=11)
 ax.set_title(

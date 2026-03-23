@@ -40,7 +40,7 @@ APPEND_TIMESTEPS = True
 APPEND_VARIABLES = True
 
 # --- Variability mode settings ---
-DISCHARGE            = 500
+DISCHARGE            = 1000
 SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']
 run_startdate        = '2025-01-01'
 

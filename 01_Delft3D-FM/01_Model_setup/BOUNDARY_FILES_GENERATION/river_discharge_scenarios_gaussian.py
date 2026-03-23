@@ -49,12 +49,13 @@ scenarios = {
     "Flashy":   (3.5, 2, "positive"),
     "Episodic": (5.0, 1, "positive"),
 }
+# colorblind friendly
 
 SCENARIO_COLORS = {
-    "Constant": '#1f77b4',
-    "Seasonal": '#ff7f0e',
-    "Wet/dry":  '#2ca02c',
-    "Flashy":   '#d62728',
+    "Constant": '#56B4E9',
+    "Seasonal": '#E69F00',
+    "Wet/dry":  '#009E73',
+    "Flashy":   '#D55E00',
     "Episodic": '#9467bd'
 }
 

@@ -83,7 +83,7 @@ estuary_coords = {
     'Taeryong': (39.63, 125.48),            #North Korea
     'Tapi': (21.15, 72.75),                 #India
     'Yangon': (16.52, 96.29),               #Myanmar
-    'Bian': (-8.10, 139.97),                #Indonesia   
+    # 'Bian': (-8.10, 139.97),                #Indonesia   
     'Western Scheldt': (51.42, 3.57),       #Netherlands
 
     # #Excluded                                                         because:

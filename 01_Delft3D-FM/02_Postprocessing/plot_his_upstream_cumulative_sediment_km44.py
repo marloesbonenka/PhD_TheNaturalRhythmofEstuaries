@@ -5,7 +5,7 @@ for each variability scenario.
 Outputs:
 - One comparison plot with all scenarios overlaid
 """
-
+#%%
 from pathlib import Path
 import re
 
@@ -15,16 +15,16 @@ import matplotlib.pyplot as plt
 
 from FUNCTIONS.F_loaddata import load_and_cache_scenario
 from FUNCTIONS.F_general import get_variability_map, find_variability_model_folders
-
+#%%
 
 # =========================
 # Configuration
 # =========================
 SED_VAR = "cross_section_bedload_sediment_transport"
-RIVER_KM = 42
+RIVER_KM = 45
 
 SCENARIOS_TO_PROCESS = ["1", "2", "3", "4"]
-DISCHARGE = 1000
+DISCHARGE = 500
 ANALYZE_NOISY = False
 
 SCENARIO_LABELS = {
@@ -34,11 +34,12 @@ SCENARIO_LABELS = {
     "4": "Single peak",
 }
 
+# colorblind friendly
 SCENARIO_COLORS = {
-    "1": "#1f77b4",
-    "2": "#ff7f0e",
-    "3": "#2ca02c",
-    "4": "#d62728",
+    '1': '#56B4E9', #'#1f77b4',   # blue   – Constant
+    '2': '#E69F00', #'#ff7f0e',   # orange – Seasonal
+    '3': '#009E73', # '#2ca02c',   # green  – Flashy
+    '4': '#D55E00', #'#d62728',   # red    – Single peak
 }
 
 BASE_DIRECTORY = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
@@ -178,14 +179,14 @@ if comparison_series:
     for series in comparison_series:
         color = SCENARIO_COLORS.get(series["scenario_number"], None)
         label = (
-            f"{series['scenario_label']} ({series['run_folder']}, "
-            f"km={series['km_actual']:.2f})"
+            f"{series['scenario_label']}"# ({series['run_folder']}, "
+            #f"km={series['km_actual']:.2f})"
         )
         ax.plot(series["time"], series["sediment_transport"], lw=1.8, color=color, label=label)
 
-    ax.set_title(f"Upstream bedload sediment transport at km {RIVER_KM} | $Q_{{mean}}$ = {DISCHARGE} m³/s")
+    ax.set_title(f"km {RIVER_KM} | $Q_{{mean}}$ = {DISCHARGE} m³/s")
     ax.set_xlabel("Time")
-    ax.set_ylabel("cross_section_bedload_sediment_transport")
+    ax.set_ylabel("cumulative sediment transport [kg]")
     ax.grid(alpha=0.3)
     ax.legend(loc="best", fontsize=9)
     fig.tight_layout()

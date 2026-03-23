@@ -275,14 +275,15 @@ def plot_estuary_timeseries(estuary_name, discharge_series, sed_series, datetime
     fac_label = f"  [fac={scaling_factor:.3f}]" if scaling_factor != 1.0 else ""
 
     plt.figure(figsize=(10, 6))
-    plt.plot(datetimes, discharge_series, label=estuary_name, color='tab:blue')
-    plt.axhline(mean_discharge, linestyle='dashed', color='orange',
-                label=f'mean = {mean_discharge:.2f}')
-    plt.xlabel('Time')
-    plt.ylabel('River Discharge $Q_{river}$ [m³/s]')
-    plt.title(f'$Q_{{river}}$ for {estuary_name} based on WBMsed{fac_label}')
+    plt.plot(datetimes, discharge_series, label=estuary_name, color='#BDE9F5')  # Light blue
+    # plt.axhline(mean_discharge, linestyle='dashed', color='orange',
+                # label=f'mean = {mean_discharge:.2f}')
+    plt.xlabel('time')
+    plt.ylabel('$Q_{river}$ [m³/s]')
+    # plt.title(f'$Q_{{river}}$ for {estuary_name} based on WBMsed{fac_label}')
+    plt.title(f'{estuary_name}')
     plt.grid(True, alpha=0.3)
-    plt.legend(loc='upper right')
+    # plt.legend(loc='upper right')
     
     outdir = Path(output_dir) if output_dir else None
     if savefig and outdir:
