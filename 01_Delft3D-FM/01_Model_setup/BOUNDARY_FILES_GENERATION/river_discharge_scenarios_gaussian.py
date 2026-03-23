@@ -44,7 +44,7 @@ ZOOM_CENTER_DAY = days / 2
 #              (equal area, so yearly mean stays near target)
 scenarios = {
     "Constant": (1.0, 0, "positive"),
-    "Seasonal": (1.0, 2, "bipolar"),
+    "Seasonal": (2.0, 1, "bipolar"),
     "Wet/dry":  (3.0, 5, "positive"),
     "Flashy":   (3.5, 2, "positive"),
     "Episodic": (5.0, 1, "positive"),

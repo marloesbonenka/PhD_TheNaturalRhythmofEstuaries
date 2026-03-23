@@ -36,7 +36,7 @@ from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
 #%% --- CONFIGURATION ---
 # Model output
-DISCHARGE = 1000  # or 1000, etc.
+DISCHARGE = 500  # or 1000, etc.
 NOISY = False
 ADD_NON_NOISY_BASELINE_Q500 = False
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
@@ -113,7 +113,6 @@ SCENARIO_COLORS = {
     '4': '#d62728',   # red    - Single peak
 }
 BASELINE_COLOR = next(iter(SCENARIO_COLORS.values()))
-
 
 #%% --- SEARCH & SORT FOLDERS ---
 base_path = base_directory / config
@@ -977,7 +976,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
     has_md = compare_max_depth and any('MaxDepth' in d for d in snapshot_results.values())
 
     if has_bl or has_md:
-        fig_stack, axes_stack = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+        fig_stack, axes_stack = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
 
         # Top panel: width-averaged bed level
         if has_bl:
@@ -1039,6 +1038,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
 
             axes_stack[0].set_title('width-averaged bed level')
             axes_stack[0].set_ylabel('bed level [m]')
+            axes_stack[0].set_ylim(bottom=-3, top=5)
             axes_stack[0].legend(loc='best')
             axes_stack[0].grid(True, alpha=0.2)
         else:
@@ -1053,6 +1053,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 y_stack = stack_metric_arrays(run_items, 'MaxDepth')
                 if y_stack is None:
                     continue
+                y_stack = -y_stack
                 first_with_x = next((d for _, d in run_items if 'x_centers' in d), None)
                 if first_with_x is None:
                     continue
@@ -1071,6 +1072,8 @@ for snapshot_key, snapshot_results in comparison_results.items():
 
                 if scenario in baseline_groups:
                     y_base = stack_metric_arrays(baseline_groups[scenario], 'MaxDepth')
+                    if y_base is not None:
+                        y_base = -y_base
                     base_x_data = next((d for _, d in baseline_groups[scenario] if 'x_centers' in d), None)
                     _plot_noisy_context(
                         axes_stack[1],
@@ -1103,8 +1106,9 @@ for snapshot_key, snapshot_results in comparison_results.items():
                     if NOISY and y_stack is not None and y_stack.shape[0] > 0:
                         noisy_legend_added = True
 
-            axes_stack[1].set_title(f'p{depth_percentile} channel depth')
-            axes_stack[1].set_ylabel('depth [m]')
+            axes_stack[1].set_title(f'maximum channel depth')
+            axes_stack[1].set_ylabel('bed level [m]')
+            axes_stack[1].set_ylim(bottom=-9, top=-1)
             axes_stack[1].legend(loc='best')
             axes_stack[1].grid(True, alpha=0.2)
         else:
