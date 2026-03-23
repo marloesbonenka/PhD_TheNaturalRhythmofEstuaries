@@ -29,7 +29,7 @@ from FUNCTIONS.F_sedimentbuffers import (
 # Workflow:
 # - "full": original detailed per-scenario and sensitivity analysis
 # - "envelope": noisy-envelope + variability comparison plots
-WORKFLOW_MODE = "full"
+WORKFLOW_MODE = "envelope"
 
 sed_var   = 'cross_section_bedload_sediment_transport'
 dis_var   = 'cross_section_discharge'
@@ -58,12 +58,13 @@ SPINUP_STEPS = 24 * 3  # 3 days, adjust based on your output interval
 
 # Scenario filters
 SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']
-DISCHARGE   = 1000
+DISCHARGE   = 500
 ANALYZE_NOISY = False
 
 # Envelope mode settings
 BASE_SCENARIO = '1'
-ENVELOPE_PLOT_MODE = 'all'  # 'noise_only' or 'all'
+ENVELOPE_PLOT_MODE = 'scenarios_only'  # 'noise_only', 'all', or 'scenarios_only'
+SHOW_NOISY_ENVELOPE = False  # If False, keep scenario comparison lines only (no grey noisy runs/envelope).
 
 # Human-readable labels per scenario number (used in combined plots)
 SCENARIO_LABELS = {
@@ -73,12 +74,12 @@ SCENARIO_LABELS = {
     '4': 'Single peak',
 }
 
-# Colours: one per scenario (used in combined sensitivity / recovery plots)
+# colorblind friendly
 SCENARIO_COLORS = {
-    '1': '#1f77b4',   # blue   – Constant
-    '2': '#ff7f0e',   # orange – Seasonal
-    '3': '#2ca02c',   # green  – Flashy
-    '4': '#d62728',   # red    – Single peak
+    '1': '#56B4E9', #'#1f77b4',   # blue   – Constant
+    '2': '#E69F00', #'#ff7f0e',   # orange – Seasonal
+    '3': '#009E73', # '#2ca02c',   # green  – Flashy
+    '4': '#D55E00', #'#d62728',   # red    – Single peak
 }
 
 # %% --- PATHS ---
@@ -122,6 +123,7 @@ if WORKFLOW_MODE == "envelope":
         scenario_colors=SCENARIO_COLORS,
         base_scenario=BASE_SCENARIO,
         envelope_plot_mode=ENVELOPE_PLOT_MODE,
+        show_noisy_envelope=SHOW_NOISY_ENVELOPE,
     )
     raise SystemExit(0)
 

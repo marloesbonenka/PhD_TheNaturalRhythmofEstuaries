@@ -122,6 +122,7 @@ def run_envelope_workflow(
     scenario_colors,
     base_scenario='1',
     envelope_plot_mode='all',
+    show_noisy_envelope=True,
 ):
     """Run noisy-envelope plots for sediment buffer volumes."""
     scenario_config = {
@@ -137,10 +138,19 @@ def run_envelope_workflow(
     noisy_base_path = variability_base_path / f"0_Noise_Q{discharge}"
     noisy_cache_dir = noisy_base_path / "cached_data"
 
+    valid_modes = {'noise_only', 'all', 'scenarios_only'}
+    if envelope_plot_mode not in valid_modes:
+        raise ValueError(
+            f"Unknown envelope_plot_mode='{envelope_plot_mode}'. "
+            f"Choose one of {sorted(valid_modes)}."
+        )
+    if envelope_plot_mode == 'noise_only' and not show_noisy_envelope:
+        raise ValueError("show_noisy_envelope=False is incompatible with envelope_plot_mode='noise_only'.")
+
     if envelope_plot_mode == 'noise_only':
-        envelope_output_dir = noisy_base_path / output_dirname
+        envelope_output_dir = noisy_base_path / "output_plots" / output_dirname
     else:
-        envelope_output_dir = variability_base_path / output_dirname
+        envelope_output_dir = variability_base_path / "output_plots" / output_dirname
     envelope_output_dir.mkdir(parents=True, exist_ok=True)
     print(f"Envelope output dir: {envelope_output_dir}")
 
@@ -165,7 +175,7 @@ def run_envelope_workflow(
     base_cfg = scenario_config[base_scenario]
 
     variability_runs = {}
-    if envelope_plot_mode == 'all':
+    if envelope_plot_mode in {'all', 'scenarios_only'}:
         other_nums = {int(k) for k in scenario_config if k != base_scenario}
         all_var_runs = load_sedimentbuffer_runs(
             base_path=variability_base_path,
@@ -188,7 +198,8 @@ def run_envelope_workflow(
                 'color': scenario_config[scenario_num]['color'],
             }
 
-    if noisy_base_path.exists():
+    noisy_runs = {}
+    if show_noisy_envelope and envelope_plot_mode in {'all', 'noise_only'} and noisy_base_path.exists():
         noisy_runs = load_sedimentbuffer_runs(
             base_path=noisy_base_path,
             cache_dir=noisy_cache_dir,
@@ -199,7 +210,7 @@ def run_envelope_workflow(
             analyze_noisy=True,
             scenario_filter=None,
         )
-    else:
+    elif show_noisy_envelope and envelope_plot_mode in {'all', 'noise_only'}:
         noisy_runs = {}
         print(f"[INFO] No noisy base path found: {noisy_base_path}")
 
@@ -210,7 +221,7 @@ def run_envelope_workflow(
             f"No noisy runs found in {noisy_base_path}. "
             f"Set envelope_plot_mode='all' or add noisy runs."
         )
-    if envelope_plot_mode == 'all' and not noisy_runs:
+    if envelope_plot_mode == 'all' and show_noisy_envelope and not noisy_runs:
         print("[INFO] No noisy runs found; plotting base + variability scenarios without noisy envelope.")
 
     all_times = [base_time]
@@ -218,13 +229,29 @@ def run_envelope_workflow(
     all_times += [r['time'] for r in variability_runs.values()]
     t_end_min = min(t[-1] for t in all_times)
     print(f"Shortest simulation end time across all runs: {t_end_min}")
+    line_width = 1.6
+
+    ref_time = base_time[0]
+
+    def _to_morph_time(time_array):
+        """Convert time to morphological-time axis: (hydrodynamic year + 1) * 100."""
+        t = np.asarray(time_array)
+        if np.issubdtype(t.dtype, np.datetime64):
+            hydro_years = (t - ref_time) / np.timedelta64(365, 'D')
+            return (hydro_years + 1.0) * 100.0
+
+        # Fallback for numeric time arrays; assumes values are in hydrodynamic years.
+        t0 = np.asarray(ref_time).astype(np.float64)
+        hydro_years = t.astype(np.float64) - t0
+        return (hydro_years + 1.0) * 100.0
 
     for box_key in boxes:
         box_start, box_end = box_key
         fig, ax = plt.subplots()
 
-        if noisy_runs:
+        if show_noisy_envelope and noisy_runs:
             base_time_trimmed = base_time[trim_to_end(base_time, t_end_min)]
+            base_time_trimmed_morph = _to_morph_time(base_time_trimmed)
             noisy_stack = align_runs_to_common_time(base_time_trimmed, noisy_runs, box_key)
 
             base_buf_for_env = base_buffers.get(box_key)
@@ -244,17 +271,18 @@ def run_envelope_workflow(
                     if buf is None:
                         continue
                     mask = trim_to_end(run_data['time'], t_end_min)
+                    t_morph = _to_morph_time(run_data['time'][mask])
                     ax.plot(
-                        run_data['time'][mask],
+                        t_morph,
                         buf[mask],
                         color='grey',
                         alpha=0.35,
-                        linewidth=0.7,
+                        linewidth=line_width,
                         label='Noisy runs' if i == 0 else None,
                     )
 
                 ax.fill_between(
-                    base_time_trimmed,
+                    base_time_trimmed_morph,
                     env_min,
                     env_max,
                     color='grey',
@@ -262,35 +290,59 @@ def run_envelope_workflow(
                     label='Noisy envelope',
                 )
 
-        if envelope_plot_mode == 'all':
+        if envelope_plot_mode in {'all', 'scenarios_only'}:
             for run_data in variability_runs.values():
                 buf = run_data['buffers'].get(box_key)
                 if buf is None:
                     continue
                 mask = trim_to_end(run_data['time'], t_end_min)
+                t_morph = _to_morph_time(run_data['time'][mask])
                 ax.plot(
-                    run_data['time'][mask],
+                    t_morph,
                     buf[mask],
                     color=run_data['color'],
-                    linewidth=1.2,
+                    linewidth=line_width,
                     label=run_data['label'],
                 )
 
         base_buf = base_buffers.get(box_key)
         if base_buf is not None:
             mask = trim_to_end(base_time, t_end_min)
+            t_morph = _to_morph_time(base_time[mask])
             ax.plot(
-                base_time[mask],
+                t_morph,
                 base_buf[mask],
                 color=base_cfg['color'],
-                linewidth=1.8,
+                linewidth=line_width,
                 label=base_cfg['label'],
             )
 
-        ax.set_xlabel('Time')
-        ax.set_ylabel('Buffer Volume (m³)')
-        ax.set_title(f'Sediment buffer volume — {box_start}–{box_end} km')
-        ax.legend()
+        ax.set_xlabel('time [years]')
+        ax.set_ylabel('sediment buffer volume [m$^3$]')
+        ax.set_title(f'{box_start}-{box_end}km')
+
+        handles, labels = ax.get_legend_handles_labels()
+        desired_order = [
+            scenario_labels['1'],
+            scenario_labels['2'],
+            scenario_labels['3'],
+            scenario_labels['4'],
+        ]
+        ordered_handles = []
+        ordered_labels = []
+        for name in desired_order:
+            if name in labels:
+                idx = labels.index(name)
+                ordered_handles.append(handles[idx])
+                ordered_labels.append(labels[idx])
+
+        # Keep any non-scenario legend entries (e.g., noisy context) at the end.
+        for h, l in zip(handles, labels):
+            if l not in ordered_labels:
+                ordered_handles.append(h)
+                ordered_labels.append(l)
+
+        ax.legend(ordered_handles, ordered_labels)
         ax.grid(True, alpha=0.3)
         plt.tight_layout()
 

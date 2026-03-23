@@ -54,11 +54,12 @@ SCENARIO_LABELS = {
     '3': 'Flashy',
     '4': 'Single peak',
 }
+# colorblind friendly
 SCENARIO_COLORS = {
-    '1': '#1f77b4',
-    '2': '#ff7f0e',
-    '3': '#2ca02c',
-    '4': '#d62728',
+    '1': '#56B4E9', #'#1f77b4',   # blue   – Constant
+    '2': '#E69F00', #'#ff7f0e',   # orange – Seasonal
+    '3': '#009E73', # '#2ca02c',   # green  – Flashy
+    '4': '#D55E00', #'#d62728',   # red    – Single peak
 }
 
 # ── PATHS ──────────────────────────────────────────────────────────────────────
@@ -176,7 +177,7 @@ for scenario_key, data in scenario_data.items():
     )
 #%%
 # ── PLOT ──────────────────────────────────────────────────────────────────────
-fig, ax = plt.subplots(figsize=(10, 10))
+fig, ax = plt.subplots(figsize=(10, 6))
 
 for scenario_key in sorted(processed.keys()):
     d = processed[scenario_key]
@@ -185,8 +186,8 @@ for scenario_key in sorted(processed.keys()):
             label=d['label'])
     
 ax.set_xlim(20,45)
-ax.set_xlabel('Flood intrusion (km from sea)', fontsize=11)
-ax.set_ylabel('Simulation time (years)', fontsize=11)
+ax.set_xlabel('flood intrusion (x-coordinate along estuary)', fontsize=11)
+ax.set_ylabel('years', fontsize=11)
 ax.set_title(
     f'Maximum flood intrusion point over time  (Q{DISCHARGE}, daily max-flood per tidal cycle)',
     fontsize=12
@@ -218,8 +219,8 @@ for scenario_key in scenario_keys:
     ax.plot(flood_ma, t, color=d['color'], linewidth=1.8, label=f'{MA_PERIOD.capitalize()} MA')
 
     ax.set_xlim(20, 45)
-    ax.set_xlabel('Flood intrusion (km from sea)', fontsize=11)
-    ax.set_ylabel('Simulation time (years)', fontsize=11)
+    ax.set_xlabel('flood intrusion (x-coordinate along estuary)', fontsize=11)
+    ax.set_ylabel('years', fontsize=11)
     ax.set_title(
         f'{d["label"]}  —  Q{DISCHARGE}  ({MA_PERIOD} moving average)',
         fontsize=12
@@ -252,8 +253,8 @@ for scenario_key in sorted(processed.keys()):
     ax.plot(flood_ma, t, color=d['color'], linewidth=1.8, label=d['label'])
 
 ax.set_xlim(20, 45)
-ax.set_xlabel('Flood intrusion (km from sea)', fontsize=11)
-ax.set_ylabel('Simulation time (years)', fontsize=11)
+ax.set_xlabel('flood intrusion (x-coordinate along estuary)', fontsize=11)
+ax.set_ylabel('years', fontsize=11)
 ax.set_title(
     f'Maximum flood intrusion point over time  (Q{DISCHARGE}, {MA_PERIOD} moving average)',
     fontsize=12
@@ -286,8 +287,8 @@ for scenario_key in sorted(processed.keys()):
     ax.plot(flood_p50, t, color=d['color'], linewidth=2.0, linestyle='--', label=d['label'])
 
 ax.set_xlim(20, 45)
-ax.set_xlabel('Flood intrusion (km from sea)', fontsize=11)
-ax.set_ylabel('Simulation time (years)', fontsize=11)
+ax.set_xlabel('flood intrusion (x-coordinate along estuary)', fontsize=11)
+ax.set_ylabel('years', fontsize=11)
 ax.set_title(
     f'Maximum flood intrusion point over time  (Q{DISCHARGE}, {MA_PERIOD} rolling p50)',
     fontsize=12
@@ -319,8 +320,8 @@ for scenario_key in sorted(processed.keys()):
     ax.plot(flood_p40, t, color=d['color'], linewidth=2.0, linestyle='--', label=d['label'])
 
 ax.set_xlim(20, 45)
-ax.set_xlabel('Flood intrusion (km from sea)', fontsize=11)
-ax.set_ylabel('Simulation time (years)', fontsize=11)
+ax.set_xlabel('flood intrusion (x-coordinate along estuary)', fontsize=11)
+ax.set_ylabel('years', fontsize=11)
 ax.set_title(
     f'Maximum flood intrusion point over time  (Q{DISCHARGE}, {MA_PERIOD} rolling p40)',
     fontsize=12

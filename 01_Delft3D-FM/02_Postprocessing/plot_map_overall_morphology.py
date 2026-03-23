@@ -105,12 +105,12 @@ SCENARIO_LABELS = {
     '4': 'Single peak',
 }
 
-# Colours: one per scenario (used in combined plots)
+# colorblind friendly
 SCENARIO_COLORS = {
-    '1': '#1f77b4',   # blue   - Constant
-    '2': '#ff7f0e',   # orange - Seasonal
-    '3': '#2ca02c',   # green  - Flashy
-    '4': '#d62728',   # red    - Single peak
+    '1': '#56B4E9', #'#1f77b4',   # blue   – Constant
+    '2': '#E69F00', #'#ff7f0e',   # orange – Seasonal
+    '3': '#009E73', # '#2ca02c',   # green  – Flashy
+    '4': '#D55E00', #'#d62728',   # red    – Single peak
 }
 BASELINE_COLOR = next(iter(SCENARIO_COLORS.values()))
 

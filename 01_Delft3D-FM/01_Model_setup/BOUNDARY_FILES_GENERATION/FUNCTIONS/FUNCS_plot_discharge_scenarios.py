@@ -7,15 +7,13 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
-
-# Color and label mapping based on scenario type
+# colorblind friendly
 SCENARIO_CONFIG = {
-    "baserun": {"color": "tab:blue", "label": "Constant discharge"},
-    "seasonal": {"color": "tab:orange", "label": "Seasonal discharge"},
-    "flashy": {"color": "tab:green", "label": "Flashy discharge"},
-    "singlepeak": {"color": "tab:red", "label": "Single peak discharge"},
+    "baserun": {"color": '#56B4E9', "label": "Constant discharge"},
+    "seasonal": {"color": '#E69F00', "label": "Seasonal discharge"},
+    "flashy": {"color": '#009E73', "label": "Flashy discharge"},
+    "singlepeak": {"color": '#D55E00', "label": "Single peak discharge"},
 }
-
 
 def get_scenario_type(scenario_name):
     """

@@ -92,3 +92,5 @@ plot_normalized_discharge_variability_one_case(
 )
 
 
+
+# %%
