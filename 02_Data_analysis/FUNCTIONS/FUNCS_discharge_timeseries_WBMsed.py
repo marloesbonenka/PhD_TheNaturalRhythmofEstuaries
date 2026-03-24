@@ -275,7 +275,7 @@ def plot_estuary_timeseries(estuary_name, discharge_series, sed_series, datetime
     fac_label = f"  [fac={scaling_factor:.3f}]" if scaling_factor != 1.0 else ""
 
     plt.figure(figsize=(10, 6))
-    plt.plot(datetimes, discharge_series, label=estuary_name, color='#BDE9F5')  # Light blue
+    plt.plot(datetimes, discharge_series, label=estuary_name, color='#056C89')  # Light blue
     # plt.axhline(mean_discharge, linestyle='dashed', color='orange',
                 # label=f'mean = {mean_discharge:.2f}')
     plt.xlabel('time')

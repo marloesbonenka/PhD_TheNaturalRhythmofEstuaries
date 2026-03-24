@@ -87,7 +87,7 @@ ax.add_feature(
 ax.scatter(
     lons, lats,
     transform=ccrs.PlateCarree(),
-    color='#044E64', #FFCD00',
+    color='#023653', #FFCD00',
     s=75,           # bigger dots
     zorder=2
 )

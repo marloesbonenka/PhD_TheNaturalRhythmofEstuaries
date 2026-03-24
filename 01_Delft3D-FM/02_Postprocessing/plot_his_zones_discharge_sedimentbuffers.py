@@ -58,7 +58,7 @@ SPINUP_STEPS = 24 * 3  # 3 days, adjust based on your output interval
 
 # Scenario filters
 SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']
-DISCHARGE   = 500
+DISCHARGE   = 250
 ANALYZE_NOISY = False
 
 # Envelope mode settings
