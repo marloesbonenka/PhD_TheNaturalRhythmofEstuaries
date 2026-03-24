@@ -86,7 +86,7 @@ def find_variability_model_folders(base_path, discharge, scenarios_to_process=No
                 f for f in base_path.iterdir()
                 if f.is_dir() and f.name and f.name[0].isdigit() and '_rst' in f.name.lower()
             ]
-    elif q == 1000:
+    elif q in (250, 1000):
         if analyze_noisy:
             model_folders = [
                 f for f in base_path.iterdir()

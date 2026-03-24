@@ -36,7 +36,7 @@ from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
 #%% --- CONFIGURATION ---
 # Model output
-DISCHARGE = 500  # or 1000, etc.
+DISCHARGE = 250  # or 1000, etc.
 NOISY = False
 ADD_NON_NOISY_BASELINE_Q500 = False
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")

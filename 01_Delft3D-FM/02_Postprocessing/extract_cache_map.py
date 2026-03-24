@@ -28,7 +28,7 @@ if str(functions_root) not in sys.path:
 # --- SETTINGS ---
 
 ANALYSIS_MODE = "variability"
-DISCHARGE = 1000 # Adjust this to match your specific discharge scenario (e.g., 500, 1000, etc.)
+DISCHARGE = 250 # Adjust this to match your specific discharge scenario (e.g., 500, 1000, etc.)
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
 config = f'Model_Output/Q{DISCHARGE}'
 base_path = base_directory / config

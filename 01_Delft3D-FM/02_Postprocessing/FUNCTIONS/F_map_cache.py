@@ -53,14 +53,24 @@ def get_cache_path(cache_dir: Path, folder_name: str, var_name: str, tag: str | 
 
 def _write_dataset_atomic(ds_out, cache_path: Path, encoding: dict, ds_existing=None):
     """Write to a temp file first, then replace target to avoid Windows file-lock issues."""
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = cache_path.with_name(f"{cache_path.stem}.{uuid4().hex}.tmp{cache_path.suffix}")
     try:
-        if hasattr(ds_out, 'ugrid'):
-            ds_out.ugrid.to_netcdf(tmp_path, encoding=encoding)
-        else:
-            ds_out.to_netcdf(tmp_path, encoding=encoding)
+        try:
+            if hasattr(ds_out, 'ugrid'):
+                ds_out.ugrid.to_netcdf(tmp_path, encoding=encoding)
+            else:
+                ds_out.to_netcdf(tmp_path, encoding=encoding)
+        except RuntimeError as exc:
+            if 'invalid argument' not in str(exc).lower():
+                raise
+            print(f"[map-cache]     retry after in-memory load ({cache_path.name})")
+            if _is_ugrid_dataset(ds_out):
+                ds_retry = xu.UgridDataset(obj=ds_out.obj.load(), grids=ds_out.grids)
+                ds_retry.ugrid.to_netcdf(tmp_path, encoding=encoding)
+            else:
+                ds_out.load().to_netcdf(tmp_path, encoding=encoding)
 
-        # On Windows, replacing an existing file fails while it is still open.
         if ds_existing is not None:
             ds_existing.close()
 
@@ -349,17 +359,18 @@ def build_masked_map_dataset(run_paths: Iterable, var_names, bbox=None, chunks=N
         print(f"[map-cache]   selecting {len(target_dates)} snapshot timesteps")
         time_values = full_ds['time'].values
         time_ns = np.array(time_values, dtype='datetime64[ns]').astype('int64')
-        selected_indices = []
+        idx_to_target = {}
         for target_dt in target_dates:
             target_ns = np.datetime64(target_dt, 'ns').astype('int64')
             idx = int(np.argmin(np.abs(time_ns - target_ns)))
-            selected_indices.append(idx)
-        # Deduplicate while preserving order
-        seen = set()
-        unique_indices = [i for i in selected_indices if not (i in seen or seen.add(i))]
+            idx_to_target.setdefault(idx, target_dt)
+
+        unique_indices = sorted(idx_to_target.keys())
+
         full_ds = full_ds.isel(time=unique_indices)
         actual_times = full_ds['time'].values
-        for t_target, t_actual in zip(target_dates, actual_times):
+        for idx, t_actual in zip(unique_indices, actual_times):
+            t_target = idx_to_target.get(idx)
             print(f"[map-cache]     target {np.datetime_as_string(np.datetime64(t_target, 'D'), unit='D')} "
                   f"-> actual {np.datetime_as_string(np.datetime64(t_actual, 'D'), unit='D')}")
 
