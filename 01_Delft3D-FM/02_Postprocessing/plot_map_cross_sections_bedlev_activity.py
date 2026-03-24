@@ -28,6 +28,7 @@ from tqdm import tqdm
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
 
 from FUNCTIONS.F_general import (
+    create_terrain_colormap,
     get_mf_number,
     create_bedlevel_colormap,
     create_detrended_blev_colormap,
@@ -405,11 +406,11 @@ for folder in model_folders:
                     morph_years=morph_years,
                     title=f"{folder}: {cs_name}{discharge_title_tag}",
                     outpath=outpath,
-                    cmap=create_detrended_blev_colormap(),
+                    cmap=create_terrain_colormap(),
                     show=True,
                     profile_xlim=profile_xlim,
-                    vmax = 3,
-                    vmin = -3
+                    vmax = 15,
+                    vmin = -15
                 )
 
             if PLOT_RELATIVE_BEDCHANGE:

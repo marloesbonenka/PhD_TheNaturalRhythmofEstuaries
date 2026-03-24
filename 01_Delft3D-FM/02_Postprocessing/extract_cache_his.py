@@ -41,7 +41,7 @@ boxes = [(box_edges[i], box_edges[i + 1]) for i in range(len(box_edges) - 1)]
 
 # Scenario filters — match settings from your analysis script
 SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']
-DISCHARGE = 1000
+DISCHARGE = 250
 ANALYZE_NOISY = False
 
 # %% --- PATHS ---

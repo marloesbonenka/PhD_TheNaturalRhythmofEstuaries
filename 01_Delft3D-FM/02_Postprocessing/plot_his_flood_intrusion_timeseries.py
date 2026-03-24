@@ -46,7 +46,7 @@ dis_var        = 'cross_section_discharge'
 output_dirname = "plots_his_max_floodintrusion"
 
 SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']
-DISCHARGE            = 1000
+DISCHARGE            = 250
 
 SCENARIO_LABELS = {
     '1': 'Constant',
