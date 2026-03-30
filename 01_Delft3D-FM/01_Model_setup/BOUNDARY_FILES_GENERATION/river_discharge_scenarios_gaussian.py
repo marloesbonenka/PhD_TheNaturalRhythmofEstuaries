@@ -13,7 +13,7 @@ t_hd = np.arange(days)
 t_md = np.arange(0, (days + 1) * mf, mf)
 
 Q_mean_target = 1000.0
-Q_base = 700.0
+Q_base = 800.0
 V_total_excess = (Q_mean_target - Q_base) * days
 
 # Optional output settings
@@ -43,20 +43,33 @@ ZOOM_CENTER_DAY = days / 2
 # - "bipolar": paired positive and negative Gaussian pulses around Q_mean_target
 #              (equal area, so yearly mean stays near target)
 scenarios = {
-    "Constant": (1.0, 0, "positive"),
-    "Seasonal": (2.0, 1, "bipolar"),
-    "Wet/dry":  (3.0, 5, "positive"),
-    "Flashy":   (3.5, 2, "positive"),
-    "Episodic": (5.0, 1, "positive"),
+    # Format: Name: (Peak_Ratio, Number_of_Events, Mode)
+    # New scenarios – cover full peak/mean parameter space (1–5)
+    "S1":  (1.0, 0, "positive"),   # constant          | n_peaks=0,  peak/mean=1.0
+    "S5":  (1.5, 2, "positive"),   # low P/M, 2 peaks  | n_peaks=2,  peak/mean=1.5
+    "S8":  (1.5, 5, "positive"),   # low P/M, 5 peaks  | n_peaks=5,  peak/mean=1.5
+    "S6":  (3.0, 3, "positive"),   # mid P/M, 3 peaks  | n_peaks=3,  peak/mean=3.0
+    "S7":  (4.0, 5, "positive"),   # high P/M, 5 peaks | n_peaks=5,  peak/mean=4.0
+    "S9":  (5.0, 1, "positive"),   # very high P/M, 1  | n_peaks=1,  peak/mean=5.0
+    "S10": (5.0, 3, "positive"),   # very high P/M, 3  | n_peaks=3,  peak/mean=5.0
+    # Old scenarios (S2–S4, dismissed) – kept for reference
+    # "S2 (seasonal)":    (1.5, 1, "positive"),
+    # "S3 (flashy)":      (3.0, 5, "positive"),
+    # "S4 (single peak)": (3.0, 1, "positive"),
 }
 # colorblind friendly
-
 SCENARIO_COLORS = {
-    "Constant": '#56B4E9',
-    "Seasonal": '#E69F00',
-    "Wet/dry":  '#009E73',
-    "Flashy":   '#D55E00',
-    "Episodic": '#9467bd'
+    "S1":  "#56B4E9",   # light blue
+    "S5":  "#009E73",   # teal
+    "S8":  "#0072B2",   # dark blue
+    "S6":  "#E69F00",   # orange
+    "S7":  "#D55E00",   # red-orange
+    "S9":  "#CC79A7",   # pink
+    "S10": "#9467bd",   # purple
+    # old
+    "S2 (seasonal)":    "#aaaaaa",
+    "S3 (flashy)":      "#aaaaaa",
+    "S4 (single peak)": "#aaaaaa",
 }
 
 #%% --- 3. Plotting ---
@@ -103,7 +116,7 @@ scenario_hd_series = {}
 for name, (ratio, n_events, mode) in scenarios.items():
     color = SCENARIO_COLORS[name]
 
-    if name == "Constant":
+    if name == "S1":
         q_vals = np.full(days, Q_mean_target)
     else:
         if mode == "positive":
@@ -211,8 +224,9 @@ for name, q_vals in scenario_hd_series.items():
     q_peak = np.max(q_vals)
     peak_pmean = 0.0 if q_mean == 0 else q_peak / q_mean
     q_norm = np.zeros_like(q_vals) if q_mean == 0 else q_vals / q_mean
+    n_events = scenarios[name][1]
     color = SCENARIO_COLORS[name]
-    label_name = f"{name}\n$peak/p_{{mean}}$={peak_pmean:.2f}"
+    label_name = f"{name}\n$peak/\\bar{{Q}}$={peak_pmean:.0f}\n$n_{{peaks}}$={n_events}"
     ax_norm.plot(t_hd + 1, q_norm, lw=2, color=color, label=label_name)
 
 ax_norm.set_xlim(1, days)
@@ -220,7 +234,8 @@ ax_norm.set_xlabel("day of year")
 ax_norm.set_ylabel("normalized discharge [-]")
 # ax_norm.set_title("Hydrodynamic discharge variability (normalized by yearly mean)", fontsize=14)
 ax_norm.grid(True, alpha=0.2)
-ax_norm.legend(loc='best', labelcolor='linecolor')
+ax_norm.legend(loc='center left', bbox_to_anchor=(1.02, 0.5),
+               labelcolor='linecolor', framealpha=0.9)
 
 fig_h_full.tight_layout()
 fig_m_full.tight_layout()

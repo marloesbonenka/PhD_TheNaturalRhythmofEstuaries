@@ -71,7 +71,7 @@ if ANALYSIS_MODE == 'morfac':
 	default_morfac = None
 
 elif ANALYSIS_MODE == 'variability':
-	DISCHARGE = 1000  # or 1000
+	DISCHARGE = 250  # or 1000
 	base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
 	config = f"Model_Output/Q{DISCHARGE}"
 	base_dir = base_directory / config

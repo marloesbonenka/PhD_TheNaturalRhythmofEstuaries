@@ -111,7 +111,7 @@ def plot_discharge_scenarios_first_year(
         # cv = compute_CV(df_year)
         # flashiness = compute_p90_p10(df_year)
         compute_p95_mean_value = compute_p95_mean(df_year)
-        label_name = f"{get_scenario_label(scenario_name)}\n$p_{{95}}/p_{{mean}}$={compute_p95_mean_value:.2f}"
+        label_name = f"{get_scenario_label(scenario_name)}\n$p_{{95}}/p_{{mean}}$={compute_p95_mean_value:.0f}"
         color = get_scenario_color(scenario_name)
         plt.plot(
             df_year["timestamp"],
