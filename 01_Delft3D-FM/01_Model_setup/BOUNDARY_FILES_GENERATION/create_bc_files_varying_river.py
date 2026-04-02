@@ -21,12 +21,18 @@ sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\01_Mode
 # Load functions to create Delft3D-FM boundary files
 from FUNCTIONS.FUNCS_create_bc_varyingriver_csv_FM import *
 from FUNCTIONS.FUNCS_csv_to_bc_converter import convert_csv_folder_to_bc
+from FUNCTIONS.FUNCS_plot_discharge_scenarios import (
+    plot_discharge_scenarios_first_year,
+    plot_normalized_discharge_variability_one_case,
+)
 
  #%% Configuration settings
-total_discharge = 500                   # Total river discharge in m³/s
+total_discharge = 250                   # Total river discharge in m³/s
 nyears = 52
 duration_min    = 365.25 * 24 * 60 * nyears               # Total simulation duration in minutes;  525600 = 1 year;     2629440 = 5 years
 time_step_rcel  = 1440                                  # Time step for variations over consecutive river cells in minutes, to force bar formation      
+
+SCENARIO_TYPE = 'new' # 'old' (RCEM 2025, NCK 2026) or 'new' (Gaussian variability scenarios)
 
 # IMPORTANT: Update these values based on your grid script
 grid_info = {
@@ -41,71 +47,85 @@ grid_info = {
 }
 
 # Specify the directory of model runs
-specific_scenario_location = f'CSVfiles_boundaries_50hydroyears'
-output_dir = r"u:\PhDNaturalRhythmEstuaries\Models"
+output_dir = rf"u:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Input\Q{total_discharge}"
 
-output_dir = os.path.join(output_dir, specific_scenario_location)
 os.makedirs(output_dir, exist_ok=True)
 
 #%%
-# Define scenarios  
-scenarios = [
-    {
-        "name":                 f"01_baserun{total_discharge}",               # Name for the single scenario
-        "total_discharge":      total_discharge,                        # Total river discharge in m³/s
-        "duration_min":         duration_min,                           # Total simulation duration in minutes
-        "time_step":            time_step_rcel,                         # Time step for variations over river cells in minutes
-        #"cv":                   0,                                      # Long-term/overall variability: standard deviation of the mean
-        "pattern_type":         "constant"                              # or "seasonal"
-    }
-    ,    
-    {
-        "name":                 f"02_run{total_discharge}_seasonal",          # Name for the single scenario
-        "total_discharge":      total_discharge,                        # Total river discharge in m³/s
-        "duration_min":         duration_min,                           # 525600 = 1year #5 years = 2629440, total simulation duration in minutes
-        "time_step":            time_step_rcel,                         # Time step for variations over river cells in minutes
-        #"cv":                   0.5,                                    # Long-term/overall variability: standard deviation of the mean
-        "pattern_type":         "seasonal"                              # or "constant"
-    }
-    ,    
-    {
-        "name":                 f"03_run{total_discharge}_flashy",            # Name for the single scenario
-        "total_discharge":      total_discharge,                        # Total river discharge in m³/s
-        "duration_min":         duration_min,                           # 525600 = 1year #5 years = 2629440,  # Total simulation duration in minutes
-        "time_step":            time_step_rcel,                         # Time step for variations over river cells in minutes
-        # "cv":                   1.0,                                    # Long-term/overall variability: standard deviation of the mean
-        "pattern_type":         "flashy"                                # or "seasonal" or "constant" (flashiness refers to daily fluctuations, where high values indicate frequent abrupt changes)
-    }
-    ,    
-    {
-        "name":                 f"04_run{total_discharge}_singlepeak",        # Name for the single peak scenario
-        "total_discharge":      total_discharge,                        # Total river discharge in m³/s
-        "duration_min":         duration_min,                           # Total simulation duration in minutes
-        "time_step":            time_step_rcel,                         # Time step for variations over river cells in minutes
-        "pattern_type":         "singlepeak"                            # One peak per year, no droughts, same magnitude/duration as flashy
-    }
+# Shared parameters injected into every scenario dict at runtime
+_shared = {
+    "total_discharge": total_discharge,
+    "duration_min":    duration_min,
+    "time_step":       time_step_rcel,
+}
+
+# --- Old scenarios (RCEM 2025, NCK 2026) – pattern_type based ---
+scenarios_old = [
+    {"name": f"01_baserun{total_discharge}",     "pattern_type": "constant"},
+    {"name": f"02_run{total_discharge}_seasonal", "pattern_type": "seasonal"},
+    {"name": f"03_run{total_discharge}_flashy",   "pattern_type": "flashy"},
+    {"name": f"04_run{total_discharge}_singlepeak","pattern_type": "singlepeak"},
 ]
 
+# --- New scenarios – Gaussian variability (peak_ratio × n_peaks) ---
+# S1: constant (n_peaks=0); S5–S10: spanned peak/mean × frequency space
+scenarios_new = [
+    # {"name": f"S1_Qr{total_discharge}_pm1.0_n0",  "peak_ratio": 1.0, "n_peaks": 0},
+    {"name": f"05_Qr{total_discharge}_pm5_n1",  "peak_ratio": 5,   "n_peaks": 1},
+    {"name": f"06_Qr{total_discharge}_pm4_n3",  "peak_ratio": 4,   "n_peaks": 3},
+    {"name": f"07_Qr{total_discharge}_pm3_n4",  "peak_ratio": 3,   "n_peaks": 4},
+    {"name": f"08_Qr{total_discharge}_pm2_n6",  "peak_ratio": 2,   "n_peaks": 6},
+]
+
+# --- Select active set based on SCENARIO_TYPE ---
+if SCENARIO_TYPE == 'old':
+    scenarios     = scenarios_old
+    generate_fn   = generate_river_discharges_fm
+    bc_prefix     = f"Qr{total_discharge}_inflow_sinuous"
+else:
+    scenarios     = scenarios_new
+    generate_fn   = generate_river_discharges_fm_gaussian
+    bc_prefix     = f"Qr{total_discharge}_inflow_sinuous_Gaussian"
+
+#%%
+scenario_csv_paths = {}
+
 for scenario in scenarios:
-    # Create the specific directory for this scenario's boundary files
-    scenario_name = scenario["name"]
-    boundary_dir = os.path.join(output_dir, scenario_name, "boundaryfiles_csv")
+    params       = {**_shared, **scenario}
+    boundary_dir = os.path.join(output_dir, scenario["name"], "boundaryfiles_csv")
     os.makedirs(boundary_dir, exist_ok=True)
 
-    # Generate CSV files
-    generate_river_discharges_fm(
-        grid_info=grid_info, 
-        params=scenario, 
-        output_dir=boundary_dir, 
+    generate_fn(
+        grid_info=grid_info,
+        params=params,
+        output_dir=boundary_dir,
         start_date_str='2024-01-01 00:00:00'
     )
-    
-    # Convert CSV files to .bc files
+
     convert_csv_folder_to_bc(
         csv_dir=boundary_dir,
-        output_prefix=f"Qr{total_discharge}_inflow_sinuous",
+        output_prefix=bc_prefix,
         reference_date=datetime(2001, 1, 1)
     )
 
+    scenario_csv_paths[scenario["name"]] = os.path.join(boundary_dir, "discharge_cumulative.csv")
+
 print("Finished --> CSV and .bc files generated successfully!")
+
+#%% --- Plot first year of generated scenarios ---
+plots_dir = os.path.join(output_dir, "plots_river_bct")
+
+plot_discharge_scenarios_first_year(
+    scenario_csv_paths,
+    plots_dir,
+    output_filename=f"discharge_scenarios_Qr{total_discharge}_first_year.png",
+)
+
+plot_normalized_discharge_variability_one_case(
+    scenario_csv_paths,
+    plots_dir,
+    output_filename=f"discharge_variability_normalized_Qr{total_discharge}.png",
+)
+
+print(f"Plots saved to: {plots_dir}")
 #%%

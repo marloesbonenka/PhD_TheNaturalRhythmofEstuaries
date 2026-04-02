@@ -8,6 +8,18 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
 # colorblind friendly
+# Fallback palette for Gaussian / unrecognized scenarios (Wong 2008)
+_FALLBACK_COLORS = [
+    '#0072B2',  # dark blue
+    '#D55E00',  # red-orange
+    '#009E73',  # teal
+    '#CC79A7',  # pink
+    '#E69F00',  # orange
+    '#56B4E9',  # light blue
+    '#F0E442',  # yellow
+]
+_fallback_color_cache = {}
+
 SCENARIO_CONFIG = {
     "baserun": {"color": '#56B4E9', "label": "Constant discharge"},
     "seasonal": {"color": '#E69F00', "label": "Seasonal discharge"},
@@ -50,11 +62,15 @@ def get_scenario_label(scenario_name):
 
 
 def get_scenario_color(scenario_name):
-    """Assign color based on scenario type."""
+    """Assign color based on scenario type, with fallback palette for new scenarios."""
     scenario_type = get_scenario_type(scenario_name)
     if scenario_type:
         return SCENARIO_CONFIG[scenario_type]["color"]
-    return "tab:gray"
+    # Assign a consistent fallback color from the palette
+    if scenario_name not in _fallback_color_cache:
+        idx = len(_fallback_color_cache) % len(_FALLBACK_COLORS)
+        _fallback_color_cache[scenario_name] = _FALLBACK_COLORS[idx]
+    return _fallback_color_cache[scenario_name]
 
 
 def plot_discharge_scenarios_first_year(
