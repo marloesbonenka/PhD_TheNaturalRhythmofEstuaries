@@ -93,7 +93,8 @@ unit              = {unit}
 def convert_csv_folder_to_bc(
     csv_dir: str,
     output_prefix: str = "Qr500_inflow_sinuous",
-    reference_date: datetime = datetime(2001, 1, 1)
+    reference_date: datetime = datetime(2001, 1, 1),
+    output_dir: str = None
 ) -> None:
     """
     Convert all river_section_*.csv files in a folder to .bc files.
@@ -106,8 +107,12 @@ def convert_csv_folder_to_bc(
         Prefix for output filenames (default: "Qr500_inflow_sinuous")
     reference_date : datetime
         Reference date for time calculation (default: 2001-01-01 00:00:00)
+    output_dir : str, optional
+        Directory to write .bc files into. Defaults to csv_dir.
     """
     csv_dir = Path(csv_dir)
+    out_dir = Path(output_dir) if output_dir is not None else csv_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
     csv_files = sorted(csv_dir.glob("river_section_*.csv"))
     
     for csv_path in csv_files:
@@ -116,7 +121,7 @@ def convert_csv_folder_to_bc(
         if match:
             boundary_number = int(match.group(1))
             output_filename = f"{boundary_number:02d}_{output_prefix}.bc"
-            output_path = csv_dir / output_filename
+            output_path = out_dir / output_filename
             
             csv_to_bc(
                 csv_path=str(csv_path),

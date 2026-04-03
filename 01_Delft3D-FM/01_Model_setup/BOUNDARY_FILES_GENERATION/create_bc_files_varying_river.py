@@ -8,14 +8,12 @@ Description: Generates river boundary conditions for an estuary domain, incorpor
              difference limit, preservation of the sinusoidal pattern, and total mean discharge.
 """
 
-#%% 
-# Load packages
+#%% Load packages
 import os
 import sys
 from datetime import datetime
 
-#%%
-#Add the current working directory (where FUNCTIONS is located)
+#%% Add the current working directory (where FUNCTIONS is located)
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\01_Model_setup\BOUNDARY_FILES_GENERATION")
 
 # Load functions to create Delft3D-FM boundary files
@@ -27,17 +25,17 @@ from FUNCTIONS.FUNCS_plot_discharge_scenarios import (
 )
 
  #%% Configuration settings
-total_discharge = 250                   # Total river discharge in m³/s
+total_discharge = 1000                   # Total river discharge in m³/s
 nyears = 52
 duration_min    = 365.25 * 24 * 60 * nyears               # Total simulation duration in minutes;  525600 = 1 year;     2629440 = 5 years
 time_step_rcel  = 1440                                  # Time step for variations over consecutive river cells in minutes, to force bar formation      
 
 SCENARIO_TYPE = 'new' # 'old' (RCEM 2025, NCK 2026) or 'new' (Gaussian variability scenarios)
 
-# IMPORTANT: Update these values based on your grid script
+# IMPORTANT: Update these values based on your grid
 grid_info = {
-    'nx': 99,#100,                                           # Number of sea basin cells in x-direction (m-direction)
-    'ny': 141,#153,                                          # Number of sea basin cells in y-direction (n-direction)
+    'nx': 99,                                           # Number of sea basin cells in x-direction (m-direction)
+    'ny': 141,                                          # Number of sea basin cells in y-direction (n-direction)
     'river_cells': [
         (395, 72),
         (395, 71),
@@ -91,8 +89,9 @@ else:
 scenario_csv_paths = {}
 
 for scenario in scenarios:
-    params       = {**_shared, **scenario}
-    boundary_dir = os.path.join(output_dir, scenario["name"], "boundaryfiles_csv")
+    params        = {**_shared, **scenario}
+    scenario_dir  = os.path.join(output_dir, scenario["name"])
+    boundary_dir  = os.path.join(scenario_dir, "boundaryfiles_csv")
     os.makedirs(boundary_dir, exist_ok=True)
 
     generate_fn(
@@ -105,7 +104,8 @@ for scenario in scenarios:
     convert_csv_folder_to_bc(
         csv_dir=boundary_dir,
         output_prefix=bc_prefix,
-        reference_date=datetime(2001, 1, 1)
+        reference_date=datetime(2001, 1, 1),
+        output_dir=scenario_dir,
     )
 
     scenario_csv_paths[scenario["name"]] = os.path.join(boundary_dir, "discharge_cumulative.csv")
