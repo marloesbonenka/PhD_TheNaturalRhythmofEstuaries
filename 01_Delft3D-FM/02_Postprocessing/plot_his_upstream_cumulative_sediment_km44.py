@@ -23,7 +23,7 @@ from FUNCTIONS.F_general import get_variability_map, find_variability_model_fold
 SED_VAR = "cross_section_bedload_sediment_transport"
 RIVER_KM = 45
 
-SCENARIOS_TO_PROCESS = ["1", "2", "3", "4"]
+SCENARIOS_TO_PROCESS = None  # None = all; e.g. ['1', '2', '3', '4', '5'] for a subset
 DISCHARGE = 500
 ANALYZE_NOISY = False
 

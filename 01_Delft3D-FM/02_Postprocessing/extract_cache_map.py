@@ -28,8 +28,8 @@ if str(functions_root) not in sys.path:
 # --- SETTINGS ---
 
 ANALYSIS_MODE = "variability"
-DISCHARGE = 250 # Adjust this to match your specific discharge scenario (e.g., 500, 1000, etc.)
-base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
+DISCHARGE = 500 # Adjust this to match your specific discharge scenario (e.g., 500, 1000, etc.)
+base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian")
 config = f'Model_Output/Q{DISCHARGE}'
 base_path = base_directory / config
 timed_out_dir = base_path / "timed-out"
@@ -47,7 +47,7 @@ CACHE_TAG = None  # Set to "full" for full domain or custom tag
 # Snapshot settings: evenly spaced timesteps over the simulation period
 # Set SNAPSHOT_COUNT = None to save ALL timesteps (original behaviour)
 SNAPSHOT_COUNT = 6
-SNAPSHOT_DATE_RANGE = (np.datetime64('2025-01-01'), np.datetime64('2055-12-31'))
+SNAPSHOT_DATE_RANGE = (np.datetime64('2025-01-01'), np.datetime64('2031-12-31'))
 
 # Compute evenly spaced target dates
 if SNAPSHOT_COUNT is not None:

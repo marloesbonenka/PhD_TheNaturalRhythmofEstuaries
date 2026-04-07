@@ -33,7 +33,7 @@ exclude_last_n_days = 0
 
 # --- Variability mode settings ---
 DISCHARGE = 500
-SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']  # subset to run; None = all
+SCENARIOS_TO_PROCESS = None  # None = all scenarios found in base_path
 
 # --- MORFAC mode settings ---
 MORFAC_ROOT_DIR  = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Test_MORFAC")

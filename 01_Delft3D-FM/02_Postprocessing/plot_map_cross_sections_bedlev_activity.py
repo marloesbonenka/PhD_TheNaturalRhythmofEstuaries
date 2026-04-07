@@ -64,8 +64,8 @@ PLOT_RELATIVE_BEDCHANGE = False
 
 
 if ANALYSIS_MODE == "variability":
-    DISCHARGE = 250  # or 1000, etc.
-    base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
+    DISCHARGE = 500  # or 1000, etc.
+    base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian")
     config = f'Model_Output/Q{DISCHARGE}'
     VARIABILITY_MAP = None
     

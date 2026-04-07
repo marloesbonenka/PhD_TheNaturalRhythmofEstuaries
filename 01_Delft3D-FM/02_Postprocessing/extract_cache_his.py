@@ -40,12 +40,12 @@ box_edges = np.arange(20, 50, 5)  # [20, 25, 30, 35, 40, 45]
 boxes = [(box_edges[i], box_edges[i + 1]) for i in range(len(box_edges) - 1)]
 
 # Scenario filters — match settings from your analysis script
-SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']
-DISCHARGE = 250
+SCENARIOS_TO_PROCESS = None  # None = all scenarios found in base_path
+DISCHARGE = 500
 ANALYZE_NOISY = False
 
 # %% --- PATHS ---
-base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
+base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian")
 config = f"Model_Output/Q{DISCHARGE}"
 if ANALYZE_NOISY:
     base_path = base_directory / config / f"0_Noise_Q{DISCHARGE}"

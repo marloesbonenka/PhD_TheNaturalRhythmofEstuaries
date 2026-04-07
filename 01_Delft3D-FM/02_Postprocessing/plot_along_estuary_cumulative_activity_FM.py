@@ -29,7 +29,7 @@ if ANALYSIS_MODE == "variability":
     base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
     config = f'Model_Output/Q{DISCHARGE}'
     VARIABILITY_MAP = get_variability_map(DISCHARGE)
-    SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']  # e.g., ['1'] for baserun only, None for all
+    SCENARIOS_TO_PROCESS = None  # None = all; e.g. ['1', '2', '3', '4', '5'] for a subset
     use_folder_morfac = False
     default_morfac = 100  # MORFAC used in variability runs
 

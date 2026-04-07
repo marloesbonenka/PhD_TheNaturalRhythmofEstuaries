@@ -36,10 +36,10 @@ from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
 #%% --- CONFIGURATION ---
 # Model output
-DISCHARGE = 250  # or 1000, etc.
+DISCHARGE = 500  # or 1000, etc.
 NOISY = False
 ADD_NON_NOISY_BASELINE_Q500 = False
-base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
+base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian")
 config = f'Model_Output/Q{DISCHARGE}'
 
 # Braiding index
@@ -54,7 +54,7 @@ depth_percentile = 95  # For maximum depth analysis (95th percentile)
 safety_buffer = 0.20  # For channel width analysis (20 cm below mean)
 
 #%% -- special configuration | do not change ---
-special_base = r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15"
+special_base = r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian"
 special_config = 'Test_MORFAC/03_flashy/Tmorph_50years'
 use_mf50_reference = (base_directory == special_base) and (config == special_config)
 
@@ -77,7 +77,7 @@ use_absolute_depth = True  # Use absolute depth values (positive = deep)
 
 # Snapshot settings (hydrodynamic dates)
 SNAPSHOT_TARGET_DATES = None  # e.g. ['2027-01-01', '2035-01-01']; None -> equally spaced in SNAPSHOT_DATE_RANGE
-SNAPSHOT_DATE_RANGE = (np.datetime64('2025-01-01'), np.datetime64('2055-12-31'))
+SNAPSHOT_DATE_RANGE = (np.datetime64('2025-01-01'), np.datetime64('2031-12-31'))
 SNAPSHOT_COUNT = 6
 
 check_variables = False
