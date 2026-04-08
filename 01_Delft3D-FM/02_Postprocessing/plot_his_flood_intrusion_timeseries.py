@@ -45,8 +45,8 @@ from FUNCTIONS.F_general import get_variability_map, find_variability_model_fold
 dis_var        = 'cross_section_discharge'
 output_dirname = "plots_his_max_floodintrusion"
 
-SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']
-DISCHARGE            = 250
+SCENARIOS_TO_PROCESS = None
+DISCHARGE            = 500
 
 SCENARIO_LABELS = {
     '1': 'Constant',
@@ -56,14 +56,18 @@ SCENARIO_LABELS = {
 }
 # colorblind friendly
 SCENARIO_COLORS = {
-    '1': '#56B4E9', #'#1f77b4',   # blue   – Constant
-    '2': '#E69F00', #'#ff7f0e',   # orange – Seasonal
-    '3': '#009E73', # '#2ca02c',   # green  – Flashy
-    '4': '#D55E00', #'#d62728',   # red    – Single peak
+    '1': '#56B4E9', #'#1f77b4',   # blue       – Constant
+    '2': '#E69F00', #'#ff7f0e',   # orange     – Seasonal
+    '3': '#009E73', # '#2ca02c',  # green      – Flashy
+    '4': '#D55E00', #'#d62728',   # red        – Single peak
+    '5': '#0072B2',               # dark blue  – pm5_n1
+    '6': '#D55E00',               # red-orange – pm4_n3
+    '7': '#009E73',               # teal       – pm3_n4
+    '8': '#CC79A7',               # pink       – pm2_n6
 }
 
 # ── PATHS ──────────────────────────────────────────────────────────────────────
-base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
+base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian")
 config         = f"Model_Output/Q{DISCHARGE}"
 base_path      = base_directory / config
 

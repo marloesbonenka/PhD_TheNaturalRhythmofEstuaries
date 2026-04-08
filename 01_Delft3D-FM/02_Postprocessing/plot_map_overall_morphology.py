@@ -107,10 +107,14 @@ SCENARIO_LABELS = {
 
 # colorblind friendly
 SCENARIO_COLORS = {
-    '1': '#56B4E9', #'#1f77b4',   # blue   – Constant
-    '2': '#E69F00', #'#ff7f0e',   # orange – Seasonal
-    '3': '#009E73', # '#2ca02c',   # green  – Flashy
-    '4': '#D55E00', #'#d62728',   # red    – Single peak
+    '1': '#56B4E9', #'#1f77b4',   # blue       – Constant
+    '2': '#E69F00', #'#ff7f0e',   # orange     – Seasonal
+    '3': '#009E73', # '#2ca02c',  # green      – Flashy
+    '4': '#D55E00', #'#d62728',   # red        – Single peak
+    '5': '#0072B2',               # dark blue  – pm5_n1
+    '6': '#D55E00',               # red-orange – pm4_n3
+    '7': '#009E73',               # teal       – pm3_n4
+    '8': '#CC79A7',               # pink       – pm2_n6
 }
 BASELINE_COLOR = next(iter(SCENARIO_COLORS.values()))
 
