@@ -72,6 +72,62 @@ def analyze_discharge_metrics(estuary_discharge_data):
     
     return pd.DataFrame(results)
 
+
+def analyze_discharge_metrics_annualmax(estuary_discharge_data, datetimes):
+    """
+    Calculate discharge variability metrics using the mean annual maximum / mean
+    discharge ratio (R_peak) as the peak measure.
+
+    This is consistent with the model parameterization, where peak_ratio is defined
+    as Q_peak / Q_mean at the Gaussian peak, rather than a percentile of the full
+    daily distribution.
+
+    Parameters:
+        estuary_discharge_data (dict): Dictionary of estuary discharge time series
+            (values are np.ndarray or pd.Series with daily values)
+        datetimes (list): List of datetime objects corresponding to the time series
+
+    Returns:
+        pd.DataFrame: DataFrame containing calculated metrics
+    """
+    datetime_index = pd.DatetimeIndex(datetimes)
+    results = []
+
+    for estuary, q in estuary_discharge_data.items():
+        if hasattr(q, 'values'):
+            q_vals = q.values
+        else:
+            q_vals = np.array(q, dtype=float)
+
+        # Build a Series with datetime index for resampling
+        q_series = pd.Series(q_vals, index=datetime_index[:len(q_vals)])
+        q_series = q_series.dropna()
+
+        if len(q_series) == 0:
+            print(f"  WARNING: {estuary} has no valid data. Skipping.")
+            continue
+
+        mean_q = q_series.mean()
+        std_q  = q_series.std()
+        cv     = std_q / mean_q if mean_q != 0 else np.nan
+
+        # Annual maximum discharge per year, then average across years
+        annual_max = q_series.resample('YE').max()
+        mean_annual_max = annual_max.mean()
+        r_peak = mean_annual_max / mean_q if mean_q != 0 else np.nan
+
+        results.append({
+            'Estuary':          estuary,
+            'Mean':             mean_q,
+            'Std':              std_q,
+            'CV':               cv,
+            'Mean Annual Max':  mean_annual_max,
+            'R_peak (Qmax_annual/Mean)': r_peak,
+        })
+
+    return pd.DataFrame(results)
+
+
 def visualize_discharge_metrics(df, output_dir="04_Metrics_per_estuary"):
     """
     Visualizes discharge metrics using bar and scatter plots with improved formatting.
@@ -360,3 +416,127 @@ def visualize_discharge_metrics_comparison(df_raw, df_moving_avg, output_dir):
         plt.close()
         
     print(f"Comparison plots saved to {output_dir}")
+
+
+def visualize_discharge_metrics_annualmax(df, output_dir="04_Metrics_per_estuary"):
+    """
+    Visualize discharge metrics from analyze_discharge_metrics_annualmax.
+    Plots: mean discharge bar, CV bar, R_peak (annual max/mean) bar,
+    1D parameter space dot plot, and 2D parameter space scatter.
+
+    Args:
+        df (pd.DataFrame): Output of analyze_discharge_metrics_annualmax.
+        output_dir (str or Path): Directory to save figures.
+    """
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    base_cmap = plt.cm.get_cmap('tab20')
+    colors = [base_cmap(i % base_cmap.N) for i in range(len(df))]
+    estuary_colors = dict(zip(df['Estuary'], colors))
+
+    # 1. Bar chart: mean discharge
+    fig, ax = plt.subplots(figsize=(14, 8))
+    bars = ax.bar(df['Estuary'], df['Mean'], color=[estuary_colors[e] for e in df['Estuary']])
+    for bar in bars:
+        ax.text(bar.get_x() + bar.get_width() / 2., bar.get_height() + 5,
+                f'{bar.get_height():.0f}', ha='center', va='bottom', fontsize=9)
+    ax.set_xlabel('Estuary', fontsize=12)
+    ax.set_ylabel('Mean Discharge (m³/s)', fontsize=12)
+    ax.set_title('Mean Discharge by Estuary', fontsize=14)
+    ax.set_xticklabels(df['Estuary'], rotation=45, ha='right', fontsize=10)
+    ax.set_ylim(bottom=0)
+    plt.tight_layout()
+    plt.savefig(str(Path(output_dir) / 'annualmax_mean_discharge_bar.png'), dpi=300, bbox_inches='tight')
+    plt.close()
+
+    # 2. Bar chart: CV
+    fig, ax = plt.subplots(figsize=(14, 8))
+    bars = ax.bar(df['Estuary'], df['CV'], color=[estuary_colors[e] for e in df['Estuary']])
+    for bar in bars:
+        ax.text(bar.get_x() + bar.get_width() / 2., bar.get_height() + 0.02,
+                f'{bar.get_height():.2f}', ha='center', va='bottom', fontsize=9)
+    ax.set_xlabel('Estuary', fontsize=12)
+    ax.set_ylabel('CV (–)', fontsize=12)
+    ax.set_title('Coefficient of Variation by Estuary', fontsize=14)
+    ax.set_xticklabels(df['Estuary'], rotation=45, ha='right', fontsize=10)
+    ax.set_ylim(bottom=0)
+    plt.tight_layout()
+    plt.savefig(str(Path(output_dir) / 'annualmax_cv_bar.png'), dpi=300, bbox_inches='tight')
+    plt.close()
+
+    # 3. Bar chart: R_peak (mean annual max / mean)
+    fig, ax = plt.subplots(figsize=(14, 8))
+    bars = ax.bar(df['Estuary'], df['R_peak (Qmax_annual/Mean)'],
+                  color=[estuary_colors[e] for e in df['Estuary']])
+    for bar in bars:
+        ax.text(bar.get_x() + bar.get_width() / 2., bar.get_height() + 0.05,
+                f'{bar.get_height():.1f}', ha='center', va='bottom', fontsize=9)
+    ax.set_xlabel('Estuary', fontsize=12)
+    ax.set_ylabel('$\\overline{Q_{\\mathrm{ann.max}}}$ / $\\overline{Q}$ (–)', fontsize=12)
+    ax.set_title('$R_\\mathrm{peak}$ (mean annual max / mean) by Estuary', fontsize=14)
+    ax.set_xticklabels(df['Estuary'], rotation=45, ha='right', fontsize=10)
+    ax.set_ylim(bottom=0)
+    plt.tight_layout()
+    plt.savefig(str(Path(output_dir) / 'annualmax_rpeak_bar.png'), dpi=300, bbox_inches='tight')
+    plt.close()
+
+    # 4. 1D dot plot: R_peak parameter space with model range overlay
+    df_sorted = df.dropna(subset=['R_peak (Qmax_annual/Mean)']).sort_values('R_peak (Qmax_annual/Mean)')
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.axvspan(1, 5, color='steelblue', alpha=0.12, label='Model range (1–5)')
+    ax.axvline(1, color='steelblue', linewidth=0.8, linestyle='--', alpha=0.6)
+    ax.axvline(5, color='steelblue', linewidth=0.8, linestyle='--', alpha=0.6)
+    for _, row in df_sorted.iterrows():
+        ax.scatter(row['R_peak (Qmax_annual/Mean)'], 0,
+                   color=estuary_colors[row['Estuary']], s=100, zorder=3)
+        ax.annotate(row['Estuary'], (row['R_peak (Qmax_annual/Mean)'], 0),
+                    xytext=(0, 12), textcoords='offset points',
+                    ha='center', va='bottom', fontsize=8, rotation=45)
+    ax.set_xlabel('$\\overline{Q_{\\mathrm{ann.max}}}$ / $\\overline{Q}$ (–)', fontsize=12)
+    ax.set_xlim(0.8, max(df_sorted['R_peak (Qmax_annual/Mean)'].max() + 0.5, 5.5))
+    ax.set_ylim(-0.5, 1.2)
+    ax.set_yticks([])
+    ax.legend(fontsize=10, loc='best')
+    ax.set_title('Global parameter space of $R_\\mathrm{peak}$ (mean annual max / mean)', fontsize=13)
+    ax.spines[['left', 'top', 'right']].set_visible(False)
+    plt.tight_layout()
+    plt.savefig(str(Path(output_dir) / 'annualmax_parameter_space_1d.png'), dpi=300, bbox_inches='tight')
+    plt.close()
+
+    # 5. 2D parameter space: mean discharge vs. R_peak
+    df_2d = df.dropna(subset=['R_peak (Qmax_annual/Mean)', 'Mean'])
+    fig, ax = plt.subplots(figsize=(8, 6))
+    model_q_values = [250, 500, 1000]
+
+    # Shade only the modelled parameter space (Q = 250–1000 m³/s, R_peak = 1–5)
+    ax.add_patch(plt.Rectangle(
+        (250, 1), 750, 4,
+        color='steelblue', alpha=0.10, zorder=0,
+        label='Modelled parameter space'
+    ))
+    # Border lines of the modelled box
+    for qval in [250, 1000]:
+        ax.axvline(qval, color='steelblue', linewidth=0.8, linestyle='--', alpha=0.5)
+    ax.axhline(1, color='steelblue', linewidth=0.8, linestyle='--', alpha=0.5)
+    ax.axhline(5, color='steelblue', linewidth=0.8, linestyle='--', alpha=0.5)
+    for qval in model_q_values:
+        for rpeak in [1, 2, 3, 4, 5]:
+            ax.scatter(qval, rpeak, marker='x', color='steelblue', s=60, linewidths=1.5, zorder=2)
+    for _, row in df_2d.iterrows():
+        ax.scatter(row['Mean'], row['R_peak (Qmax_annual/Mean)'],
+                   color=estuary_colors[row['Estuary']], s=80, zorder=4)
+        ax.annotate(row['Estuary'], (row['Mean'], row['R_peak (Qmax_annual/Mean)']),
+                    xytext=(6, 4), textcoords='offset points', fontsize=7.5,
+                    bbox=dict(boxstyle='round,pad=0.2', fc='white', alpha=0.6))
+    ax.set_xscale('log')
+    ax.set_xlabel('Mean discharge $\\overline{Q}$ (m$^3$ s$^{-1}$)', fontsize=12)
+    ax.set_ylabel('$\\overline{Q_{\\mathrm{ann.max}}}$ / $\\overline{Q}$ (–)', fontsize=12)
+    ax.set_title('Global parameter space: $\\overline{Q}$ vs $R_\\mathrm{peak}$', fontsize=13)
+    ax.set_ylim(0.8, max(df_2d['R_peak (Qmax_annual/Mean)'].max() + 0.5, 5.5))
+    ax.scatter([], [], marker='x', color='steelblue', s=60, linewidths=1.5, label='Model scenarios')
+    ax.legend(fontsize=9, loc='best')
+    ax.grid(True, which='both', linestyle='--', alpha=0.3)
+    ax.spines[['top', 'right']].set_visible(False)
+    plt.tight_layout()
+    plt.savefig(str(Path(output_dir) / 'annualmax_parameter_space_2d.png'), dpi=300, bbox_inches='tight')
+    plt.close()

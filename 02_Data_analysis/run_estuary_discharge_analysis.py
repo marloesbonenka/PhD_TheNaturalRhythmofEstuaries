@@ -23,7 +23,9 @@ sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\02_Data_analysis")
 from FUNCTIONS.FUNCS_utils import transform_coordinates, load_data
 from FUNCTIONS.FUNCS_variability_metrics import (
     analyze_discharge_metrics,
+    analyze_discharge_metrics_annualmax,
     visualize_discharge_metrics,
+    visualize_discharge_metrics_annualmax,
     visualize_discharge_metrics_comparison
 )
 from FUNCTIONS.FUNCS_discharge_timeseries_WBMsed import (
@@ -84,7 +86,7 @@ estuary_coords = {
     'Tapi': (21.15, 72.75),                 #India
     'Yangon': (16.52, 96.29),               #Myanmar
     # 'Bian': (-8.10, 139.97),                #Indonesia   
-    'Western Scheldt': (51.42, 3.57),       #Netherlands
+    # 'Western Scheldt': (51.42, 3.57),       #Netherlands
 
     # #Excluded                                                         because:
     # 'Eel': (40.63, -124.31),                #USA                      - River-dominated
@@ -245,26 +247,28 @@ if SAVE_DATA:
 #     valid = vals[~np.isnan(vals)]
 #     print(f"  {name}: {len(valid)} valid values, mean={np.nanmean(vals):.2f}")
 
-# Compute metrics
-df_metrics            = analyze_discharge_metrics(estuary_discharge_data)
-df_metrics_moving_avg = analyze_discharge_metrics(estuary_discharge_moving_average)
+# --- Method 1 (old): P95/mean peak-to-mean ratio ---
+# df_metrics            = analyze_discharge_metrics(estuary_discharge_data)
+# df_metrics_moving_avg = analyze_discharge_metrics(estuary_discharge_moving_average)
+# visualize_discharge_metrics(df_metrics, metrics_output_dir)
+# visualize_discharge_metrics(df_metrics_moving_avg, moving_avg_path)
+# visualize_discharge_metrics_comparison(df_metrics, df_metrics_moving_avg, moving_avg_path)
+# df_metrics.to_excel(Path(OUTPUT_DIR) / 'fluvial_sediment_flux_Qriver_metrics_per_estuary.xlsx', index=False)
+# df_metrics_moving_avg.to_excel(Path(OUTPUT_DIR) / 'fluvial_sediment_flux_Qriver_metrics_per_estuary_moving_average.xlsx', index=False)
 
-# Visualize
+# --- Method 2 (new): mean annual maximum / mean discharge (R_peak) ---
+# Consistent with model parameterization where peak_ratio = Q_peak / Q_mean
 metrics_output_dir = Path(OUTPUT_DIR) / "04_Metrics_per_estuary"
 metrics_output_dir.mkdir(parents=True, exist_ok=True)
 
-visualize_discharge_metrics(df_metrics, metrics_output_dir)
-visualize_discharge_metrics(df_metrics_moving_avg, moving_avg_path)
-visualize_discharge_metrics_comparison(
-    df_metrics, 
-    df_metrics_moving_avg, 
-    moving_avg_path
-)
-# Save metrics
+df_metrics_annualmax = analyze_discharge_metrics_annualmax(estuary_discharge_data, datetimes)
+print("\n--- R_peak (mean annual max / mean) per estuary ---")
+print(df_metrics_annualmax[['Estuary', 'Mean', 'CV', 'R_peak (Qmax_annual/Mean)']].to_string(index=False))
+
+visualize_discharge_metrics_annualmax(df_metrics_annualmax, metrics_output_dir)
+
 if SAVE_DATA:
-    df_metrics.to_excel(
-        Path(OUTPUT_DIR) / 'fluvial_sediment_flux_Qriver_metrics_per_estuary.xlsx', index=False)
-    df_metrics_moving_avg.to_excel(
-        Path(OUTPUT_DIR) / 'fluvial_sediment_flux_Qriver_metrics_per_estuary_moving_average.xlsx', index=False)
+    df_metrics_annualmax.to_excel(
+        Path(OUTPUT_DIR) / 'fluvial_sediment_flux_Qriver_metrics_annualmax.xlsx', index=False)
 
 # %%

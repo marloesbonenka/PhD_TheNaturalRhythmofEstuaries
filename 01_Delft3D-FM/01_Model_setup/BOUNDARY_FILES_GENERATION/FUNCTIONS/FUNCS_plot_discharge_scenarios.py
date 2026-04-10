@@ -260,8 +260,9 @@ def compute_p95_mean(df):
 
 def compute_scenario_metrics(scenario_csv_paths):
     """
-    Compute CV, R_peak (P95/mean), and mean discharge for each scenario
-    over the full timeseries. Prints a summary table and returns a DataFrame.
+    Compute CV, R_peak (P95/mean, old method), and R_peak_annualmax
+    (mean annual maximum / mean, new method consistent with model parameterization)
+    for each scenario over the full timeseries. Prints a summary table.
 
     Parameters
     ----------
@@ -270,7 +271,7 @@ def compute_scenario_metrics(scenario_csv_paths):
 
     Returns
     -------
-    pd.DataFrame with columns: Scenario, Mean_Q, CV, R_peak
+    pd.DataFrame with columns: Scenario, Mean_Q, CV, R_peak_P95, R_peak_annualmax
     """
     import numpy as np
 
@@ -283,20 +284,28 @@ def compute_scenario_metrics(scenario_csv_paths):
 
         df = pd.read_csv(csv_path)
         df["timestamp"] = pd.to_datetime(df["timestamp"])
-        q = df["discharge_m3s"].values
-        q = q[~pd.isnull(q)]
+        df = df.set_index("timestamp").sort_index()
 
-        mean_q = np.mean(q)
-        std_q  = np.std(q)
-        p95    = np.percentile(q, 95)
-        cv     = std_q / mean_q if mean_q != 0 else float('nan')
-        r_peak = p95  / mean_q if mean_q != 0 else float('nan')
+        q_series = df["discharge_m3s"].dropna()
+        mean_q   = q_series.mean()
+        std_q    = q_series.std()
+        cv       = std_q / mean_q if mean_q != 0 else float('nan')
+
+        # Old method: P95 / mean
+        p95      = q_series.quantile(0.95)
+        r_peak_p95 = p95 / mean_q if mean_q != 0 else float('nan')
+
+        # New method: mean annual maximum / mean (matches model peak_ratio)
+        annual_max      = q_series.resample('YE').max()
+        mean_annual_max = annual_max.mean()
+        r_peak_annualmax = mean_annual_max / mean_q if mean_q != 0 else float('nan')
 
         rows.append({
-            'Scenario': scenario_name,
-            'Mean_Q':   round(mean_q, 2),
-            'CV':       round(cv,     4),
-            'R_peak':   round(r_peak, 3),
+            'Scenario':         scenario_name,
+            'Mean_Q':           round(mean_q,          2),
+            'CV':               round(cv,               4),
+            'R_peak_P95':       round(r_peak_p95,       3),
+            'R_peak_annualmax': round(r_peak_annualmax, 3),
         })
 
     df_metrics = pd.DataFrame(rows)
