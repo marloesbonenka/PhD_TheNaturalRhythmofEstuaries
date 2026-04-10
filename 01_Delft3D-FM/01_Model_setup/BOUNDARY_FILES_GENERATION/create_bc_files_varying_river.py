@@ -25,7 +25,7 @@ from FUNCTIONS.FUNCS_plot_discharge_scenarios import (
 )
 
  #%% Configuration settings
-total_discharge = 1000                   # Total river discharge in m³/s
+total_discharge = 500                   # Total river discharge in m³/s
 nyears = 52
 duration_min    = 365.25 * 24 * 60 * nyears               # Total simulation duration in minutes;  525600 = 1 year;     2629440 = 5 years
 time_step_rcel  = 1440                                  # Time step for variations over consecutive river cells in minutes, to force bar formation      
@@ -67,12 +67,25 @@ scenarios_old = [
 
 # --- New scenarios – Gaussian variability (peak_ratio × n_peaks) ---
 # S1: constant (n_peaks=0); S5–S10: spanned peak/mean × frequency space
-scenarios_new = [
+scenarios_new1 = [
     # {"name": f"S1_Qr{total_discharge}_pm1.0_n0",  "peak_ratio": 1.0, "n_peaks": 0},
     {"name": f"05_Qr{total_discharge}_pm5_n1",  "peak_ratio": 5,   "n_peaks": 1},
     {"name": f"06_Qr{total_discharge}_pm4_n3",  "peak_ratio": 4,   "n_peaks": 3},
     {"name": f"07_Qr{total_discharge}_pm3_n4",  "peak_ratio": 3,   "n_peaks": 4},
-    {"name": f"08_Qr{total_discharge}_pm2_n6",  "peak_ratio": 2,   "n_peaks": 6},
+    {"name": f"08_Qr{total_discharge}_pm2_n6",  "peak_ratio": 2,   "n_peaks": 6},    # {"name": f"S1_Qr{total_discharge}_pm1.0_n0",  "peak_ratio": 1.0, "n_peaks": 0},
+    {"name": f"09_Qr{total_discharge}_pm5_n3",  "peak_ratio": 5,   "n_peaks": 3},
+    {"name": f"10_Qr{total_discharge}_pm3_n3",  "peak_ratio": 3,   "n_peaks": 3},
+    {"name": f"11_Qr{total_discharge}_pm2_n3",  "peak_ratio": 2,   "n_peaks": 3},
+    {"name": f"12_Qr{total_discharge}_pm5_n4",  "peak_ratio": 5,   "n_peaks": 4},
+    {"name": f"13_Qr{total_discharge}_pm4_n4",  "peak_ratio": 4,   "n_peaks": 4},
+    {"name": f"14_Qr{total_discharge}_pm2_n4",  "peak_ratio": 2,   "n_peaks": 4},
+]
+
+scenarios_new = [
+    {"name": f"01_Qr{total_discharge}_pm1_n0",  "peak_ratio": 1.0, "n_peaks": 0},
+    {"name": f"02_Qr{total_discharge}_pm2_n1",  "peak_ratio": 2,   "n_peaks": 1},
+    {"name": f"03_Qr{total_discharge}_pm3_n5",  "peak_ratio": 3,   "n_peaks": 5},
+    {"name": f"04_Qr{total_discharge}_pm3_n1",  "peak_ratio": 3,   "n_peaks": 1},
 ]
 
 # --- Select active set based on SCENARIO_TYPE ---
