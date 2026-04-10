@@ -200,6 +200,77 @@ def visualize_discharge_metrics(df, output_dir="04_Metrics_per_estuary"):
     plt.savefig(str(Path(output_dir) / 'peak_to_mean_bar.png'), dpi=300, bbox_inches='tight')
     plt.close()
 
+    # 4c. 1D dot plot: Peak-to-Mean parameter space with model range overlay
+    df_sorted = df.dropna(subset=['Peak-to-Mean (P95/Mean)']).sort_values('Peak-to-Mean (P95/Mean)')
+    fig, ax = plt.subplots(figsize=(10, 4))
+
+    # Shade model range (1–5)
+    ax.axvspan(1, 5, color='steelblue', alpha=0.12, label='Model range (1–5)')
+    ax.axvline(1, color='steelblue', linewidth=0.8, linestyle='--', alpha=0.6)
+    ax.axvline(5, color='steelblue', linewidth=0.8, linestyle='--', alpha=0.6)
+
+    # Plot dots
+    for _, row in df_sorted.iterrows():
+        ax.scatter(row['Peak-to-Mean (P95/Mean)'], 0, color=estuary_colors[row['Estuary']],
+                   s=100, zorder=3)
+        ax.annotate(row['Estuary'], (row['Peak-to-Mean (P95/Mean)'], 0),
+                    xytext=(0, 12), textcoords='offset points',
+                    ha='center', va='bottom', fontsize=8, rotation=45)
+
+    ax.set_xlabel('$Q_{95}$ / $\\overline{Q}$ (–)', fontsize=12)
+    ax.set_xlim(0.8, 5.5)
+    ax.set_ylim(-0.5, 1.2)
+    ax.set_yticks([])
+    ax.legend(fontsize=10, loc='upper left')
+    ax.set_title('Global parameter space of $Q_\\mathrm{peak}$/$Q_\\mathrm{mean}$', fontsize=13)
+    ax.spines[['left', 'top', 'right']].set_visible(False)
+
+    plt.tight_layout()
+    plt.savefig(str(Path(output_dir) / 'peak_to_mean_parameter_space.png'), dpi=300, bbox_inches='tight')
+    plt.close()
+
+    # 4d. 2D parameter space: Mean discharge vs. Peak-to-Mean ratio
+    df_2d = df.dropna(subset=['Peak-to-Mean (P95/Mean)', 'Mean'])
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    # Shade model scenario grid
+    model_q_values = [250, 500, 1000]
+    for qval in model_q_values:
+        ax.axvline(qval, color='steelblue', linewidth=0.8, linestyle='--', alpha=0.5)
+    ax.axhspan(1, 5, color='steelblue', alpha=0.08, label='Model range ($R_\\mathrm{peak}$ = 1–5)')
+    ax.axhline(1, color='steelblue', linewidth=0.8, linestyle='--', alpha=0.5)
+    ax.axhline(5, color='steelblue', linewidth=0.8, linestyle='--', alpha=0.5)
+
+    # Plot scenario points
+    for qval in model_q_values:
+        for rpeak in [1, 2, 3, 4, 5]:
+            ax.scatter(qval, rpeak, marker='x', color='steelblue', s=60, linewidths=1.5, zorder=2)
+
+    # Plot observed estuaries
+    for _, row in df_2d.iterrows():
+        ax.scatter(row['Mean'], row['Peak-to-Mean (P95/Mean)'],
+                   color=estuary_colors[row['Estuary']], s=80, zorder=4)
+        ax.annotate(row['Estuary'], (row['Mean'], row['Peak-to-Mean (P95/Mean)']),
+                    xytext=(6, 4), textcoords='offset points', fontsize=7.5,
+                    bbox=dict(boxstyle='round,pad=0.2', fc='white', alpha=0.6))
+
+    ax.set_xscale('log')
+    ax.set_xlabel('Mean discharge $\\overline{Q}$ (m$^3$ s$^{-1}$)', fontsize=12)
+    ax.set_ylabel('$Q_{95}$ / $\\overline{Q}$ (–)', fontsize=12)
+    ax.set_title('Global parameter space: $\\overline{Q}$ vs $R_\\mathrm{peak}$', fontsize=13)
+    ax.set_ylim(0.8, 5.5)
+    ax.legend(fontsize=9, loc='upper left')
+    ax.grid(True, which='both', linestyle='--', alpha=0.3)
+    ax.spines[['top', 'right']].set_visible(False)
+
+    # Add annotation for model scenario markers
+    ax.scatter([], [], marker='x', color='steelblue', s=60, linewidths=1.5, label='Model scenarios')
+    ax.legend(fontsize=9, loc='upper left')
+
+    plt.tight_layout()
+    plt.savefig(str(Path(output_dir) / 'parameter_space_2d.png'), dpi=300, bbox_inches='tight')
+    plt.close()
+
     # 5. Scatter Plot: Mean vs. Flashiness with estuary labels
     plt.figure(figsize=(12, 10))
     for estuary in df['Estuary']:

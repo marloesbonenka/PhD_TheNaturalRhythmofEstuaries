@@ -124,10 +124,9 @@ def plot_discharge_scenarios_first_year(
 
     plt.figure(figsize=(10,6))
     for idx, (scenario_name, df_year) in enumerate(series_data):
-        # cv = compute_CV(df_year)
-        # flashiness = compute_p90_p10(df_year)
+        cv_value = compute_CV(df_year)
         compute_p95_mean_value = compute_p95_mean(df_year)
-        label_name = f"{get_scenario_label(scenario_name)}\n$p_{{95}}/p_{{mean}}$={compute_p95_mean_value:.0f}"
+        label_name = f"{get_scenario_label(scenario_name)}\n$R_{{\\mathrm{{peak}}}}$={compute_p95_mean_value:.1f}, CV={cv_value:.2f}"
         color = get_scenario_color(scenario_name)
         plt.plot(
             df_year["timestamp"],
@@ -257,4 +256,51 @@ def compute_p95_mean(df):
     p95 = df["discharge_m3s"].quantile(0.95)
     mean = df["discharge_m3s"].mean()
     return p95/mean
+
+
+def compute_scenario_metrics(scenario_csv_paths):
+    """
+    Compute CV, R_peak (P95/mean), and mean discharge for each scenario
+    over the full timeseries. Prints a summary table and returns a DataFrame.
+
+    Parameters
+    ----------
+    scenario_csv_paths : dict
+        Mapping of scenario name to path of discharge_cumulative.csv.
+
+    Returns
+    -------
+    pd.DataFrame with columns: Scenario, Mean_Q, CV, R_peak
+    """
+    import numpy as np
+
+    rows = []
+    for scenario_name, csv_path in scenario_csv_paths.items():
+        csv_path = Path(csv_path)
+        if not csv_path.exists():
+            print(f"  WARNING: {csv_path} not found, skipping.")
+            continue
+
+        df = pd.read_csv(csv_path)
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        q = df["discharge_m3s"].values
+        q = q[~pd.isnull(q)]
+
+        mean_q = np.mean(q)
+        std_q  = np.std(q)
+        p95    = np.percentile(q, 95)
+        cv     = std_q / mean_q if mean_q != 0 else float('nan')
+        r_peak = p95  / mean_q if mean_q != 0 else float('nan')
+
+        rows.append({
+            'Scenario': scenario_name,
+            'Mean_Q':   round(mean_q, 2),
+            'CV':       round(cv,     4),
+            'R_peak':   round(r_peak, 3),
+        })
+
+    df_metrics = pd.DataFrame(rows)
+    print("\n--- Scenario metrics (full timeseries) ---")
+    print(df_metrics.to_string(index=False))
+    return df_metrics
 

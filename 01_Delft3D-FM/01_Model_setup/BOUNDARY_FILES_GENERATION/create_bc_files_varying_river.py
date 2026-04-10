@@ -22,6 +22,7 @@ from FUNCTIONS.FUNCS_csv_to_bc_converter import convert_csv_folder_to_bc
 from FUNCTIONS.FUNCS_plot_discharge_scenarios import (
     plot_discharge_scenarios_first_year,
     plot_normalized_discharge_variability_one_case,
+    compute_scenario_metrics,
 )
 
  #%% Configuration settings
@@ -67,8 +68,12 @@ scenarios_old = [
 
 # --- New scenarios – Gaussian variability (peak_ratio × n_peaks) ---
 # S1: constant (n_peaks=0); S5–S10: spanned peak/mean × frequency space
-scenarios_new1 = [
-    # {"name": f"S1_Qr{total_discharge}_pm1.0_n0",  "peak_ratio": 1.0, "n_peaks": 0},
+
+scenarios_new = [
+    {"name": f"01_Qr{total_discharge}_pm1_n0",  "peak_ratio": 1.0, "n_peaks": 0},
+    {"name": f"02_Qr{total_discharge}_pm2_n1",  "peak_ratio": 2,   "n_peaks": 1},
+    {"name": f"03_Qr{total_discharge}_pm3_n5",  "peak_ratio": 3,   "n_peaks": 5},
+    {"name": f"04_Qr{total_discharge}_pm3_n1",  "peak_ratio": 3,   "n_peaks": 1},
     {"name": f"05_Qr{total_discharge}_pm5_n1",  "peak_ratio": 5,   "n_peaks": 1},
     {"name": f"06_Qr{total_discharge}_pm4_n3",  "peak_ratio": 4,   "n_peaks": 3},
     {"name": f"07_Qr{total_discharge}_pm3_n4",  "peak_ratio": 3,   "n_peaks": 4},
@@ -79,13 +84,6 @@ scenarios_new1 = [
     {"name": f"12_Qr{total_discharge}_pm5_n4",  "peak_ratio": 5,   "n_peaks": 4},
     {"name": f"13_Qr{total_discharge}_pm4_n4",  "peak_ratio": 4,   "n_peaks": 4},
     {"name": f"14_Qr{total_discharge}_pm2_n4",  "peak_ratio": 2,   "n_peaks": 4},
-]
-
-scenarios_new = [
-    {"name": f"01_Qr{total_discharge}_pm1_n0",  "peak_ratio": 1.0, "n_peaks": 0},
-    {"name": f"02_Qr{total_discharge}_pm2_n1",  "peak_ratio": 2,   "n_peaks": 1},
-    {"name": f"03_Qr{total_discharge}_pm3_n5",  "peak_ratio": 3,   "n_peaks": 5},
-    {"name": f"04_Qr{total_discharge}_pm3_n1",  "peak_ratio": 3,   "n_peaks": 1},
 ]
 
 # --- Select active set based on SCENARIO_TYPE ---
@@ -141,4 +139,7 @@ plot_normalized_discharge_variability_one_case(
 )
 
 print(f"Plots saved to: {plots_dir}")
+
+#%% --- Scenario metrics: compare CV and R_peak against observed WBMsed range ---
+df_scenario_metrics = compute_scenario_metrics(scenario_csv_paths)
 #%%
