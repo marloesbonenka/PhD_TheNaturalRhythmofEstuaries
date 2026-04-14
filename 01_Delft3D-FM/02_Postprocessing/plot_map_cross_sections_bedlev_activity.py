@@ -61,11 +61,12 @@ PLOT_MORPH_ACTIVITY = False
 PLOT_BEDLEVEL = True
 PLOT_BEDLEVEL_DETRENDED = True
 PLOT_RELATIVE_BEDCHANGE = False
+PLOT_BI_MASK = True
 
 
 if ANALYSIS_MODE == "variability":
     DISCHARGE = 500  # or 1000, etc.
-    base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian")
+    base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
     config = f'Model_Output/Q{DISCHARGE}'
     VARIABILITY_MAP = None
     
@@ -427,6 +428,56 @@ for folder in model_folders:
                     vmin=-np.nanmax(np.abs(rel_change)),
                     vmax=np.nanmax(np.abs(rel_change))
                 )
+
+            if PLOT_BI_MASK:
+                # Build BI channel mask stack (same logic as plot_cross_sections_BI_cycles.py)
+                mask_stack = []
+                for prof_raw in profiles_clean:
+                    prof = prof_raw.copy()
+                    prof[prof > 8.0] = np.nan
+                    # Interpolate internal NaN gaps only (match BI computation logic)
+                    nans = np.isnan(prof)
+                    if np.any(~nans):
+                        x_idx = np.arange(prof.size)
+                        prof[nans] = np.interp(
+                            x_idx[nans], x_idx[~nans], prof[~nans],
+                            left=np.nan, right=np.nan
+                        )
+                    if np.all(np.isnan(prof)):
+                        is_channel = np.zeros_like(prof, dtype=np.uint8)
+                    else:
+                        threshold = np.nanmean(prof) - safety_buffer
+                        is_channel = ((~np.isnan(prof)) & (prof < threshold)).astype(np.uint8)
+                    mask_stack.append(is_channel)
+
+                mask_stack = np.asarray(mask_stack)
+                x_km = dist / 1000.0
+                extent = [x_km.min(), x_km.max(), morph_years[0], morph_years[-1]]
+
+                fig_mask, ax_mask = plt.subplots(figsize=(10, 5))
+                ax_mask.imshow(
+                    mask_stack,
+                    aspect='auto',
+                    origin='lower',
+                    extent=extent,
+                    cmap='binary',
+                    vmin=0,
+                    vmax=1,
+                    interpolation='nearest',
+                )
+                ax_mask.set_title(
+                    f"{folder}: {cs_name} — BI channel mask (0=land/high, 1=channel){discharge_title_tag}",
+                    fontsize=12, fontweight='bold'
+                )
+                ax_mask.set_xlabel('Cross-section distance [km]', fontsize=11, fontweight='bold')
+                ax_mask.set_ylabel('Morphological time [years]', fontsize=11, fontweight='bold')
+                if profile_xlim is not None:
+                    ax_mask.set_xlim(profile_xlim)
+                plt.tight_layout()
+                outpath = output_dir / f"{folder}_{cs_name}_bi_mask{discharge_file_tag}.png"
+                fig_mask.savefig(outpath, dpi=150, bbox_inches='tight')
+                plt.show()
+                plt.close(fig_mask)
 
             print(f"  Saved: {outpath}")
 

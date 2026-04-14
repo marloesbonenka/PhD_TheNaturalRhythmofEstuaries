@@ -53,6 +53,7 @@ else:
     base_path = base_directory / config
 
 timed_out_dir = base_path / "timed-out"
+
 if not base_path.exists():
     raise FileNotFoundError(f"Base path not found: {base_path}")
 if not timed_out_dir.exists():

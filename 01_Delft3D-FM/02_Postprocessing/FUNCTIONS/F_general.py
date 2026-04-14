@@ -260,9 +260,17 @@ def _scenario_label(folder_name, scenario_labels_dict):
 
 
 # Resolve the plotting color for a scenario based on its folder name.
+# Falls back to a deterministic tab20 color (based on scenario number) instead of grey.
 def _scenario_color(folder_name, scenario_colors_dict):
+    import matplotlib.pyplot as plt
     key = _scenario_key_from_folder(folder_name)
-    return scenario_colors_dict.get(key, 'grey')
+    if key in scenario_colors_dict:
+        return scenario_colors_dict[key]
+    try:
+        idx = int(key)
+    except (ValueError, TypeError):
+        idx = abs(hash(str(key))) % 20
+    return plt.get_cmap('tab20')(idx % 20)
 
 
 # Build a legend entry that includes both scenario name and folder identifier.

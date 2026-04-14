@@ -99,10 +99,20 @@ plot_hypsometric_individual = True
 
 # Human-readable labels per scenario number (used in combined plots)
 SCENARIO_LABELS = {
-    '1': 'Constant',
-    '2': 'Seasonal',
-    '3': 'Flashy',
-    '4': 'Single peak',
+    '1': 'pm1_n0 (constant)',
+    '2': 'pm2_n1',
+    '3': 'pm3_n5',
+    '4': 'pm3_n1',
+    '5': 'pm5_n1',
+    '6': 'pm4_n3',
+    '7': 'pm3_n4',
+    '8': 'pm2_n6',
+    '9': 'pm5_n3',
+    '10': 'pm3_n3',
+    '11': 'pm2_n3',
+    '12': 'pm5_n4',
+    '13': 'pm4_n4',
+    '14': 'pm2_n4',
 }
 
 # colorblind friendly
@@ -111,10 +121,6 @@ SCENARIO_COLORS = {
     '2': '#E69F00', #'#ff7f0e',   # orange     – Seasonal
     '3': '#009E73', # '#2ca02c',  # green      – Flashy
     '4': '#D55E00', #'#d62728',   # red        – Single peak
-    '5': '#0072B2',               # dark blue  – pm5_n1
-    '6': '#D55E00',               # red-orange – pm4_n3
-    '7': '#009E73',               # teal       – pm3_n4
-    '8': '#CC79A7',               # pink       – pm2_n6
 }
 BASELINE_COLOR = next(iter(SCENARIO_COLORS.values()))
 
@@ -1418,5 +1424,230 @@ for snapshot_key, snapshot_results in comparison_results.items():
             print(f'Saved hypsometric comparison plot at {summary_output_dir} for {snapshot_key}')
         else:
             plt.close(fig_h)
+
+# %% --- PM/N SENSITIVITY COMPARISON PANELS ---
+import re
+
+sensitivity_output_dir = summary_output_dir.parent / 'plots_pm_n_sensitivity'
+sensitivity_output_dir.mkdir(parents=True, exist_ok=True)
+
+
+def _parse_pm_n(label_str):
+    """Extract (pm, n) ints from a label like 'pm3_n5' or 'pm1_n0 (constant)'."""
+    m = re.match(r'pm(\d+)_n(\d+)', label_str.strip())
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    return None, None
+
+
+def _light_to_dark_colors(n_colors, cmap_name='Blues'):
+    """Return n colors along a sequential colormap, light to dark (avoids extreme ends)."""
+    cmap = plt.get_cmap(cmap_name)
+    if n_colors == 1:
+        return [cmap(0.6)]
+    return [cmap(0.3 + 0.55 * i / (n_colors - 1)) for i in range(n_colors)]
+
+
+def _color_for_value(val, val_min, val_max, cmap_name='Blues'):
+    """Map a specific value onto [0.3, 0.85] of a colormap, using the global min/max."""
+    cmap = plt.get_cmap(cmap_name)
+    if val_max == val_min:
+        return cmap(0.6)
+    t = (val - val_min) / (val_max - val_min)
+    return cmap(0.3 + 0.55 * t)
+
+
+for snapshot_key, snapshot_results in comparison_results.items():
+    if not snapshot_results:
+        continue
+
+    scenario_groups_sens = group_snapshot_by_scenario(snapshot_results)
+    all_scen_keys = sort_scenario_keys(scenario_groups_sens.keys())
+
+    # Map scenario_key -> (pm, n)
+    scen_pm_n = {}
+    for scen_key in all_scen_keys:
+        label = _scenario_label(scen_key, SCENARIO_LABELS)
+        pm, n = _parse_pm_n(label)
+        if pm is not None:
+            scen_pm_n[scen_key] = (pm, n)
+
+    # Constant baseline (n == 0)
+    baseline_scen = next((k for k, (pm, n) in scen_pm_n.items() if n == 0), None)
+
+    # pm_by_n[n_val] = sorted [(pm, scen_key)] for all scenarios with that n (n > 0)
+    pm_by_n = {}
+    n_by_pm = {}
+    for scen_key, (pm, n) in scen_pm_n.items():
+        if n == 0:
+            continue
+        pm_by_n.setdefault(n, []).append((pm, scen_key))
+        n_by_pm.setdefault(pm, []).append((n, scen_key))
+    for n in pm_by_n:
+        pm_by_n[n].sort()
+    for pm in n_by_pm:
+        n_by_pm[pm].sort()
+
+    snap_label = comparison_labels.get(snapshot_key, snapshot_key)
+
+    # Determine which metrics are available for this snapshot
+    sens_metrics = []
+    if compare_width_averaged_bedlevel and any('BL' in snapshot_results[fk] for fk in snapshot_results):
+        sens_metrics.append(('BL', 'width-averaged bed level', 'bed level [m]'))
+    if compare_max_depth and any('MaxDepth' in snapshot_results[fk] for fk in snapshot_results):
+        sens_metrics.append(('MaxDepth', f'p{depth_percentile} channel depth', 'bed level [m]'))
+    if compare_channel_width and any('ChannelWidth' in snapshot_results[fk] for fk in snapshot_results):
+        sens_metrics.append(('ChannelWidth', 'max channel width', 'width [m]'))
+    if not sens_metrics:
+        continue
+    n_metrics = len(sens_metrics)
+
+    def _sens_x_vals(scen_key, metric_key, grp):
+        if metric_key in ('BL', 'MaxDepth'):
+            x_data = next((d for _, d in grp[scen_key] if 'x_centers' in d), None)
+            return x_data['x_centers'] / 1000 if x_data else x_targets / 1000
+        return x_targets / 1000
+
+    def _sens_y_mean(scen_key, metric_key, grp):
+        y_stack = stack_metric_arrays(grp[scen_key], metric_key)
+        if y_stack is None:
+            return None
+        if metric_key == 'MaxDepth':
+            y_stack = -y_stack  # show as bed elevation (negative = deeper)
+        return np.nanmean(y_stack, axis=0)
+
+    # Global pm/n value ranges for consistent cross-column coloring
+    all_pm_vals = sorted({pm for pm, n in scen_pm_n.values() if n > 0})
+    all_n_vals  = sorted({n  for pm, n in scen_pm_n.values() if n > 0})
+    pm_min, pm_max = (all_pm_vals[0], all_pm_vals[-1]) if all_pm_vals else (1, 1)
+    n_min,  n_max  = (all_n_vals[0],  all_n_vals[-1])  if all_n_vals  else (1, 1)
+
+    # ---- Figure 1: pm effect (columns = n values, rows = metrics) ----
+    sorted_n_vals = sorted(pm_by_n.keys())
+    n_cols = len(sorted_n_vals)
+    if n_cols > 0:
+        fig_pm, axes_pm = plt.subplots(
+            n_metrics, n_cols,
+            figsize=(4 * n_cols, 3.5 * n_metrics),
+            sharex=True, sharey='row', squeeze=False,
+        )
+
+        for col_i, n_val in enumerate(sorted_n_vals):
+            pm_group = pm_by_n[n_val]  # list of (pm_val, scen_key), sorted by pm
+            axes_pm[0, col_i].set_title(
+                f'n = {n_val} peak{"s" if n_val != 1 else ""}', fontsize=10
+            )
+
+            for row_i, (metric_key, metric_title, metric_ylabel) in enumerate(sens_metrics):
+                ax = axes_pm[row_i, col_i]
+
+                # Constant baseline as grey dashed reference
+                if baseline_scen and baseline_scen in scenario_groups_sens:
+                    y_bl = _sens_y_mean(baseline_scen, metric_key, scenario_groups_sens)
+                    if y_bl is not None:
+                        x_bl = _sens_x_vals(baseline_scen, metric_key, scenario_groups_sens)
+                        ax.plot(x_bl, y_bl, color='grey', linewidth=1.5,
+                                linestyle='--', label='constant (pm1_n0)', zorder=2)
+
+                for pm_val, scen_key in pm_group:
+                    y_m = _sens_y_mean(scen_key, metric_key, scenario_groups_sens)
+                    if y_m is None:
+                        continue
+                    x_v = _sens_x_vals(scen_key, metric_key, scenario_groups_sens)
+                    color = _color_for_value(pm_val, pm_min, pm_max, 'Blues')
+                    ax.plot(x_v, y_m, color=color, linewidth=2,
+                            label=f'pm = {pm_val}', zorder=3)
+
+                ax.grid(True, alpha=0.2)
+                if col_i == 0:
+                    ax.set_ylabel(f'{metric_title}\n{metric_ylabel}', fontsize=9)
+                if row_i == n_metrics - 1:
+                    ax.set_xlabel('distance along estuary [km]', fontsize=9)
+
+        # Collect unique legend entries
+        seen_l, handles_pm, labels_pm = set(), [], []
+        for ax in axes_pm.flat:
+            for h, l in zip(*ax.get_legend_handles_labels()):
+                if l not in seen_l:
+                    seen_l.add(l)
+                    handles_pm.append(h)
+                    labels_pm.append(l)
+
+        fig_pm.legend(handles_pm, labels_pm, loc='lower center',
+                      ncol=min(8, len(handles_pm)), bbox_to_anchor=(0.5, 0.0),
+                      frameon=True, fontsize=9)
+        fig_pm.suptitle(
+            f"Effect of peak/mean ratio (pm)  |  grouped by number of peaks (n)\n"
+            f"Snapshot: {snap_label},  Q = {DISCHARGE} m³/s",
+            fontsize=12,
+        )
+        fig_pm.tight_layout(rect=[0, 0.07, 1, 0.96])
+        fname_pm = f'sensitivity_pm_effect_{snap_label}_Q{DISCHARGE}.png'
+        fig_pm.savefig(sensitivity_output_dir / fname_pm, dpi=300, bbox_inches='tight')
+        plt.show()
+        print(f'Saved pm-sensitivity panel: {sensitivity_output_dir / fname_pm}')
+
+    # ---- Figure 2: n effect (columns = pm values, rows = metrics) ----
+    sorted_pm_vals = sorted(n_by_pm.keys())
+    n_cols2 = len(sorted_pm_vals)
+    if n_cols2 > 0:
+        fig_n, axes_n = plt.subplots(
+            n_metrics, n_cols2,
+            figsize=(4 * n_cols2, 3.5 * n_metrics),
+            sharex=True, sharey='row', squeeze=False,
+        )
+
+        for col_i, pm_val in enumerate(sorted_pm_vals):
+            n_group = n_by_pm[pm_val]  # list of (n_val, scen_key), sorted by n
+            axes_n[0, col_i].set_title(f'pm = {pm_val}', fontsize=10)
+
+            for row_i, (metric_key, metric_title, metric_ylabel) in enumerate(sens_metrics):
+                ax = axes_n[row_i, col_i]
+
+                # Constant baseline as grey dashed reference
+                if baseline_scen and baseline_scen in scenario_groups_sens:
+                    y_bl = _sens_y_mean(baseline_scen, metric_key, scenario_groups_sens)
+                    if y_bl is not None:
+                        x_bl = _sens_x_vals(baseline_scen, metric_key, scenario_groups_sens)
+                        ax.plot(x_bl, y_bl, color='grey', linewidth=1.5,
+                                linestyle='--', label='constant (pm1_n0)', zorder=2)
+
+                for n_val, scen_key in n_group:
+                    y_m = _sens_y_mean(scen_key, metric_key, scenario_groups_sens)
+                    if y_m is None:
+                        continue
+                    x_v = _sens_x_vals(scen_key, metric_key, scenario_groups_sens)
+                    color = _color_for_value(n_val, n_min, n_max, 'Oranges')
+                    ax.plot(x_v, y_m, color=color, linewidth=2,
+                            label=f'n = {n_val}', zorder=3)
+
+                ax.grid(True, alpha=0.2)
+                if col_i == 0:
+                    ax.set_ylabel(f'{metric_title}\n{metric_ylabel}', fontsize=9)
+                if row_i == n_metrics - 1:
+                    ax.set_xlabel('distance along estuary [km]', fontsize=9)
+
+        # Collect unique legend entries
+        seen_l, handles_n, labels_n = set(), [], []
+        for ax in axes_n.flat:
+            for h, l in zip(*ax.get_legend_handles_labels()):
+                if l not in seen_l:
+                    seen_l.add(l)
+                    handles_n.append(h)
+                    labels_n.append(l)
+
+        fig_n.legend(handles_n, labels_n, loc='lower center',
+                     ncol=min(8, len(handles_n)), bbox_to_anchor=(0.5, 0.0),
+                     frameon=True, fontsize=9)
+        fig_n.suptitle(
+            f"Effect of number of peaks (n)  |  grouped by peak/mean ratio (pm)\n"
+            f"Snapshot: {snap_label},  Q = {DISCHARGE} m³/s",
+            fontsize=12,
+        )
+        fig_n.tight_layout(rect=[0, 0.07, 1, 0.96])
+        fname_n = f'sensitivity_n_effect_{snap_label}_Q{DISCHARGE}.png'
+        fig_n.savefig(sensitivity_output_dir / fname_n, dpi=300, bbox_inches='tight')
+        plt.show()
+        print(f'Saved n-sensitivity panel: {sensitivity_output_dir / fname_n}')
 
 print("\nAll processing complete.")

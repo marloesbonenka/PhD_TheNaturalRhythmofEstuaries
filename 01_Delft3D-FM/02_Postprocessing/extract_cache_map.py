@@ -34,7 +34,7 @@ config = f'Model_Output/Q{DISCHARGE}'
 base_path = base_directory / config
 timed_out_dir = base_path / "timed-out"
 # List all variables you want to extract and save
-var_names = ["mesh2d_mor_bl", "mesh2d_s1", "mesh2d_taus", "mesh2d_flowelem_ba"]
+var_names = ["mesh2d_mor_bl", "mesh2d_s1", "mesh2d_u1","mesh2d_taus", "mesh2d_flowelem_ba"]
 
 # Spatial subset bounds [xmin, ymin, xmax, ymax]
 BBOX = [1, 1, 45000, 15000]
