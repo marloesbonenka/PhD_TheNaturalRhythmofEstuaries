@@ -356,7 +356,7 @@ if WORKFLOW_MODE != "matrix":
             transport              = data[sed_var][:SPINUP_STEPS + t_end_idx],
         )
 
-    # %% SENSITIVITY  (dV/dt vs Q_river)
+    # SENSITIVITY  (dV/dt vs Q_river)
     for (box_start, box_end) in boxes:
         fig, ax = plt.subplots(figsize=(8, 6))
 
