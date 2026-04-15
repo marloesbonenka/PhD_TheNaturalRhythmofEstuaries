@@ -36,7 +36,7 @@ from FUNCTIONS.F_tidalrange_currentspeed import (
 # =============================================================================
 DISCHARGE = 500
 SCENARIOS_TO_PROCESS = None
-OUTPUT_DIRNAME = 'plots_his_tidalrange_currentspeed'
+OUTPUT_DIRNAME = 'plots_his_tidalrange'
 
 WATERLEVEL_VAR = 'waterlevel'
 
@@ -218,11 +218,11 @@ for folder in model_folders:
     )
     print(f"  High-flow windows: {len(high_windows)} | Low-flow: {len(low_windows)}")
 
-    # Tidal range profiles
+    # Tidal range profiles — use only the final simulated year
     tr_high_yearly = _yearly_profiles(wl_times, wl, high_windows, TIDAL_CYCLE_HOURS, tr_reducer)
     tr_low_yearly  = _yearly_profiles(wl_times, wl, low_windows,  TIDAL_CYCLE_HOURS, tr_reducer)
-    tr_high = None if tr_high_yearly is None else np.nanmean(tr_high_yearly, axis=0)
-    tr_low  = None if tr_low_yearly  is None else np.nanmean(tr_low_yearly,  axis=0)
+    tr_high = None if tr_high_yearly is None else tr_high_yearly[-1, :]
+    tr_low  = None if tr_low_yearly  is None else tr_low_yearly[-1, :]
 
     peak_ratio, n_peaks = _parse_scenario_params(folder)
 
@@ -245,6 +245,16 @@ for folder in model_folders:
 # =============================================================================
 if not scenario_results:
     raise RuntimeError('No scenarios processed. Check paths and filters.')
+
+
+def _row_label(sk):
+    """Scenario label including pm and n for use on axes."""
+    d   = scenario_results[sk]
+    pr  = d['peak_ratio']
+    np_ = d['n_peaks']
+    if pr is not None and np_ is not None:
+        return f"{d['label']}  pm{pr:.1f}  n{int(np_)}"
+    return d['label']
 
 
 # ---- 1. Per-scenario: year x km heatmaps ------------------------------------
@@ -280,7 +290,7 @@ for scenario_key in sorted(scenario_results.keys()):
             plt.close(fig)
 
 
-# ---- 2. Per-scenario: mean line profiles, high-flow vs low-flow -------------
+# ---- 2. Per-scenario: final-year line profiles, high-flow vs low-flow ------
 for scenario_key in sorted(scenario_results.keys()):
     d = scenario_results[scenario_key]
 
@@ -291,7 +301,9 @@ for scenario_key in sorted(scenario_results.keys()):
         ax.plot(d['tr_km'], d['tr_low'],  color='tab:blue', linewidth=1.8, label='Low flow')
     ax.set_xlabel('Estuary distance [km from sea]')
     ax.set_ylabel('Tidal range [m]')
-    ax.set_title(f"{d['label']} — mean tidal range, high-flow vs low-flow (Q{DISCHARGE})")
+    ax.set_title(
+        f"{_row_label(scenario_key)} — tidal range (final year), high-flow vs low-flow (Q{DISCHARGE})"
+    )
     ax.legend()
     ax.grid(alpha=0.3)
     fig.tight_layout()
@@ -313,7 +325,7 @@ def _sort_key(sk):
     np_ = d['n_peaks']   if d['n_peaks']   is not None else 0.0
     return (pr, np_)
 
-sorted_keys = sorted(scenario_results.keys(), key=_sort_key)
+sorted_keys = sorted(scenario_results.keys(), key=_sort_key, reverse=True)
 
 # Common km grid: union of all station positions; interpolate outliers.
 all_km = np.unique(np.concatenate([scenario_results[sk]['tr_km'] for sk in sorted_keys]))
@@ -333,15 +345,16 @@ for i, sk in enumerate(sorted_keys):
     grid_high[i, :] = _interp_to_common(d['tr_high'], d['tr_km'], all_km)
 
 grid_diff  = grid_low - grid_high   # positive = tidal prism expansion during low flow
-row_labels = [scenario_results[sk]['label'] for sk in sorted_keys]
+
+row_labels = [_row_label(sk) for sk in sorted_keys]
 
 fig_w = max(8, len(all_km) * 0.15 + 2)
 fig_h = max(4, n_scen * 0.55 + 1.5)
 
 for grid, title_suffix, fname_suffix, cmap, sym in [
-    (grid_low,  'Low-flow tidal range',            'lowflow',  'viridis', False),
-    (grid_high, 'High-flow tidal range',           'highflow', 'viridis', False),
-    (grid_diff, 'Low-flow minus high-flow (delta TR)', 'contrast', 'RdBu_r', True),
+    (grid_low,  'Low-flow tidal range (final year)',            'lowflow',  'viridis', False),
+    (grid_high, 'High-flow tidal range (final year)',           'highflow', 'viridis', False),
+    (grid_diff, 'Low-flow minus high-flow, delta TR (final year)', 'contrast', 'RdBu_r', True),
 ]:
     vmin = np.nanmin(grid)
     vmax = np.nanmax(grid)
@@ -383,7 +396,7 @@ for scenario_key in sorted_keys:
         ax.plot(d['tr_km'], d['tr_low'], color=d['color'], linewidth=1.5, label=d['label'])
 ax.set_xlabel('Estuary distance [km from sea]')
 ax.set_ylabel('Tidal range [m]')
-ax.set_title(f"Low-flow tidal range — all scenarios (Q{DISCHARGE})")
+ax.set_title(f"Low-flow tidal range (final year) — all scenarios (Q{DISCHARGE})")
 ax.legend(fontsize=8)
 ax.grid(alpha=0.3)
 fig.tight_layout()
@@ -398,4 +411,165 @@ else:
 
 
 print(f"\nSaved outputs in: {output_dir}")
+
+
+# =============================================================================
+# TIDAL INTRUSION LENGTH — matrix plots (peak_ratio × n_peaks)
+# =============================================================================
+# Tidal intrusion length is defined as the km of the most landward station
+# where the tidal range is still detectable (> TR_THRESHOLD).  The profile is
+# interpolated linearly to find the exact crossing.
+#
+# Note: this is a water-level-based intrusion limit (where tidal *range* goes
+# to zero), which differs from plot_his_flood_intrusion_timeseries.py, which
+# uses discharge cross-sections to find the furthest flood-direction flow.
+# The WL-based measure captures the full tidal influence extent; the discharge-
+# based one is the deepest point of active flood penetration.
+
+TR_THRESHOLD = 0.02   # [m] — tidal range below this is considered "zero"
+
+
+def _intrusion_km(km, tr_profile, threshold=TR_THRESHOLD):
+    """Return the km of the zero-crossing of tidal range (interpolated).
+
+    Stations are assumed ordered from sea (low km) to river (high km).
+    Returns NaN if the profile never exceeds the threshold.
+    """
+    if tr_profile is None:
+        return np.nan
+    above = tr_profile > threshold
+    if not np.any(above):
+        return np.nan
+    # Most landward station still above threshold
+    last_above = int(np.where(above)[0][-1])
+    if last_above == len(km) - 1:
+        return float(km[last_above])   # tidal range never drops to zero
+    # Interpolate between last_above and last_above+1
+    x0, y0 = float(km[last_above]),     float(tr_profile[last_above])
+    x1, y1 = float(km[last_above + 1]), float(tr_profile[last_above + 1])
+    if (y0 - y1) == 0:
+        return float(x0)
+    return float(x0 + (threshold - y0) * (x1 - x0) / (y1 - y0))
+
+
+# Collect intrusion lengths per scenario
+for sk in scenario_results:
+    d = scenario_results[sk]
+    d['intrusion_high'] = _intrusion_km(d['tr_km'], d['tr_high'])
+    d['intrusion_low']  = _intrusion_km(d['tr_km'], d['tr_low'])
+
+# Build (peak_ratio × n_peaks) matrices
+parseable = [
+    sk for sk in scenario_results
+    if scenario_results[sk]['peak_ratio'] is not None
+]
+
+all_n_peaks     = sorted({int(scenario_results[sk]['n_peaks'])    for sk in parseable})
+all_peak_ratios = sorted({scenario_results[sk]['peak_ratio'] for sk in parseable})
+row_order = list(reversed(all_peak_ratios))   # highest ratio at top
+
+n_rows = len(row_order)
+n_cols = len(all_n_peaks)
+
+mat_high = np.full((n_rows, n_cols), np.nan)
+mat_low  = np.full((n_rows, n_cols), np.nan)
+
+for sk in parseable:
+    d  = scenario_results[sk]
+    ri = row_order.index(d['peak_ratio'])
+    ci = all_n_peaks.index(int(d['n_peaks']))
+    mat_high[ri, ci] = d['intrusion_high']
+    mat_low[ri, ci]  = d['intrusion_low']
+
+# Reference: constant scenario (peak_ratio == 1, n_peaks == 0)
+ref_high = ref_low = np.nan
+for sk in parseable:
+    d = scenario_results[sk]
+    if d['peak_ratio'] == 1.0 and int(d['n_peaks']) == 0:
+        ref_high = d['intrusion_high']
+        ref_low  = d['intrusion_low']
+        break
+
+xticklabels = [str(n) for n in all_n_peaks]
+yticklabels = [
+    f"{int(r)}" if r == int(r) else f"{r}"
+    for r in row_order
+]
+pw = max(5, n_cols * 1.4)
+ph = max(3, n_rows * 0.9)
+
+
+def _draw_intrusion_matrix(mat, ref_val, flow_label, fname_suffix):
+    vmin, vmax = np.nanmin(mat), np.nanmax(mat)
+
+    # Absolute matrix
+    fig, ax = plt.subplots(figsize=(pw, ph))
+    im = ax.imshow(mat, aspect='auto', cmap='Blues', vmin=vmin, vmax=vmax)
+    for ri in range(n_rows):
+        for ci in range(n_cols):
+            val = mat[ri, ci]
+            if not np.isnan(val):
+                rel = (val - vmin) / (vmax - vmin) if vmax != vmin else 0.5
+                ax.text(ci, ri, f"{val:.1f} km", ha='center', va='center',
+                        fontsize=8,
+                        color='white' if rel > 0.55 else 'black')
+    cbar = fig.colorbar(im, ax=ax, pad=0.02)
+    cbar.set_label('Tidal intrusion length [km]', fontsize=9)
+    ax.set_xticks(range(n_cols))
+    ax.set_xticklabels(xticklabels)
+    ax.set_yticks(range(n_rows))
+    ax.set_yticklabels(yticklabels)
+    ax.set_xlabel('Number of peaks per year  ($n_{\\mathrm{peaks}}$)', fontsize=10)
+    ax.set_ylabel('Peak / mean ratio  ($R_{\\mathrm{peak}}$)', fontsize=10)
+    ax.set_title(
+        f'Tidal intrusion length — {flow_label} (final year, Q{DISCHARGE})',
+        fontsize=11, fontweight='bold',
+    )
+    fig.tight_layout()
+    fig.savefig(output_dir / f"intrusion_matrix_{fname_suffix}_Q{DISCHARGE}.png",
+                dpi=200, bbox_inches='tight')
+    if SHOW_FIGURES:
+        plt.show()
+    else:
+        plt.close(fig)
+
+    # Normalised matrix (% vs constant scenario)
+    if not np.isnan(ref_val) and ref_val != 0:
+        mat_pct = (mat - ref_val) / abs(ref_val) * 100.0
+        abs_max = np.nanmax(np.abs(mat_pct))
+        fig, ax = plt.subplots(figsize=(pw, ph))
+        im = ax.imshow(mat_pct, aspect='auto', cmap='RdBu_r',
+                       vmin=-abs_max, vmax=abs_max)
+        for ri in range(n_rows):
+            for ci in range(n_cols):
+                val = mat_pct[ri, ci]
+                if not np.isnan(val):
+                    ax.text(ci, ri, f"{val:+.1f}%", ha='center', va='center',
+                            fontsize=8,
+                            color='black' if abs(val) < 0.55 * abs_max else 'white')
+        cbar = fig.colorbar(im, ax=ax, pad=0.02)
+        cbar.set_label('Change vs. constant scenario [%]', fontsize=9)
+        ax.set_xticks(range(n_cols))
+        ax.set_xticklabels(xticklabels)
+        ax.set_yticks(range(n_rows))
+        ax.set_yticklabels(yticklabels)
+        ax.set_xlabel('Number of peaks per year  ($n_{\\mathrm{peaks}}$)', fontsize=10)
+        ax.set_ylabel('Peak / mean ratio  ($R_{\\mathrm{peak}}$)', fontsize=10)
+        ax.set_title(
+            f'Tidal intrusion change vs. constant — {flow_label} (final year, Q{DISCHARGE})',
+            fontsize=11, fontweight='bold',
+        )
+        fig.tight_layout()
+        fig.savefig(output_dir / f"intrusion_matrix_{fname_suffix}_normalised_Q{DISCHARGE}.png",
+                    dpi=200, bbox_inches='tight')
+        if SHOW_FIGURES:
+            plt.show()
+        else:
+            plt.close(fig)
+
+
+_draw_intrusion_matrix(mat_high, ref_high, 'high-flow', 'highflow')
+_draw_intrusion_matrix(mat_low,  ref_low,  'low-flow',  'lowflow')
+
+print(f"\nSaved tidal intrusion matrices in: {output_dir}")
 #%%
