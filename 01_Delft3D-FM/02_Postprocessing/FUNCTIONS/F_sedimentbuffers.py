@@ -125,11 +125,17 @@ def run_envelope_workflow(
     show_noisy_envelope=True,
 ):
     """Run noisy-envelope plots for sediment buffer volumes."""
+    # Derive scenario keys from variability_map so all runs are included
+    _all_keys = sorted({str(int(k)) for k in variability_map}, key=lambda x: int(x))
+    _auto_colors = ["#56B4E9", "#E69F00", "#009E73", "#D55E00",
+                    "#CC79A7", "#0072B2", "#F0E442", "#000000"]
     scenario_config = {
-        "1": {"color": scenario_colors["1"], "label": scenario_labels["1"]},
-        "2": {"color": scenario_colors["2"], "label": scenario_labels["2"]},
-        "3": {"color": scenario_colors["3"], "label": scenario_labels["3"]},
-        "4": {"color": scenario_colors["4"], "label": scenario_labels["4"]},
+        k: {
+            "color": (scenario_colors or {}).get(k,
+                      _auto_colors[i % len(_auto_colors)]),
+            "label": (scenario_labels or {}).get(k, f"Scenario {k}"),
+        }
+        for i, k in enumerate(_all_keys)
     }
 
     base_directory = Path(base_directory)
@@ -176,7 +182,6 @@ def run_envelope_workflow(
 
     variability_runs = {}
     if envelope_plot_mode in {'all', 'scenarios_only'}:
-        other_nums = {int(k) for k in scenario_config if k != base_scenario}
         all_var_runs = load_sedimentbuffer_runs(
             base_path=variability_base_path,
             cache_dir=variability_cache_dir,
@@ -185,11 +190,22 @@ def run_envelope_workflow(
             boxes=boxes,
             var_name=sed_var,
             analyze_noisy=False,
-            scenario_filter=other_nums,
+            scenario_filter=None,
         )
+        # Extend scenario_config with any scenarios found on disk not in variability_map
+        for folder_name in sorted(all_var_runs, key=lambda x: int(x.split('_')[0])):
+            snum = str(int(folder_name.split('_')[0]))
+            if snum not in scenario_config:
+                scenario_config[snum] = {
+                    'color': (scenario_colors or {}).get(snum,
+                              _auto_colors[len(scenario_config) % len(_auto_colors)]),
+                    'label': (scenario_labels or {}).get(snum, f'Scenario {snum}'),
+                }
+        _all_keys = sorted(scenario_config, key=lambda x: int(x))
+
         for folder_name, run_data in all_var_runs.items():
             scenario_num = str(int(folder_name.split('_')[0]))
-            if scenario_num not in scenario_config:
+            if scenario_num == base_scenario:
                 continue
             variability_runs[scenario_num] = {
                 'time': run_data['time'],
@@ -323,10 +339,7 @@ def run_envelope_workflow(
 
         handles, labels = ax.get_legend_handles_labels()
         desired_order = [
-            scenario_labels['1'],
-            scenario_labels['2'],
-            scenario_labels['3'],
-            scenario_labels['4'],
+            scenario_config[k]['label'] for k in _all_keys
         ]
         ordered_handles = []
         ordered_labels = []

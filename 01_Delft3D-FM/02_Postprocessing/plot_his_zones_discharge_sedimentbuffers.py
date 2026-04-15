@@ -12,6 +12,7 @@ Sensitivity and recovery plots: one figure per km section, all scenarios overlai
 # %% IMPORTS
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import matplotlib as mpl
 import sys
 from pathlib import Path
@@ -29,7 +30,8 @@ from FUNCTIONS.F_sedimentbuffers import (
 # Workflow:
 # - "full": original detailed per-scenario and sensitivity analysis
 # - "envelope": noisy-envelope + variability comparison plots
-WORKFLOW_MODE = "envelope"
+# - "matrix": per-zone matrix plots only (skip all other plots)
+WORKFLOW_MODE = "matrix"
 
 sed_var   = 'cross_section_bedload_sediment_transport'
 dis_var   = 'cross_section_discharge'
@@ -57,8 +59,8 @@ DT_HOURS = 1                        #3600 seconds = 1 hour
 SPINUP_STEPS = 24 * 3  # 3 days, adjust based on your output interval
 
 # Scenario filters
-SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']
-DISCHARGE   = 250
+SCENARIOS_TO_PROCESS = None
+DISCHARGE   = 500
 ANALYZE_NOISY = False
 
 # Envelope mode settings
@@ -66,24 +68,18 @@ BASE_SCENARIO = '1'
 ENVELOPE_PLOT_MODE = 'scenarios_only'  # 'noise_only', 'all', or 'scenarios_only'
 SHOW_NOISY_ENVELOPE = False  # If False, keep scenario comparison lines only (no grey noisy runs/envelope).
 
+# Toggle: set True to produce per-zone matrix plots (columns = n_peaks, rows = peak_ratio)
+#         set False to skip matrix plots
+PLOT_AS_MATRIX = True
+
 # Human-readable labels per scenario number (used in combined plots)
-SCENARIO_LABELS = {
-    '1': 'Constant',
-    '2': 'Seasonal',
-    '3': 'Flashy',
-    '4': 'Single peak',
-}
+SCENARIO_LABELS = {}
 
 # colorblind friendly
-SCENARIO_COLORS = {
-    '1': '#56B4E9', #'#1f77b4',   # blue   – Constant
-    '2': '#E69F00', #'#ff7f0e',   # orange – Seasonal
-    '3': '#009E73', # '#2ca02c',   # green  – Flashy
-    '4': '#D55E00', #'#d62728',   # red    – Single peak
-}
+SCENARIO_COLORS = {}
 
 # %% --- PATHS ---
-base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
+base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian")
 config = f"Model_Output/Q{DISCHARGE}"
 if ANALYZE_NOISY:
     base_path = base_directory / config / f"0_Noise_Q{DISCHARGE}"
@@ -215,182 +211,317 @@ for scenario_dir, his_file_paths in run_his_paths.items():
 
 # %% ============================================================
 #    PER-SCENARIO PLOTS  — one figure per scenario, all sections in each
+#    (skipped when WORKFLOW_MODE == "matrix")
 # ===============================================================
-for scenario_dir, data in scenario_data.items():
-    scenario_name = Path(scenario_dir).name
-    scenario_num  = scenario_name.split('_')[0]
-    scenario_label = SCENARIO_LABELS.get(str(int(scenario_num)), scenario_name)
+if WORKFLOW_MODE != "matrix":
+    for scenario_dir, data in scenario_data.items():
+        scenario_name  = Path(scenario_dir).name
+        scenario_num   = scenario_name.split('_')[0]
+        scenario_label = SCENARIO_LABELS.get(str(int(scenario_num)), scenario_name)
 
-    km_positions   = data['km_positions']
-    transport      = data[sed_var]          # (time, km)  cumulative kg
-    Q_all          = data[dis_var]          # (time, km)  m³/s
-    time           = data['t']
-    buffer_volumes = data['buffer_volumes']
+        km_positions   = data['km_positions']
+        transport      = data[sed_var]          # (time, km)  cumulative kg
+        Q_all          = data[dis_var]          # (time, km)  m³/s
+        time           = data['t']
+        buffer_volumes = data['buffer_volumes']
 
-    window = int(TIDAL_WINDOW_HOURS / DT_HOURS)
+        window = int(TIDAL_WINDOW_HOURS / DT_HOURS)
 
-    # River discharge at upstream boundary
-    idx_river  = np.argmin(np.abs(km_positions - RIVER_KM))
+        # River discharge at upstream boundary
+        idx_river  = np.argmin(np.abs(km_positions - RIVER_KM))
 
-    print(f"{scenario_name}: closest cross-section to {RIVER_KM} km is at {km_positions[idx_river]:.2f} km")
+        print(f"{scenario_name}: closest cross-section to {RIVER_KM} km is at {km_positions[idx_river]:.2f} km")
 
-    Q_river = data[dis_var][:, idx_river]
-    time    = data['t']
+        Q_river = data[dis_var][:, idx_river]
+        time    = data['t']
 
-    fig, ax = plt.subplots(figsize=(12, 4))
-    ax.plot(time, Q_river, lw=0.8)
-    ax.set_xlabel('Time')
-    ax.set_ylabel('Discharge (m³/s)')
-    ax.set_title(f'Discharge at {km_positions[idx_river]:.2f} km — {scenario_name}')
-    ax.grid(alpha=0.3)
-    fig.tight_layout()
-    plt.show()
+        fig, ax = plt.subplots(figsize=(12, 4))
+        ax.plot(time, Q_river, lw=0.8)
+        ax.set_xlabel('Time')
+        ax.set_ylabel('Discharge (m³/s)')
+        ax.set_title(f'Discharge at {km_positions[idx_river]:.2f} km — {scenario_name}')
+        ax.grid(alpha=0.3)
+        fig.tight_layout()
+        plt.show()
 
-    # ── 1. CUMULATIVE BUFFER VOLUME ──────────────────────────
-    fig, ax = plt.subplots()
-    for (box_start, box_end), buf in buffer_volumes.items():
-        ax.plot(time, buf, label=f'{box_start}–{box_end} km')
-    ax.set_xlabel('Hydrodynamic time (×100 = morphological time)')
-    ax.set_ylabel('Buffer volume (m³)')
-    ax.set_ylim(-0.1, 1.15e11)
-    ax.legend()
-    ax.set_title(f'Sediment buffer volumes — {scenario_label}')
-    ax.grid()
-    fig.tight_layout()
-    fig.savefig(output_dir / f"{scenario_name}_sediment_buffer_volume_cumulative.png",
-                dpi=300, bbox_inches='tight')
-    plt.show()
+        # ── 1. CUMULATIVE BUFFER VOLUME ──────────────────────────
+        fig, ax = plt.subplots()
+        for (box_start, box_end), buf in buffer_volumes.items():
+            ax.plot(time, buf, label=f'{box_start}–{box_end} km')
+        ax.set_xlabel('Hydrodynamic time (×100 = morphological time)')
+        ax.set_ylabel('Buffer volume (m³)')
+        ax.set_ylim(-0.1, 1.15e11)
+        ax.legend()
+        ax.set_title(f'Sediment buffer volumes — {scenario_label}')
+        ax.grid()
+        fig.tight_layout()
+        fig.savefig(output_dir / f"{scenario_name}_sediment_buffer_volume_cumulative.png",
+                    dpi=300, bbox_inches='tight')
+        plt.show()
 
-    # ── 2. INSTANTANEOUS dV/dt ───────────────────────────────
-    fig, ax = plt.subplots()
-    for (box_start, box_end), buf in buffer_volumes.items():
-        ax.plot(time[1:], np.diff(buf), label=f'{box_start}–{box_end} km')
-    ax.set_ylim(-0.25e8, 0.25e8)
-    ax.set_xlabel('Hydrodynamic time (×100 = morphological time)')
-    ax.set_ylabel('dV/dt (m³/timestep)')
-    ax.legend()
-    ax.set_title(f'Instantaneous buffer change — {scenario_label}')
-    ax.grid()
-    fig.tight_layout()
-    fig.savefig(output_dir / f"{scenario_name}_sediment_buffer_volume_instantaneous.png",
-                dpi=300, bbox_inches='tight')
-    plt.show()
+    # # ── 2. INSTANTANEOUS dV/dt ───────────────────────────────
+    # fig, ax = plt.subplots()
+    # for (box_start, box_end), buf in buffer_volumes.items():
+    #     ax.plot(time[1:], np.diff(buf), label=f'{box_start}–{box_end} km')
+    # ax.set_ylim(-0.25e8, 0.25e8)
+    # ax.set_xlabel('Hydrodynamic time (×100 = morphological time)')
+    # ax.set_ylabel('dV/dt (m³/timestep)')
+    # ax.legend()
+    # ax.set_title(f'Instantaneous buffer change — {scenario_label}')
+    # ax.grid()
+    # fig.tight_layout()
+    # fig.savefig(output_dir / f"{scenario_name}_sediment_buffer_volume_instantaneous.png",
+    #             dpi=300, bbox_inches='tight')
+    # plt.show()
 
-    # ── 3. TIDAL-AVERAGED RESIDUAL dV/dt ────────────────────
-    fig, ax = plt.subplots(figsize=(12, 6))
-    for (box_start, box_end), buf in buffer_volumes.items():
-        d_buf = np.diff(buf)
-        if len(d_buf) >= window:
-            ax.plot(time[1:], tidal_avg(d_buf, window),
-                    label=f'Residual: {box_start}–{box_end} km', linewidth=2)
-        else:
-            print(f"Warning: too short for tidal window at {box_start} km")
-    ax.axhline(0, color='black', lw=1.5, ls='--')
-    ax.set_ylim(-0.25e7, 0.25e7)
-    ax.set_xlabel('Hydrodynamic time (×100 = morphological time)')
-    ax.set_ylabel('Tidal avg dV/dt (m³/timestep)')
-    ax.set_title(f'Residual sediment storage rate — {scenario_label}')
-    ax.legend()
-    ax.grid(True, which='both', alpha=0.3)
-    fig.tight_layout()
-    fig.savefig(output_dir / f"{scenario_name}_residual_buffer_change.png", dpi=300)
-    plt.show()
+    # # ── 3. TIDAL-AVERAGED RESIDUAL dV/dt ────────────────────
+    # fig, ax = plt.subplots(figsize=(12, 6))
+    # for (box_start, box_end), buf in buffer_volumes.items():
+    #     d_buf = np.diff(buf)
+    #     if len(d_buf) >= window:
+    #         ax.plot(time[1:], tidal_avg(d_buf, window),
+    #                 label=f'Residual: {box_start}–{box_end} km', linewidth=2)
+    #     else:
+    #         print(f"Warning: too short for tidal window at {box_start} km")
+    # ax.axhline(0, color='black', lw=1.5, ls='--')
+    # ax.set_ylim(-0.25e7, 0.25e7)
+    # ax.set_xlabel('Hydrodynamic time (×100 = morphological time)')
+    # ax.set_ylabel('Tidal avg dV/dt (m³/timestep)')
+    # ax.set_title(f'Residual sediment storage rate — {scenario_label}')
+    # ax.legend()
+    # ax.grid(True, which='both', alpha=0.3)
+    # fig.tight_layout()
+    # fig.savefig(output_dir / f"{scenario_name}_residual_buffer_change.png", dpi=300)
+    # plt.show()
 
-    # ── 4. TRAPPING EFFICIENCY ───────────────────────────────
-    fig, ax = plt.subplots(figsize=(12, 6))
-    for (box_start, box_end), buf in buffer_volumes.items():
-        idx_up = np.argmin(np.abs(km_positions - box_start))
-        dV         = np.diff(buf)
-        dIn_gross  = np.abs(np.diff(transport[:, idx_up]))
-        efficiency = (np.convolve(dV,        np.ones(window), mode='same') /
-                     (np.convolve(dIn_gross, np.ones(window), mode='same') + 1e-6))
-        ax.plot(time[1:], efficiency, label=f'Efficiency: {box_start}–{box_end} km')
-    ax.axhline(0, color='black', lw=1,   ls='--')
-    ax.axhline(1, color='red',   lw=1,   ls=':', label='Total trap')
-    ax.set_ylim(-1.1, 1.1)
-    ax.set_xlabel('Hydrodynamic time (×100 = morphological time)')
-    ax.set_ylabel('Tidal-averaged efficiency (–)')
-    ax.set_title(f'Sediment trapping efficiency — {scenario_label}')
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    fig.tight_layout()
-    fig.savefig(output_dir / f"{scenario_name}_trapping_efficiency.png", dpi=300)
-    plt.show()
+    # # ── 4. TRAPPING EFFICIENCY ───────────────────────────────
+    # fig, ax = plt.subplots(figsize=(12, 6))
+    # for (box_start, box_end), buf in buffer_volumes.items():
+    #     idx_up = np.argmin(np.abs(km_positions - box_start))
+    #     dV         = np.diff(buf)
+    #     dIn_gross  = np.abs(np.diff(transport[:, idx_up]))
+    #     efficiency = (np.convolve(dV,        np.ones(window), mode='same') /
+    #                  (np.convolve(dIn_gross, np.ones(window), mode='same') + 1e-6))
+    #     ax.plot(time[1:], efficiency, label=f'Efficiency: {box_start}–{box_end} km')
+    # ax.axhline(0, color='black', lw=1,   ls='--')
+    # ax.axhline(1, color='red',   lw=1,   ls=':', label='Total trap')
+    # ax.set_ylim(-1.1, 1.1)
+    # ax.set_xlabel('Hydrodynamic time (×100 = morphological time)')
+    # ax.set_ylabel('Tidal-averaged efficiency (–)')
+    # ax.set_title(f'Sediment trapping efficiency — {scenario_label}')
+    # ax.legend()
+    # ax.grid(True, alpha=0.3)
+    # fig.tight_layout()
+    # fig.savefig(output_dir / f"{scenario_name}_trapping_efficiency.png", dpi=300)
+    # plt.show()
 
 
 # %% ============================================================
-#    PRE-PROCESS: collect trimmed arrays per scenario
-#    (shared by both combined plots below)
+#    PRE-PROCESS + SENSITIVITY  (skipped in matrix mode)
 # ===============================================================
-window        = int(TIDAL_WINDOW_HOURS / DT_HOURS)
-max_lag_steps = int(MAX_LAG_DAYS * 24 / DT_HOURS)
+if WORKFLOW_MODE != "matrix":
+    window        = int(TIDAL_WINDOW_HOURS / DT_HOURS)
+    max_lag_steps = int(MAX_LAG_DAYS * 24 / DT_HOURS)
 
-t_end_min = min(
-    data['t'][SPINUP_STEPS:].max()
-    for data in scenario_data.values()
-)
-print(f"Shortest simulation end time across scenarios: {t_end_min}")
-
-processed = {}   # scenario_key → dict of trimmed arrays
-
-for scenario_dir, data in scenario_data.items():
-    scenario_num  = Path(scenario_dir).name.split('_')[0]
-    scenario_key  = str(int(scenario_num))
-
-    km_positions   = data['km_positions']
-    Q_all          = data[dis_var]
-    buffer_volumes = data['buffer_volumes']
-    time           = data['t']
-
-    idx_river = np.argmin(np.abs(km_positions - RIVER_KM))
-    
-    time_trimmed = time[SPINUP_STEPS:]
-    t_end_idx = np.searchsorted(time_trimmed, t_end_min, side='right')
-
-    processed[scenario_key] = dict(
-        label                  = SCENARIO_LABELS.get(scenario_key, scenario_dir),
-        color                  = SCENARIO_COLORS.get(scenario_key, 'grey'),
-        Q_river                = Q_all[SPINUP_STEPS : SPINUP_STEPS + t_end_idx, idx_river],
-        time                   = time_trimmed[:t_end_idx],
-        buffer_volumes_trimmed = {k: v[SPINUP_STEPS : SPINUP_STEPS + t_end_idx]
-                                  for k, v in buffer_volumes.items()},
-        km_positions           = km_positions,
-        transport              = data[sed_var][:SPINUP_STEPS + t_end_idx],
+    t_end_min = min(
+        data['t'][SPINUP_STEPS:].max()
+        for data in scenario_data.values()
     )
+    print(f"Shortest simulation end time across scenarios: {t_end_min}")
 
+    processed = {}   # scenario_key → dict of trimmed arrays
 
-# %% ============================================================
-#    PLOT 5a — SENSITIVITY  (dV/dt vs Q_river)
-#    One figure per km section, all scenarios overlaid
-# ===============================================================
-for (box_start, box_end) in boxes:
-    fig, ax = plt.subplots(figsize=(8, 6))
+    for scenario_dir, data in scenario_data.items():
+        scenario_num  = Path(scenario_dir).name.split('_')[0]
+        scenario_key  = str(int(scenario_num))
 
-    for scenario_key, d in processed.items():
-        buf    = d['buffer_volumes_trimmed'][(box_start, box_end)]
-        Q_plot = d['Q_river'][:-1]          # align with np.diff output
-        dV_dt  = np.diff(buf)
+        km_positions   = data['km_positions']
+        Q_all          = data[dis_var]
+        buffer_volumes = data['buffer_volumes']
+        time           = data['t']
 
-        # Scatter (low alpha to avoid overplotting)
-        ax.scatter(Q_plot, dV_dt, alpha=0.15, s=6, color=d['color'])
+        idx_river = np.argmin(np.abs(km_positions - RIVER_KM))
+        
+        time_trimmed = time[SPINUP_STEPS:]
+        t_end_idx = np.searchsorted(time_trimmed, t_end_min, side='right')
 
-        # Quadratic trend line (labelled — this is the visual signal)
-        z  = np.polyfit(Q_plot, dV_dt, 2)
-        xp = np.linspace(Q_plot.min(), Q_plot.max(), 300)
-        ax.plot(xp, np.poly1d(z)(xp), '-', linewidth=2.5,
-                color=d['color'], label=d['label'])
+        processed[scenario_key] = dict(
+            label                  = SCENARIO_LABELS.get(scenario_key, scenario_dir),
+            color                  = SCENARIO_COLORS.get(scenario_key, 'grey'),
+            Q_river                = Q_all[SPINUP_STEPS : SPINUP_STEPS + t_end_idx, idx_river],
+            time                   = time_trimmed[:t_end_idx],
+            buffer_volumes_trimmed = {k: v[SPINUP_STEPS : SPINUP_STEPS + t_end_idx]
+                                      for k, v in buffer_volumes.items()},
+            km_positions           = km_positions,
+            transport              = data[sed_var][:SPINUP_STEPS + t_end_idx],
+        )
 
-    ax.axhline(0, color='black', lw=1,   ls='--', zorder=3)
-    ax.axvline(0, color='black', lw=0.8, ls='--', zorder=3)
-    ax.set_xlabel(f'River discharge at {RIVER_KM} km (m³/s)', fontsize=11)
-    ax.set_ylabel('Section buffer change  dV/dt  (m³/timestep)', fontsize=11)
-    ax.set_title(f'System sensitivity — section {box_start}–{box_end} km', fontsize=12)
-    ax.legend(title='Scenario', fontsize=9)
-    ax.grid(alpha=0.25)
-    fig.tight_layout()
-    fig.savefig(
-        output_dir / f"section_{box_start}-{box_end}km_sensitivity_allscenarios.png",
-        dpi=300, bbox_inches='tight'
-    )
-    plt.show()
+    # %% SENSITIVITY  (dV/dt vs Q_river)
+    for (box_start, box_end) in boxes:
+        fig, ax = plt.subplots(figsize=(8, 6))
+
+        for scenario_key, d in processed.items():
+            buf    = d['buffer_volumes_trimmed'][(box_start, box_end)]
+            Q_plot = d['Q_river'][:-1]          # align with np.diff output
+            dV_dt  = np.diff(buf)
+
+            # Scatter (low alpha to avoid overplotting)
+            ax.scatter(Q_plot, dV_dt, alpha=0.15, s=6, color=d['color'])
+
+            # Quadratic trend line (labelled — this is the visual signal)
+            z  = np.polyfit(Q_plot, dV_dt, 2)
+            xp = np.linspace(Q_plot.min(), Q_plot.max(), 300)
+            ax.plot(xp, np.poly1d(z)(xp), '-', linewidth=2.5,
+                    color=d['color'], label=d['label'])
+
+        ax.axhline(0, color='black', lw=1,   ls='--', zorder=3)
+        ax.axvline(0, color='black', lw=0.8, ls='--', zorder=3)
+        ax.set_xlabel(f'River discharge at {RIVER_KM} km (m³/s)', fontsize=11)
+        ax.set_ylabel('Section buffer change  dV/dt  (m³/timestep)', fontsize=11)
+        ax.set_title(f'System sensitivity — section {box_start}–{box_end} km', fontsize=12)
+        ax.legend(title='Scenario', fontsize=9)
+        ax.grid(alpha=0.25)
+        fig.tight_layout()
+        fig.savefig(
+            output_dir / f"section_{box_start}-{box_end}km_sensitivity_allscenarios.png",
+            dpi=300, bbox_inches='tight'
+        )
+        plt.show()
+
+# %% --- MATRIX PLOTS (one per zone) ---
+if WORKFLOW_MODE == "matrix" or PLOT_AS_MATRIX:
+    _FOLDER_RE = re.compile(r"_pm(\d+(?:\.\d+)?)_n(\d+)", re.IGNORECASE)
+
+    # Annotate each loaded scenario with peak_ratio / n_peaks
+    parseable_scenarios = []
+    for scenario_dir, data in scenario_data.items():
+        folder_name = Path(scenario_dir).name
+        m = _FOLDER_RE.search(folder_name)
+        if m:
+            scenario_num = folder_name.split('_')[0]
+            scenario_key = str(int(scenario_num))
+            parseable_scenarios.append({
+                'peak_ratio':   float(m.group(1)),
+                'n_peaks':      int(m.group(2)),
+                'scenario_key': scenario_key,
+                'data':         data,
+            })
+
+    if not parseable_scenarios:
+        print("[WARNING] No _pm<r>_n<n> folder names found; skipping matrix plots.")
+    else:
+        all_n_peaks     = sorted({s['n_peaks']    for s in parseable_scenarios})
+        all_peak_ratios = sorted({s['peak_ratio'] for s in parseable_scenarios})
+        n_cols    = len(all_n_peaks)
+        n_rows    = len(all_peak_ratios)
+        row_order = list(reversed(all_peak_ratios))   # highest ratio at top
+
+        PANEL_W, PANEL_H = 3.4, 2.4
+        LINE_COLOR = "#1f77b4"
+
+        for (box_start, box_end) in boxes:
+            # Global y-limits for this zone
+            all_buf_vals = np.concatenate([
+                s['data']['buffer_volumes'][(box_start, box_end)]
+                for s in parseable_scenarios
+                if (box_start, box_end) in s['data']['buffer_volumes']
+            ])
+            g_ymin, g_ymax = float(np.nanmin(all_buf_vals)), float(np.nanmax(all_buf_vals))
+            ypad = max((g_ymax - g_ymin) * 0.08, 1.0)
+            global_ylim = (g_ymin - ypad, g_ymax + ypad)
+
+            fig, axes = plt.subplots(
+                n_rows, n_cols,
+                figsize=(PANEL_W * n_cols, PANEL_H * n_rows),
+                sharex=False, sharey=True,
+            )
+            axes = np.atleast_2d(axes)
+
+            for ri, peak_ratio in enumerate(row_order):
+                for ci, n_peaks in enumerate(all_n_peaks):
+                    ax = axes[ri, ci]
+                    matches = [
+                        s for s in parseable_scenarios
+                        if s['peak_ratio'] == peak_ratio
+                        and s['n_peaks'] == n_peaks
+                        and (box_start, box_end) in s['data']['buffer_volumes']
+                    ]
+                    if not matches:
+                        ax.set_visible(False)
+                        continue
+
+                    for s in matches:
+                        buf  = s['data']['buffer_volumes'][(box_start, box_end)]
+                        time = s['data']['t']
+                        color = (
+                            SCENARIO_COLORS.get(s['scenario_key'], LINE_COLOR)
+                            if SCENARIO_COLORS else LINE_COLOR
+                        )
+                        ax.plot(time, buf, color=color, linewidth=0.9)
+
+                    ax.set_ylim(global_ylim)
+                    ax.grid(True, alpha=0.22, linewidth=0.5)
+
+                    # x-axis: date labels on bottom row only
+                    if ri == n_rows - 1:
+                        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
+                        ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+                        ax.tick_params(axis="x", labelsize=7, rotation=40)
+                    else:
+                        ax.set_xticklabels([])
+                        ax.tick_params(axis="x", length=0)
+
+                    # y-axis: tick labels on left column only
+                    if ci == 0:
+                        ax.tick_params(axis="y", labelsize=7)
+                        ax.set_ylabel("Buffer volume (m\u00b3)", fontsize=7, labelpad=3)
+                    else:
+                        ax.set_yticklabels([])
+                        ax.tick_params(axis="y", length=0)
+
+            # Column headers (n_peaks)
+            for ci, n_peaks in enumerate(all_n_peaks):
+                for ri in range(n_rows):
+                    if axes[ri, ci].get_visible():
+                        axes[ri, ci].set_title(
+                            f"$n_{{\\mathrm{{peaks}}}}$ = {n_peaks}",
+                            fontsize=9, fontweight="bold", pad=5,
+                        )
+                        break
+
+            # Row labels (peak_ratio)
+            for ri, peak_ratio in enumerate(row_order):
+                pr_str = (
+                    f"{int(peak_ratio)}"
+                    if peak_ratio == int(peak_ratio)
+                    else f"{peak_ratio}"
+                )
+                for ci in range(n_cols - 1, -1, -1):
+                    if axes[ri, ci].get_visible():
+                        axes[ri, ci].yaxis.set_label_position("right")
+                        axes[ri, ci].set_ylabel(
+                            f"$R_{{\\mathrm{{peak}}}}$ = {pr_str}",
+                            rotation=270, labelpad=15,
+                            fontsize=9, fontweight="bold",
+                        )
+                        break
+
+            fig.text(0.5, 0.005, "Number of peaks per year   \u2192",
+                     ha="center", fontsize=10, style="italic", color="0.35")
+            fig.text(0.005, 0.5, "Peak / mean ratio   \u2192",
+                     va="center", fontsize=10, style="italic", color="0.35",
+                     rotation="vertical")
+            fig.suptitle(
+                f"Sediment buffer volume \u2014 zone {box_start}\u2013{box_end} km  "
+                f"($Q_{{\\mathrm{{mean}}}}$ = {DISCHARGE} m\u00b3/s)",
+                fontsize=13, fontweight="bold", y=1.01,
+            )
+            fig.tight_layout(rect=[0.03, 0.03, 1.0, 1.0])
+
+            fig_path = output_dir / (
+                f"matrix_zone_{box_start}-{box_end}km_buffer_volume_Q{DISCHARGE}.png"
+            )
+            fig.savefig(fig_path, dpi=200, bbox_inches="tight")
+            plt.show()
+            print(f"Saved matrix plot: {fig_path}")
 # %%
