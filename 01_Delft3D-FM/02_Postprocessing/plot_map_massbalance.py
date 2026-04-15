@@ -40,9 +40,13 @@ APPEND_TIMESTEPS = True
 APPEND_VARIABLES = True
 
 # --- Variability mode settings ---
-DISCHARGE            = 1000
-SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']
+DISCHARGE            = 500
+SCENARIOS_TO_PROCESS = None
 run_startdate        = '2025-01-01'
+
+# Restrict mass-balance summation to an x-coordinate range [m].
+# Set to None to include the full domain.
+ANALYSIS_X_RANGE = [20000, 45000]
 
 # --- MORFAC mode settings ---
 discharge_type       = '02_seasonal'  # '01_constant' | '02_seasonal' | '03_flashy'
@@ -53,7 +57,7 @@ morfac_run_startdate = '2025-01-01'
 # 2. PATHS & FOLDER DISCOVERY
 # =============================================================================
 
-base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
+base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian")
 
 if ANALYSIS_MODE == 'variability':
     config        = f"Model_Output/Q{DISCHARGE}"
@@ -74,10 +78,7 @@ if ANALYSIS_MODE == 'variability':
     assessment_dir = run_base_path / 'cached_data'
     assessment_dir.mkdir(parents=True, exist_ok=True)
 
-    VARIABILITY_SCENARIOS = {
-        '1':  'baserun',  '2':  'seasonal',  '3':  'flashy',  '4':  'singlepeak',
-        '01': 'baserun',  '02': 'seasonal',  '03': 'flashy',  '04': 'singlepeak',
-    }
+    VARIABILITY_SCENARIOS = None
 
 # Global storage for all loaded data (persists across cell reruns)
 if 'all_loaded_data' not in globals():
@@ -146,11 +147,32 @@ try:
 
                 areas        = ds[area_name]
                 bed_levels   = ds[var_name]
-                total_volume  = (bed_levels * areas).sum(dim=ds[var_name].dims[-1])
+
+                # Optional x-range mask
+                if ANALYSIS_X_RANGE is not None:
+                    try:
+                        try:
+                            face_x = np.asarray(ds.grids[0].face_x)
+                        except Exception:
+                            try:
+                                face_x = np.asarray(ds.grid.face_x)
+                            except Exception:
+                                face_x = np.asarray(ds.coords['mesh2d_face_x'])
+                        x_mask = (face_x >= ANALYSIS_X_RANGE[0]) & (face_x <= ANALYSIS_X_RANGE[1])
+                        face_dim = ds[var_name].dims[-1]
+                        areas      = areas.isel({face_dim: x_mask})
+                        bed_levels = bed_levels.isel({face_dim: x_mask})
+                        print(f"  [x-filter] {x_mask.sum()} / {len(x_mask)} cells kept "
+                              f"(x = {ANALYSIS_X_RANGE[0]}–{ANALYSIS_X_RANGE[1]} m)")
+                    except Exception as _xe:
+                        print(f"  [WARNING] Could not apply x-range filter: {_xe}. "
+                              f"Using full domain.")
+
+                total_volume  = (bed_levels * areas).sum(dim=bed_levels.dims[-1])
                 volume_change = total_volume - total_volume.isel(time=0)
 
                 scenario_num = str(int(folder.name.split('_')[0]))
-                label        = VARIABILITY_SCENARIOS.get(scenario_num, folder.name)
+                label        = VARIABILITY_SCENARIOS.get(scenario_num, folder.name) if VARIABILITY_SCENARIOS else folder.name
                 all_loaded_data[label] = {
                     'x_values':     list(hydro_elapsed_years),
                     'volume_change': list(volume_change.values),
@@ -356,12 +378,125 @@ if ANALYSIS_MODE == 'variability':
     plt.legend(title='Scenario', loc='upper left', title_fontsize='large', fontsize='medium')
     plt.grid(True, linestyle='--', alpha=0.6)
 
-    figure_name = f'Q{DISCHARGE}_massbalance_variability.png'
-    figure_path = run_base_path / 'output_plots' / figure_name
+    _x_tag = f"_x{ANALYSIS_X_RANGE[0]}-{ANALYSIS_X_RANGE[1]}" if ANALYSIS_X_RANGE else ""
+    figure_name = f'Q{DISCHARGE}_massbalance_variability{_x_tag}.png'
+    figure_path = run_base_path / 'output_plots' / 'plots_map_massbalance' / figure_name
     figure_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(figure_path, dpi=300, bbox_inches='tight')
     print(f"Figure saved to: {figure_path}")
     plt.show()
+
+    # ------------------------------------------------------------------
+    # Heatmaps: final volume change in peak_ratio × n_peaks space
+    # ------------------------------------------------------------------
+    _hm_re = re.compile(r"_pm(\d+(?:\.\d+)?)_n(\d+)", re.IGNORECASE)
+
+    _hm_entries = []
+    for _label, _data in all_loaded_data.items():
+        _m = _hm_re.search(_label)
+        if _m:
+            _hm_entries.append({
+                "label":       _label,
+                "peak_ratio":  float(_m.group(1)),
+                "n_peaks":     int(_m.group(2)),
+                "final_value": float(_data["volume_change"][-1]),
+            })
+
+    if not _hm_entries:
+        print("[INFO] No _pm<r>_n<n> folder names found; skipping heatmaps.")
+    else:
+        _hm_n_peaks     = sorted({e["n_peaks"]    for e in _hm_entries})
+        _hm_peak_ratios = sorted({e["peak_ratio"] for e in _hm_entries}, reverse=True)
+
+        _grid = np.full((len(_hm_peak_ratios), len(_hm_n_peaks)), np.nan)
+        for e in _hm_entries:
+            ri = _hm_peak_ratios.index(e["peak_ratio"])
+            ci = _hm_n_peaks.index(e["n_peaks"])
+            _grid[ri, ci] = e["final_value"]
+
+        _yticklabels = [f"{int(r)}" if r == int(r) else f"{r}" for r in _hm_peak_ratios]
+        _xticklabels = [str(n) for n in _hm_n_peaks]
+        _pw = max(5, len(_hm_n_peaks) * 1.1)
+        _ph = max(3, len(_hm_peak_ratios) * 0.9)
+
+        # ── Absolute heatmap ──────────────────────────────────────────
+        _grid_min = np.nanmin(_grid)
+        _grid_max = np.nanmax(_grid)
+        # If values are negative (erosion), use Blues_r: light blue near 0, dark blue most negative.
+        # Otherwise keep YlOrRd for deposition.
+        if _grid_min < 0:
+            _hm_cmap = "Blues_r"
+            _hm_vmin, _hm_vmax = _grid_min, 0
+        else:
+            _hm_cmap = "YlOrRd"
+            _hm_vmin, _hm_vmax = _grid_min, _grid_max
+
+        fig_hm, ax_hm = plt.subplots(figsize=(_pw, _ph))
+        im = ax_hm.imshow(_grid, aspect="auto", cmap=_hm_cmap,
+                          vmin=_hm_vmin, vmax=_hm_vmax)
+        for ri in range(len(_hm_peak_ratios)):
+            for ci in range(len(_hm_n_peaks)):
+                val = _grid[ri, ci]
+                if not np.isnan(val):
+                    # dark text on light cells, white text on dark cells
+                    _rel = (val - _hm_vmin) / (_hm_vmax - _hm_vmin) if (_hm_vmax != _hm_vmin) else 0.5
+                    ax_hm.text(ci, ri, f"{val:.2e}", ha="center", va="center",
+                               fontsize=7.5,
+                               color="white" if _rel < 0.45 else "black")
+        ax_hm.set_xticks(range(len(_hm_n_peaks)))
+        ax_hm.set_xticklabels(_xticklabels)
+        ax_hm.set_yticks(range(len(_hm_peak_ratios)))
+        ax_hm.set_yticklabels(_yticklabels)
+        ax_hm.set_xlabel("Number of peaks per year  ($n_\\mathrm{peaks}$)", fontsize=10)
+        ax_hm.set_ylabel("Peak / mean ratio  ($R_\\mathrm{peak}$)", fontsize=10)
+        ax_hm.set_title(
+            f"Final cumulative volume change  (Q{DISCHARGE} m³/s)",
+            fontsize=11, fontweight="bold",
+        )
+        cbar = fig_hm.colorbar(im, ax=ax_hm, pad=0.02)
+        cbar.set_label("volume change [m³]", fontsize=9)
+        fig_hm.tight_layout()
+        fig_hm_path = run_base_path / "output_plots" / "plots_map_massbalance" / f"Q{DISCHARGE}_heatmap_massbalance{_x_tag}.png"
+        fig_hm.savefig(fig_hm_path, dpi=200, bbox_inches="tight")
+        plt.show()
+        print(f"Saved heatmap: {fig_hm_path}")
+
+        # ── Normalised heatmap (% change vs. constant pm1_n0) ─────────
+        _ref_entries = [e for e in _hm_entries if e["peak_ratio"] == 1.0 and e["n_peaks"] == 0]
+        if not _ref_entries:
+            print("[WARNING] Constant scenario (pm1_n0) not found; skipping normalised heatmap.")
+        else:
+            _ref_val = _ref_entries[0]["final_value"]
+            _grid_pct = (_grid - _ref_val) / abs(_ref_val) * 100.0 if _ref_val != 0 else np.full_like(_grid, np.nan)
+            _abs_max = np.nanmax(np.abs(_grid_pct))
+
+            fig_nm, ax_nm = plt.subplots(figsize=(_pw, _ph))
+            im_nm = ax_nm.imshow(_grid_pct, aspect="auto", cmap="RdBu_r",
+                                 vmin=-_abs_max, vmax=_abs_max)
+            for ri in range(len(_hm_peak_ratios)):
+                for ci in range(len(_hm_n_peaks)):
+                    val = _grid_pct[ri, ci]
+                    if not np.isnan(val):
+                        ax_nm.text(ci, ri, f"{val:+.1f}%", ha="center", va="center",
+                                   fontsize=7.5,
+                                   color="black" if abs(val) < 0.55 * _abs_max else "white")
+            ax_nm.set_xticks(range(len(_hm_n_peaks)))
+            ax_nm.set_xticklabels(_xticklabels)
+            ax_nm.set_yticks(range(len(_hm_peak_ratios)))
+            ax_nm.set_yticklabels(_yticklabels)
+            ax_nm.set_xlabel("Number of peaks per year  ($n_\\mathrm{peaks}$)", fontsize=10)
+            ax_nm.set_ylabel("Peak / mean ratio  ($R_\\mathrm{peak}$)", fontsize=10)
+            ax_nm.set_title(
+                f"Change in final volume vs. constant  (Q{DISCHARGE} m³/s)",
+                fontsize=11, fontweight="bold",
+            )
+            cbar_nm = fig_nm.colorbar(im_nm, ax=ax_nm, pad=0.02)
+            cbar_nm.set_label("change relative to constant scenario [%]", fontsize=9)
+            fig_nm.tight_layout()
+            fig_nm_path = run_base_path / "output_plots" / "plots_map_massbalance" / f"Q{DISCHARGE}_heatmap_normalised_massbalance{_x_tag}.png"
+            fig_nm.savefig(fig_nm_path, dpi=200, bbox_inches="tight")
+            plt.show()
+            print(f"Saved normalised heatmap: {fig_nm_path}")
 
 else:
     # ------------------------------------------------------------------
