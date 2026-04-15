@@ -12,7 +12,7 @@ from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
 #%% --- 1. SETTINGS ---
 # Which scenarios to process (set to None or empty list for all)
-SCENARIOS_TO_PROCESS = ['1', '2', '3', '4']  # Use all scenarios
+SCENARIOS_TO_PROCESS = None #['1', '2', '3', '4']  # Use all scenarios
 DISCHARGE = 500
 # --- Variable selection ---
 var_names = ['mesh2d_mor_bl']#, 'mesh2d_s1', 'mesh2d_taus']  # e.g. ['mesh2d_mor_bl'] or all three
@@ -31,7 +31,7 @@ APPEND_TIMESTEPS = False
 APPEND_VARIABLES = False
 
 #%%
-base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
+base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian")
 config = f"Model_Output/Q{DISCHARGE}"
 base_path = base_directory / config
 

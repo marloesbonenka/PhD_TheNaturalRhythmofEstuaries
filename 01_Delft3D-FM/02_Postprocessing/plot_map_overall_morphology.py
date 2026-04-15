@@ -655,7 +655,6 @@ for snapshot_key, snapshot_results in comparison_results.items():
         compare_braiding_index and 'BI_depth' in snapshot_results[first_key],
         compare_width_averaged_bedlevel,
         compare_max_depth,
-        compare_channel_width
     ])
 
     if n_plots == 0:
@@ -921,50 +920,6 @@ for snapshot_key, snapshot_results in comparison_results.items():
         axes[plot_idx].grid(True, alpha=0.2)
         plot_idx += 1
 
-    # Plot 5: Channel Width
-    if compare_channel_width:
-        noisy_legend_added = False
-        for scenario in sorted_scenarios:
-            run_items = scenario_groups[scenario]
-            y_stack = stack_metric_arrays(run_items, 'ChannelWidth')
-            y_base = stack_metric_arrays(baseline_groups[scenario], 'ChannelWidth') if scenario in baseline_groups else None
-
-            _plot_noisy_context(
-                axes[plot_idx],
-                x_targets / 1000,
-                y_stack,
-                y_base_for_envelope=y_base,
-                add_labels=not noisy_legend_added,
-            )
-            if NOISY and y_stack is not None and y_stack.shape[0] > 0:
-                noisy_legend_added = True
-
-            if not NOISY:
-                draw_metric_with_optional_envelope(
-                    ax=axes[plot_idx],
-                    x=x_targets / 1000,
-                    y_stack=y_stack,
-                    color=_scenario_color(scenario, SCENARIO_COLORS),
-                    label=_scenario_label(scenario, SCENARIO_LABELS),
-                    add_envelope=False,
-                    marker='s',
-                )
-            if scenario in baseline_groups:
-                draw_metric_with_optional_envelope(
-                    ax=axes[plot_idx],
-                    x=x_targets / 1000,
-                    y_stack=y_base,
-                    color=BASELINE_COLOR,
-                    label=f"{_scenario_label(scenario, SCENARIO_LABELS)} baseline (solid)",
-                    add_envelope=False,
-                    marker=None,
-                    linestyle='-',
-                )
-        axes[plot_idx].set_title(f'maximum channel width (threshold: mean depth - {int(safety_buffer*100)} cm)')
-        axes[plot_idx].set_ylabel('width [m]')
-        axes[plot_idx].legend(loc='best')
-        axes[plot_idx].grid(True, alpha=0.2)
-
     axes[-1].set_xlabel('x-coordinate along estuary [km]')
     fig.suptitle(f"Hydrodynamic snapshot around {comparison_labels.get(snapshot_key, snapshot_key)} for $Q_{{mean}}$ = {DISCHARGE} m³/s", fontsize=12)
 
@@ -980,13 +935,19 @@ for snapshot_key, snapshot_results in comparison_results.items():
 
     print(f'Saved comparison plot at {summary_output_dir} for {snapshot_key}')
 
-    # Extra figure: only width-averaged bed level + p95 channel depth stacked.
-    # Width fixed at 10; each panel keeps height 6 -> total figure height 12.
+    # Extra figure: width-averaged bed level + p95 channel depth + hypsometry.
     has_bl = compare_width_averaged_bedlevel and any('BL' in d for d in snapshot_results.values())
     has_md = compare_max_depth and any('MaxDepth' in d for d in snapshot_results.values())
+    has_hy = compare_hypsometric and any('HypsoElevation' in d for d in snapshot_results.values())
 
-    if has_bl or has_md:
-        fig_stack, axes_stack = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+    if has_bl or has_md or has_hy:
+        fig_stack = plt.figure(figsize=(10, 14))
+        gs = fig_stack.add_gridspec(3, 1, hspace=0.4)
+        ax_bl = fig_stack.add_subplot(gs[0])
+        ax_md = fig_stack.add_subplot(gs[1], sharex=ax_bl)
+        ax_hy = fig_stack.add_subplot(gs[2])  # independent x-axis (cumulative area)
+        axes_stack = [ax_bl, ax_md, ax_hy]
+        plt.setp(ax_bl.get_xticklabels(), visible=False)
 
         # Top panel: width-averaged bed level
         if has_bl:
@@ -1125,19 +1086,49 @@ for snapshot_key, snapshot_results in comparison_results.items():
             axes_stack[1].text(0.5, 0.5, 'No max-depth data available', ha='center', va='center', transform=axes_stack[1].transAxes)
             axes_stack[1].set_axis_off()
 
-        axes_stack[-1].set_xlabel('x-coordinate along estuary [km]')
+        axes_stack[1].set_xlabel('x-coordinate along estuary [km]')
+
+        # Third panel: hypsometric curves
+        if has_hy:
+            hypso_area_label = 'Cumulative area'
+            for scenario in sorted_scenarios:
+                run_items = scenario_groups[scenario]
+                curves = []
+                for _, data in run_items:
+                    if 'HypsoElevation' not in data or data['HypsoElevation'].size == 0:
+                        continue
+                    curves.append((np.asarray(data['HypsoArea']), np.asarray(data['HypsoElevation']),
+                                   data.get('HypsoAreaLabel', 'Cumulative area')))
+                if not curves:
+                    continue
+                hypso_area_label = curves[0][2]
+                color = _scenario_color(scenario, SCENARIO_COLORS)
+                label = _scenario_label(scenario, SCENARIO_LABELS)
+                area_vals, elev_vals, _ = curves[0]
+                axes_stack[2].plot(area_vals, elev_vals, linewidth=2, color=color, label=label)
+            if not apply_detrending:
+                axes_stack[2].axhline(y=bed_threshold, color='red', linestyle='--', alpha=0.7, label=f'land threshold ({bed_threshold} m)')
+            axes_stack[2].set_title('hypsometric curves')
+            axes_stack[2].set_xlabel(hypso_area_label)
+            axes_stack[2].set_ylabel('bed elevation [m]')
+            axes_stack[2].legend(loc='best')
+            axes_stack[2].grid(True, alpha=0.2)
+        else:
+            axes_stack[2].text(0.5, 0.5, 'No hypsometric data available', ha='center', va='center', transform=axes_stack[2].transAxes)
+            axes_stack[2].set_axis_off()
+
         fig_stack.suptitle(
-            f"Bed level + p{depth_percentile} depth around {comparison_labels.get(snapshot_key, snapshot_key)} for $Q_{{mean}}$ = {DISCHARGE} m³/s",
+            f"Bed level + p{depth_percentile} depth + hypsometry around {comparison_labels.get(snapshot_key, snapshot_key)} for $Q_{{mean}}$ = {DISCHARGE} m³/s",
             fontsize=12,
         )
-        fig_stack.tight_layout(rect=[0, 0.03, 1, 0.97])
+        fig_stack.tight_layout()
 
         if apply_detrending:
-            fig_stack.savefig(summary_output_dir / f'overall_morphology_bedlevel_maxdepth_detrended_{snapshot_date}_Q{DISCHARGE}.png', dpi=300)
+            fig_stack.savefig(summary_output_dir / f'overall_morphology_bedlevel_maxdepth_hypsometry_detrended_{snapshot_date}_Q{DISCHARGE}.png', dpi=300)
         else:
-            fig_stack.savefig(summary_output_dir / f'overall_morphology_bedlevel_maxdepth_{snapshot_date}_Q{DISCHARGE}.png', dpi=300)
+            fig_stack.savefig(summary_output_dir / f'overall_morphology_bedlevel_maxdepth_hypsometry_{snapshot_date}_Q{DISCHARGE}.png', dpi=300)
         plt.show()
-        print(f'Saved bed-level + max-depth stacked plot at {summary_output_dir} for {snapshot_key}')
+        print(f'Saved bed-level + max-depth + hypsometry stacked plot at {summary_output_dir} for {snapshot_key}')
 
     # Optional second set: noisy envelope context + deterministic variability overlays
     # (baserun + seasonal + flashy + singlepeak).
@@ -1292,32 +1283,6 @@ for snapshot_key, snapshot_results in comparison_results.items():
             axes_ref[ref_idx].grid(True, alpha=0.2)
             ref_idx += 1
 
-        if compare_channel_width:
-            y_noisy = _stack_noisy_all('ChannelWidth')
-            _plot_noisy_context(
-                ax=axes_ref[ref_idx],
-                x=x_targets / 1000,
-                y_noisy_stack=y_noisy,
-                y_base_for_envelope=None,
-                add_labels=True,
-            )
-            for scenario in ref_scenarios:
-                y_ref = stack_metric_arrays(baseline_groups[scenario], 'ChannelWidth')
-                draw_metric_with_optional_envelope(
-                    ax=axes_ref[ref_idx],
-                    x=x_targets / 1000,
-                    y_stack=y_ref,
-                    color=_scenario_color(scenario, SCENARIO_COLORS),
-                    label=_scenario_label(scenario, SCENARIO_LABELS),
-                    add_envelope=False,
-                    marker='s',
-                    linestyle='-',
-                )
-            axes_ref[ref_idx].set_title(f'maximum channel width (threshold: mean depth - {int(safety_buffer*100)} cm)')
-            axes_ref[ref_idx].set_ylabel('width [m]')
-            axes_ref[ref_idx].legend(loc='best')
-            axes_ref[ref_idx].grid(True, alpha=0.2)
-
         axes_ref[-1].set_xlabel('x-coordinate along estuary [km]')
         fig_ref.suptitle(
             f"Noisy envelope + variability overlays around {comparison_labels.get(snapshot_key, snapshot_key)}",
@@ -1332,8 +1297,8 @@ for snapshot_key, snapshot_results in comparison_results.items():
         plt.show()
         print(f'Saved noisy-envelope + variability overlay comparison at {summary_output_dir} for {snapshot_key}')
 
-    # Separate hypsometric comparison plot for this snapshot.
-    if compare_hypsometric:
+    # (Hypsometric comparison is included as the third panel in the stacked figure above.)
+    if False and compare_hypsometric:
         fig_h, ax_h = plt.subplots(figsize=(10, 6))
         has_hypso = False
         area_labels = []
@@ -1452,9 +1417,9 @@ def _color_for_value(val, val_min, val_max, cmap_name='Blues'):
     """Map a specific value onto [0.3, 0.85] of a colormap, using the global min/max."""
     cmap = plt.get_cmap(cmap_name)
     if val_max == val_min:
-        return cmap(0.6)
+        return cmap(0.5)
     t = (val - val_min) / (val_max - val_min)
-    return cmap(0.3 + 0.55 * t)
+    return cmap(0.1 + 0.85 * t)
 
 
 for snapshot_key, snapshot_results in comparison_results.items():
@@ -1496,8 +1461,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
         sens_metrics.append(('BL', 'width-averaged bed level', 'bed level [m]'))
     if compare_max_depth and any('MaxDepth' in snapshot_results[fk] for fk in snapshot_results):
         sens_metrics.append(('MaxDepth', f'p{depth_percentile} channel depth', 'bed level [m]'))
-    if compare_channel_width and any('ChannelWidth' in snapshot_results[fk] for fk in snapshot_results):
-        sens_metrics.append(('ChannelWidth', 'max channel width', 'width [m]'))
+    # channel width excluded from sensitivity summary figures (available in individual run plots)
     if not sens_metrics:
         continue
     n_metrics = len(sens_metrics)
@@ -1516,138 +1480,122 @@ for snapshot_key, snapshot_results in comparison_results.items():
             y_stack = -y_stack  # show as bed elevation (negative = deeper)
         return np.nanmean(y_stack, axis=0)
 
-    # Global pm/n value ranges for consistent cross-column coloring
+    # Global pm/n value ranges for consistent coloring across all figures
     all_pm_vals = sorted({pm for pm, n in scen_pm_n.values() if n > 0})
     all_n_vals  = sorted({n  for pm, n in scen_pm_n.values() if n > 0})
     pm_min, pm_max = (all_pm_vals[0], all_pm_vals[-1]) if all_pm_vals else (1, 1)
     n_min,  n_max  = (all_n_vals[0],  all_n_vals[-1])  if all_n_vals  else (1, 1)
 
-    # ---- Figure 1: pm effect (columns = n values, rows = metrics) ----
-    sorted_n_vals = sorted(pm_by_n.keys())
-    n_cols = len(sorted_n_vals)
-    if n_cols > 0:
-        fig_pm, axes_pm = plt.subplots(
-            n_metrics, n_cols,
-            figsize=(4 * n_cols, 3.5 * n_metrics),
-            sharex=True, sharey='row', squeeze=False,
-        )
+    def _make_sensitivity_fig(group_dict, vary_label, vary_vals, vary_cmap,
+                               fixed_label, fixed_val, title_tag, fname_tag,
+                               normalise=False):
+        """One figure: rows=metrics, colors=varying parameter. Fixed parameter in title.
+        If normalise=True, each signal is divided by the constant scenario profile."""
+        if not group_dict:
+            return
 
-        for col_i, n_val in enumerate(sorted_n_vals):
-            pm_group = pm_by_n[n_val]  # list of (pm_val, scen_key), sorted by pm
-            axes_pm[0, col_i].set_title(
-                f'n = {n_val} peak{"s" if n_val != 1 else ""}', fontsize=10
+        # Pre-compute constant reference for normalisation
+        const_refs = {}
+        if normalise and baseline_scen and baseline_scen in scenario_groups_sens:
+            for metric_key, _, _ in sens_metrics:
+                y_c = _sens_y_mean(baseline_scen, metric_key, scenario_groups_sens)
+                if y_c is not None:
+                    const_refs[metric_key] = np.where(np.abs(y_c) < 1e-6, np.nan, y_c)
+
+        fig, axes = plt.subplots(n_metrics, 1, figsize=(10, 3.5 * n_metrics), sharex=True, squeeze=False)
+        axes = axes[:, 0]
+
+        for row_i, (metric_key, metric_title, metric_ylabel) in enumerate(sens_metrics):
+            ax = axes[row_i]
+            denom = const_refs.get(metric_key) if normalise else None
+
+            if normalise:
+                ax.axhline(1.0, color='grey', linewidth=1.5, linestyle='--',
+                           label='constant (pm1_n0)', zorder=2)
+                ax.set_ylabel(f'{metric_title}\n(ratio to constant)', fontsize=9)
+            else:
+                # Constant baseline as grey dashed reference
+                if baseline_scen and baseline_scen in scenario_groups_sens:
+                    y_bl = _sens_y_mean(baseline_scen, metric_key, scenario_groups_sens)
+                    if y_bl is not None:
+                        x_bl = _sens_x_vals(baseline_scen, metric_key, scenario_groups_sens)
+                        ax.plot(x_bl, y_bl, color='grey', linewidth=1.5,
+                                linestyle='--', label='constant (pm1_n0)', zorder=2)
+                ax.set_ylabel(f'{metric_title}\n{metric_ylabel}', fontsize=9)
+
+            for vary_val, scen_key in group_dict:
+                y_m = _sens_y_mean(scen_key, metric_key, scenario_groups_sens)
+                if y_m is None:
+                    continue
+                if normalise and denom is not None:
+                    y_m = y_m / denom
+                x_v = _sens_x_vals(scen_key, metric_key, scenario_groups_sens)
+                color = _color_for_value(vary_val, vary_vals[0], vary_vals[-1], vary_cmap)
+                ax.plot(x_v, y_m, color=color, linewidth=2,
+                        label=f'{vary_label} = {vary_val}', zorder=3)
+
+            ax.grid(True, alpha=0.2)
+            if row_i == n_metrics - 1:
+                ax.set_xlabel('distance along estuary [km]', fontsize=9)
+
+        # Legend (unique entries only)
+        seen_l, handles, labels = set(), [], []
+        for ax in axes:
+            for h, l in zip(*ax.get_legend_handles_labels()):
+                if l not in seen_l:
+                    seen_l.add(l)
+                    handles.append(h)
+                    labels.append(l)
+        axes[0].legend(handles, labels, loc='best', fontsize=9, framealpha=0.8)
+
+        norm_tag = '_normalised' if normalise else ''
+        norm_title = '  (normalised by constant)' if normalise else ''
+        fig.suptitle(
+            f"Effect of {vary_label}  |  fixed: {fixed_label} = {fixed_val}{norm_title}\n"
+            f"Snapshot: {snap_label},  Q = {DISCHARGE} m³/s",
+            fontsize=12,
+        )
+        fig.tight_layout(rect=[0, 0.02, 1, 0.95])
+        fname = f'{fname_tag}{norm_tag}_{fixed_label}{fixed_val}_{snap_label}_Q{DISCHARGE}.png'
+        fig.savefig(sensitivity_output_dir / fname, dpi=300, bbox_inches='tight')
+        plt.show()
+        print(f'  Saved: {sensitivity_output_dir / fname}')
+        plt.close(fig)
+
+    # ---- Figures: effect of pm (one figure per n value) ----
+    print("\nGenerating pm-effect figures (one per n value)...")
+    sorted_n_vals = sorted(pm_by_n.keys())
+    for n_val in sorted_n_vals:
+        pm_group = pm_by_n[n_val]  # [(pm_val, scen_key), ...] sorted by pm
+        for norm in (False, True):
+            _make_sensitivity_fig(
+                group_dict=pm_group,
+                vary_label='pm',
+                vary_vals=all_pm_vals,
+                vary_cmap='viridis',
+                fixed_label='n',
+                fixed_val=n_val,
+                title_tag=f'n{n_val}',
+                fname_tag='sensitivity_pm_effect',
+                normalise=norm,
             )
 
-            for row_i, (metric_key, metric_title, metric_ylabel) in enumerate(sens_metrics):
-                ax = axes_pm[row_i, col_i]
-
-                # Constant baseline as grey dashed reference
-                if baseline_scen and baseline_scen in scenario_groups_sens:
-                    y_bl = _sens_y_mean(baseline_scen, metric_key, scenario_groups_sens)
-                    if y_bl is not None:
-                        x_bl = _sens_x_vals(baseline_scen, metric_key, scenario_groups_sens)
-                        ax.plot(x_bl, y_bl, color='grey', linewidth=1.5,
-                                linestyle='--', label='constant (pm1_n0)', zorder=2)
-
-                for pm_val, scen_key in pm_group:
-                    y_m = _sens_y_mean(scen_key, metric_key, scenario_groups_sens)
-                    if y_m is None:
-                        continue
-                    x_v = _sens_x_vals(scen_key, metric_key, scenario_groups_sens)
-                    color = _color_for_value(pm_val, pm_min, pm_max, 'Blues')
-                    ax.plot(x_v, y_m, color=color, linewidth=2,
-                            label=f'pm = {pm_val}', zorder=3)
-
-                ax.grid(True, alpha=0.2)
-                if col_i == 0:
-                    ax.set_ylabel(f'{metric_title}\n{metric_ylabel}', fontsize=9)
-                if row_i == n_metrics - 1:
-                    ax.set_xlabel('distance along estuary [km]', fontsize=9)
-
-        # Collect unique legend entries
-        seen_l, handles_pm, labels_pm = set(), [], []
-        for ax in axes_pm.flat:
-            for h, l in zip(*ax.get_legend_handles_labels()):
-                if l not in seen_l:
-                    seen_l.add(l)
-                    handles_pm.append(h)
-                    labels_pm.append(l)
-
-        fig_pm.legend(handles_pm, labels_pm, loc='lower center',
-                      ncol=min(8, len(handles_pm)), bbox_to_anchor=(0.5, 0.0),
-                      frameon=True, fontsize=9)
-        fig_pm.suptitle(
-            f"Effect of peak/mean ratio (pm)  |  grouped by number of peaks (n)\n"
-            f"Snapshot: {snap_label},  Q = {DISCHARGE} m³/s",
-            fontsize=12,
-        )
-        fig_pm.tight_layout(rect=[0, 0.07, 1, 0.96])
-        fname_pm = f'sensitivity_pm_effect_{snap_label}_Q{DISCHARGE}.png'
-        fig_pm.savefig(sensitivity_output_dir / fname_pm, dpi=300, bbox_inches='tight')
-        plt.show()
-        print(f'Saved pm-sensitivity panel: {sensitivity_output_dir / fname_pm}')
-
-    # ---- Figure 2: n effect (columns = pm values, rows = metrics) ----
+    # ---- Figures: effect of n (one figure per pm value) ----
+    print("\nGenerating n-effect figures (one per pm value)...")
     sorted_pm_vals = sorted(n_by_pm.keys())
-    n_cols2 = len(sorted_pm_vals)
-    if n_cols2 > 0:
-        fig_n, axes_n = plt.subplots(
-            n_metrics, n_cols2,
-            figsize=(4 * n_cols2, 3.5 * n_metrics),
-            sharex=True, sharey='row', squeeze=False,
-        )
-
-        for col_i, pm_val in enumerate(sorted_pm_vals):
-            n_group = n_by_pm[pm_val]  # list of (n_val, scen_key), sorted by n
-            axes_n[0, col_i].set_title(f'pm = {pm_val}', fontsize=10)
-
-            for row_i, (metric_key, metric_title, metric_ylabel) in enumerate(sens_metrics):
-                ax = axes_n[row_i, col_i]
-
-                # Constant baseline as grey dashed reference
-                if baseline_scen and baseline_scen in scenario_groups_sens:
-                    y_bl = _sens_y_mean(baseline_scen, metric_key, scenario_groups_sens)
-                    if y_bl is not None:
-                        x_bl = _sens_x_vals(baseline_scen, metric_key, scenario_groups_sens)
-                        ax.plot(x_bl, y_bl, color='grey', linewidth=1.5,
-                                linestyle='--', label='constant (pm1_n0)', zorder=2)
-
-                for n_val, scen_key in n_group:
-                    y_m = _sens_y_mean(scen_key, metric_key, scenario_groups_sens)
-                    if y_m is None:
-                        continue
-                    x_v = _sens_x_vals(scen_key, metric_key, scenario_groups_sens)
-                    color = _color_for_value(n_val, n_min, n_max, 'Oranges')
-                    ax.plot(x_v, y_m, color=color, linewidth=2,
-                            label=f'n = {n_val}', zorder=3)
-
-                ax.grid(True, alpha=0.2)
-                if col_i == 0:
-                    ax.set_ylabel(f'{metric_title}\n{metric_ylabel}', fontsize=9)
-                if row_i == n_metrics - 1:
-                    ax.set_xlabel('distance along estuary [km]', fontsize=9)
-
-        # Collect unique legend entries
-        seen_l, handles_n, labels_n = set(), [], []
-        for ax in axes_n.flat:
-            for h, l in zip(*ax.get_legend_handles_labels()):
-                if l not in seen_l:
-                    seen_l.add(l)
-                    handles_n.append(h)
-                    labels_n.append(l)
-
-        fig_n.legend(handles_n, labels_n, loc='lower center',
-                     ncol=min(8, len(handles_n)), bbox_to_anchor=(0.5, 0.0),
-                     frameon=True, fontsize=9)
-        fig_n.suptitle(
-            f"Effect of number of peaks (n)  |  grouped by peak/mean ratio (pm)\n"
-            f"Snapshot: {snap_label},  Q = {DISCHARGE} m³/s",
-            fontsize=12,
-        )
-        fig_n.tight_layout(rect=[0, 0.07, 1, 0.96])
-        fname_n = f'sensitivity_n_effect_{snap_label}_Q{DISCHARGE}.png'
-        fig_n.savefig(sensitivity_output_dir / fname_n, dpi=300, bbox_inches='tight')
-        plt.show()
-        print(f'Saved n-sensitivity panel: {sensitivity_output_dir / fname_n}')
+    for pm_val in sorted_pm_vals:
+        n_group = n_by_pm[pm_val]  # [(n_val, scen_key), ...] sorted by n
+        for norm in (False, True):
+            _make_sensitivity_fig(
+                group_dict=n_group,
+                vary_label='n',
+                vary_vals=all_n_vals,
+                vary_cmap='viridis',
+                fixed_label='pm',
+                fixed_val=pm_val,
+                title_tag=f'pm{pm_val}',
+                fname_tag='sensitivity_n_effect',
+                normalise=norm,
+            )
 
 print("\nAll processing complete.")
