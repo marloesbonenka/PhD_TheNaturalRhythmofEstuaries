@@ -116,10 +116,30 @@ elif n_cols == 1 and n_rows > 1:
     axes = axes                          # already (n_rows, 1)
 
 # ============================================================================
+# Consistent color map: one fixed color per peak_ratio value
+# (same palette as plot_scenario_lines.py)
+# ============================================================================
+PALETTE = [
+    "#1f77b4",  # blue
+    "#ff7f0e",  # orange
+    "#2ca02c",  # green
+    "#d62728",  # red
+    "#9467bd",  # purple
+    "#8c564b",  # brown
+    "#e377c2",  # pink
+    "#7f7f7f",  # grey
+    "#bcbd22",  # yellow-green
+    "#17becf",  # cyan
+]
+
+RATIO_COLOR: dict[float, str] = {
+    ratio: PALETTE[i % len(PALETTE)]
+    for i, ratio in enumerate(all_peak_ratios)
+}
+
+# ============================================================================
 # Fill each panel
 # ============================================================================
-LINE_COLOR = "#1f77b4"    # default matplotlib blue – clear and neutral
-
 for ri, peak_ratio in enumerate(row_order):
     for ci, n_peaks in enumerate(all_n_peaks):
         ax  = axes[ri, ci]
@@ -148,7 +168,7 @@ for ri, peak_ratio in enumerate(row_order):
 
         # -- Plot ------------------------------------------------------------
         ax.plot(df_yr["timestamp"], df_yr["discharge_m3s"],
-                color=LINE_COLOR, linewidth=0.9)
+                color=RATIO_COLOR[peak_ratio], linewidth=0.9)
         ax.grid(True, alpha=0.22, linewidth=0.5)
         ax.set_ylim(global_ylim)
 

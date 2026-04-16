@@ -8,11 +8,13 @@ Outputs:
 #%%
 from pathlib import Path
 import re
-
+import sys
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+
+sys.path.append(r"C:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing\FUNCTIONS")
 
 from FUNCTIONS.F_loaddata import load_and_cache_scenario
 from FUNCTIONS.F_general import get_variability_map, find_variability_model_folders
@@ -221,6 +223,25 @@ if comparison_series:
         ypad = max((g_ymax - g_ymin) * 0.08, 1.0)
         global_ylim = (g_ymin - ypad, g_ymax + ypad)
 
+        # Consistent color map: one fixed color per peak_ratio value
+        # (same palette as plot_scenario_lines.py)
+        _PALETTE = [
+            "#1f77b4",  # blue
+            "#ff7f0e",  # orange
+            "#2ca02c",  # green
+            "#d62728",  # red
+            "#9467bd",  # purple
+            "#8c564b",  # brown
+            "#e377c2",  # pink
+            "#7f7f7f",  # grey
+            "#bcbd22",  # yellow-green
+            "#17becf",  # cyan
+        ]
+        RATIO_COLOR: dict[float, str] = {
+            ratio: _PALETTE[i % len(_PALETTE)]
+            for i, ratio in enumerate(all_peak_ratios)
+        }
+
         PANEL_W, PANEL_H = 3.4, 2.4
         fig, axes = plt.subplots(
             n_rows, n_cols,
@@ -228,8 +249,6 @@ if comparison_series:
             sharex=False, sharey=True,
         )
         axes = np.atleast_2d(axes)
-
-        LINE_COLOR = "#1f77b4"
 
         for ri, peak_ratio in enumerate(row_order):
             for ci, n_peaks in enumerate(all_n_peaks):
@@ -243,12 +262,8 @@ if comparison_series:
                     continue
 
                 for s in matches:
-                    color = (
-                        SCENARIO_COLORS.get(s["scenario_number"], LINE_COLOR)
-                        if SCENARIO_COLORS else LINE_COLOR
-                    )
                     ax.plot(s["time"], s["sediment_transport"],
-                            color=color, linewidth=0.9)
+                            color=RATIO_COLOR[peak_ratio], linewidth=0.9)
 
                 ax.set_ylim(global_ylim)
                 ax.grid(True, alpha=0.22, linewidth=0.5)
@@ -323,6 +338,91 @@ if comparison_series:
         fig.savefig(fig_path, dpi=200, bbox_inches="tight")
         plt.show()
         print(f"Saved matrix plot: {fig_path}")
+
+        # ── Lines plot: one panel per n_peaks, amplitudes as colors ──────────
+        import matplotlib.lines as mlines
+
+        n_panels  = len(all_n_peaks)
+        LPANEL_W, LPANEL_H = 4.0, 3.0
+        fig_l, axes_l = plt.subplots(
+            1, n_panels,
+            figsize=(LPANEL_W * n_panels, LPANEL_H),
+            sharey=True, sharex=False,
+        )
+        if n_panels == 1:
+            axes_l = [axes_l]
+
+        for ci, n_peaks in enumerate(all_n_peaks):
+            ax_l = axes_l[ci]
+            for peak_ratio in all_peak_ratios:
+                group = [
+                    s for s in parseable
+                    if s["peak_ratio"] == peak_ratio and s["n_peaks"] == n_peaks
+                ]
+                pr_str = (
+                    f"{int(peak_ratio)}"
+                    if peak_ratio == int(peak_ratio)
+                    else f"{peak_ratio}"
+                )
+                for s in group:
+                    ax_l.plot(
+                        s["time"], s["sediment_transport"],
+                        color=RATIO_COLOR[peak_ratio],
+                        linewidth=1.2,
+                        label=f"$R_{{\\mathrm{{peak}}}}$ = {pr_str}",
+                    )
+
+            ax_l.set_ylim(global_ylim)
+            ax_l.grid(True, alpha=0.22, linewidth=0.5)
+            ax_l.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
+            ax_l.xaxis.set_major_locator(mdates.AutoDateLocator())
+            ax_l.tick_params(axis="x", labelsize=8, rotation=40)
+            ax_l.set_title(
+                f"$n_{{\\mathrm{{peaks}}}}$ = {n_peaks}",
+                fontsize=10, fontweight="bold", pad=5,
+            )
+            if ci == 0:
+                ax_l.set_ylabel("cum. sed. transport [kg]", fontsize=9, labelpad=4)
+                ax_l.tick_params(axis="y", labelsize=8)
+
+        # Shared legend
+        legend_handles = []
+        for peak_ratio in all_peak_ratios:
+            pr_str = (
+                f"{int(peak_ratio)}"
+                if peak_ratio == int(peak_ratio)
+                else f"{peak_ratio}"
+            )
+            legend_handles.append(
+                mlines.Line2D(
+                    [], [],
+                    color=RATIO_COLOR[peak_ratio],
+                    linewidth=1.8,
+                    label=f"$R_{{\\mathrm{{peak}}}}$ = {pr_str}",
+                )
+            )
+        fig_l.legend(
+            handles=legend_handles,
+            title="Peak / mean ratio",
+            title_fontsize=9,
+            fontsize=8,
+            loc="lower center",
+            ncol=len(all_peak_ratios),
+            bbox_to_anchor=(0.5, -0.18),
+            frameon=True,
+        )
+        fig_l.suptitle(
+            f"Cumulative sediment transport at km {RIVER_KM}  "
+            f"($Q_{{\\mathrm{{mean}}}}$ = {DISCHARGE} m³/s)",
+            fontsize=12, fontweight="bold", y=1.02,
+        )
+        fig_l.tight_layout()
+        fig_l_path = OUTPUT_DIR / (
+            f"lines_upstream_km{RIVER_KM}_bedload_transport_Q{DISCHARGE}.png"
+        )
+        fig_l.savefig(fig_l_path, dpi=200, bbox_inches="tight")
+        plt.show()
+        print(f"Saved lines plot: {fig_l_path}")
 
     else:
         # ── Standard overlay comparison plot ──────────────────────────────────
