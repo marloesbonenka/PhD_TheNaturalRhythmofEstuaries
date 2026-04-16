@@ -242,8 +242,8 @@ for snapshot_key, snapshot_results in comparison_results.items():
     all_n_vals  = sorted({n  for pm, n in scen_pm_n.values() if n > 0})
 
     # Consistent color maps (like RATIO_COLOR in plot_scenario_lines.py)
-    PM_COLOR = {pm: PALETTE[i % len(PALETTE)] for i, pm in enumerate(all_pm_vals)}
-    N_COLOR  = {n:  PALETTE[i % len(PALETTE)] for i, n  in enumerate(all_n_vals)}
+    PM_COLOR = {pm: PALETTE[(i + 1) % len(PALETTE)] for i, pm in enumerate(all_pm_vals)}
+    N_COLOR  = {n:  PALETTE[(i + 1) % len(PALETTE)] for i, n  in enumerate(all_n_vals)}
 
     def _get_y(scen_key):
         """Mean MaxDepth across runs, negated to show as bed elevation (negative = deeper)."""
@@ -286,10 +286,10 @@ for snapshot_key, snapshot_results in comparison_results.items():
 
                 # Grey dashed constant reference
                 if not normalise and y_const is not None:
-                    ax.plot(x_const, y_const, color='grey', linewidth=1.5,
+                    ax.plot(x_const, y_const, color=PALETTE[0], linewidth=1.5,
                             linestyle='--', label='constant (pm1_n0)', zorder=2)
                 if normalise:
-                    ax.axhline(1.0, color='grey', linewidth=1.5, linestyle='--',
+                    ax.axhline(1.0, color=PALETTE[0], linewidth=1.5, linestyle='--',
                                label='constant (pm1_n0)', zorder=2)
 
                 for pm_val, scen_key in pm_by_n[n_val]:
@@ -357,10 +357,10 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 ax = axes[ci]
 
                 if not normalise and y_const is not None:
-                    ax.plot(x_const, y_const, color='grey', linewidth=1.5,
+                    ax.plot(x_const, y_const, color=PALETTE[0], linewidth=1.5,
                             linestyle='--', label='constant (pm1_n0)', zorder=2)
                 if normalise:
-                    ax.axhline(1.0, color='grey', linewidth=1.5, linestyle='--',
+                    ax.axhline(1.0, color=PALETTE[0], linewidth=1.5, linestyle='--',
                                label='constant (pm1_n0)', zorder=2)
 
                 for n_val, scen_key in n_by_pm[pm_val]:
