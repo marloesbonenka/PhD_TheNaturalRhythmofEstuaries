@@ -77,19 +77,8 @@ SCENARIO_LABELS = {
     '14': 'pm2_n4',
 }
 
-# Palette consistent with plot_scenario_lines.py
-PALETTE = [
-    "#1f77b4",  # blue
-    "#ff7f0e",  # orange
-    "#2ca02c",  # green
-    "#d62728",  # red
-    "#9467bd",  # purple
-    "#8c564b",  # brown
-    "#e377c2",  # pink
-    "#7f7f7f",  # grey
-    "#bcbd22",  # yellow-green
-    "#17becf",  # cyan
-]
+# Constant scenario colour
+GREY_CONST = "#7f7f7f"
 
 PANEL_W, PANEL_H = 4.0, 3.5
 
@@ -241,9 +230,11 @@ for snapshot_key, snapshot_results in comparison_results.items():
     all_pm_vals = sorted({pm for pm, n in scen_pm_n.values() if n > 0})
     all_n_vals  = sorted({n  for pm, n in scen_pm_n.values() if n > 0})
 
-    # Consistent color maps (like RATIO_COLOR in plot_scenario_lines.py)
-    PM_COLOR = {pm: PALETTE[(i + 1) % len(PALETTE)] for i, pm in enumerate(all_pm_vals)}
-    N_COLOR  = {n:  PALETTE[(i + 1) % len(PALETTE)] for i, n  in enumerate(all_n_vals)}
+    # Colormaps: Blues for pm (light→dark), Greens for n (light→dark)
+    _n_pm = max(len(all_pm_vals) - 1, 1)
+    PM_COLOR = {pm: plt.cm.Blues(0.35 + 0.55 * i / _n_pm) for i, pm in enumerate(all_pm_vals)}
+    _n_n = max(len(all_n_vals) - 1, 1)
+    N_COLOR  = {n:  plt.cm.Greens(0.35 + 0.55 * i / _n_n) for i, n  in enumerate(all_n_vals)}
 
     def _get_y(scen_key):
         """Mean MaxDepth across runs, negated to show as bed elevation (negative = deeper)."""
@@ -286,10 +277,10 @@ for snapshot_key, snapshot_results in comparison_results.items():
 
                 # Grey dashed constant reference
                 if not normalise and y_const is not None:
-                    ax.plot(x_const, y_const, color=PALETTE[0], linewidth=1.5,
+                    ax.plot(x_const, y_const, color=GREY_CONST, linewidth=1.5,
                             linestyle='--', label='constant (pm1_n0)', zorder=2)
                 if normalise:
-                    ax.axhline(1.0, color=PALETTE[0], linewidth=1.5, linestyle='--',
+                    ax.axhline(1.0, color=GREY_CONST, linewidth=1.5, linestyle='--',
                                label='constant (pm1_n0)', zorder=2)
 
                 for pm_val, scen_key in pm_by_n[n_val]:
@@ -314,16 +305,17 @@ for snapshot_key, snapshot_results in comparison_results.items():
                     ax.set_ylabel(ylabel, fontsize=9)
                     ax.tick_params(axis='y', labelsize=8)
 
-            # Shared legend
-            seen, legend_handles = set(), []
-            for ax in axes:
-                for h, l in zip(*ax.get_legend_handles_labels()):
-                    if l not in seen:
-                        seen.add(l)
-                        legend_handles.append(
-                            mlines.Line2D([], [], color=h.get_color(), linewidth=1.8,
-                                          linestyle=h.get_linestyle(), label=l)
-                        )
+            # Shared legend – constant first, then pm values sorted small→large
+            legend_handles = [
+                mlines.Line2D([], [], color=GREY_CONST, linewidth=1.5, linestyle='--',
+                              label='constant (pm1_n0)')
+            ]
+            for pm_val in sorted(all_pm_vals):
+                pr_label = str(int(pm_val)) if pm_val == int(pm_val) else str(pm_val)
+                legend_handles.append(
+                    mlines.Line2D([], [], color=PM_COLOR[pm_val], linewidth=1.8,
+                                  linestyle='-', label=f'$R_{{\\mathrm{{peak}}}}$ = {pr_label}')
+                )
             fig.legend(
                 handles=legend_handles, title='Peak / mean ratio',
                 title_fontsize=9, fontsize=8, loc='lower center',
@@ -357,10 +349,10 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 ax = axes[ci]
 
                 if not normalise and y_const is not None:
-                    ax.plot(x_const, y_const, color=PALETTE[0], linewidth=1.5,
+                    ax.plot(x_const, y_const, color=GREY_CONST, linewidth=1.5,
                             linestyle='--', label='constant (pm1_n0)', zorder=2)
                 if normalise:
-                    ax.axhline(1.0, color=PALETTE[0], linewidth=1.5, linestyle='--',
+                    ax.axhline(1.0, color=GREY_CONST, linewidth=1.5, linestyle='--',
                                label='constant (pm1_n0)', zorder=2)
 
                 for n_val, scen_key in n_by_pm[pm_val]:
@@ -385,16 +377,16 @@ for snapshot_key, snapshot_results in comparison_results.items():
                     ax.set_ylabel(ylabel, fontsize=9)
                     ax.tick_params(axis='y', labelsize=8)
 
-            # Shared legend
-            seen, legend_handles = set(), []
-            for ax in axes:
-                for h, l in zip(*ax.get_legend_handles_labels()):
-                    if l not in seen:
-                        seen.add(l)
-                        legend_handles.append(
-                            mlines.Line2D([], [], color=h.get_color(), linewidth=1.8,
-                                          linestyle=h.get_linestyle(), label=l)
-                        )
+            # Shared legend – constant first, then n values sorted small→large
+            legend_handles = [
+                mlines.Line2D([], [], color=GREY_CONST, linewidth=1.5, linestyle='--',
+                              label='constant (pm1_n0)')
+            ]
+            for n_val in sorted(all_n_vals):
+                legend_handles.append(
+                    mlines.Line2D([], [], color=N_COLOR[n_val], linewidth=1.8,
+                                  linestyle='-', label=f'$n_{{\\mathrm{{peaks}}}}$ = {n_val}')
+                )
             fig.legend(
                 handles=legend_handles, title='Number of peaks',
                 title_fontsize=9, fontsize=8, loc='lower center',
