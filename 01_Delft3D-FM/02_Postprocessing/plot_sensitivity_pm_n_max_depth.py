@@ -249,13 +249,12 @@ for snapshot_key, snapshot_results in comparison_results.items():
 
     y_const = _get_y(baseline_scen) if baseline_scen else None
     x_const = _get_x(baseline_scen) if baseline_scen else None
-    const_denom = np.where(np.abs(y_const) < 1e-6, np.nan, y_const) if y_const is not None else None
 
     for normalise in (False, True):
-        norm_tag   = '_normalised' if normalise else ''
-        norm_title = '  (normalised by constant)' if normalise else ''
+        norm_tag   = '_difference' if normalise else ''
+        norm_title = '  (difference from constant)' if normalise else ''
         ylabel = (
-            f'p{depth_percentile} depth\n(ratio to constant)'
+            f'p{depth_percentile} depth\n(difference from constant)  [m]'
             if normalise
             else f'bed level [m]  (p{depth_percentile} depth)'
         )
@@ -280,15 +279,15 @@ for snapshot_key, snapshot_results in comparison_results.items():
                     ax.plot(x_const, y_const, color=GREY_CONST, linewidth=1.5,
                             linestyle='--', label='constant (pm1_n0)', zorder=2)
                 if normalise:
-                    ax.axhline(1.0, color=GREY_CONST, linewidth=1.5, linestyle='--',
+                    ax.axhline(0.0, color=GREY_CONST, linewidth=1.5, linestyle='--',
                                label='constant (pm1_n0)', zorder=2)
 
                 for pm_val, scen_key in pm_by_n[n_val]:
                     y = _get_y(scen_key)
                     if y is None:
                         continue
-                    if normalise and const_denom is not None:
-                        y = y / const_denom
+                    if normalise and y_const is not None:
+                        y = y - y_const
                     x = _get_x(scen_key)
                     pr_label = str(int(pm_val)) if pm_val == int(pm_val) else str(pm_val)
                     ax.plot(x, y, color=PM_COLOR[pm_val], linewidth=1.8,
@@ -352,15 +351,15 @@ for snapshot_key, snapshot_results in comparison_results.items():
                     ax.plot(x_const, y_const, color=GREY_CONST, linewidth=1.5,
                             linestyle='--', label='constant (pm1_n0)', zorder=2)
                 if normalise:
-                    ax.axhline(1.0, color=GREY_CONST, linewidth=1.5, linestyle='--',
+                    ax.axhline(0.0, color=GREY_CONST, linewidth=1.5, linestyle='--',
                                label='constant (pm1_n0)', zorder=2)
 
                 for n_val, scen_key in n_by_pm[pm_val]:
                     y = _get_y(scen_key)
                     if y is None:
                         continue
-                    if normalise and const_denom is not None:
-                        y = y / const_denom
+                    if normalise and y_const is not None:
+                        y = y - y_const
                     x = _get_x(scen_key)
                     ax.plot(x, y, color=N_COLOR[n_val], linewidth=1.8,
                             label=f'$n_{{\\mathrm{{peaks}}}}$ = {n_val}', zorder=3)
