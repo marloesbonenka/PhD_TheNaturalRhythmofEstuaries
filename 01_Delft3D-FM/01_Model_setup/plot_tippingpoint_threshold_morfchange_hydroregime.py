@@ -8,24 +8,28 @@ import matplotlib.patches as mpatches
 import numpy as np
 #%%
 # ── INPUT DATA ────────────────────────────────────────────────────────────────
-scenarios = {
-    # Old scenarios (S2–S4) – shown for reference, to be dismissed
-    "S1 (constant)":     {"n_peaks": 0, "peak_mean": 1.0,  "status": "no_change",  "old": False},
-    "S2 (seasonal)":     {"n_peaks": 1, "peak_mean": 1.5,  "status": "no_change",  "old": True},
-    "S3 (flashy)":       {"n_peaks": 5, "peak_mean": 3.0,  "status": "change",     "old": True},
-    "S4 (single peak)":  {"n_peaks": 1, "peak_mean": 3.0,  "status": "no_change",  "old": True},
-    # New scenarios (S5–S10) – cover full peak/mean parameter space (1–5)
-    "S5":                {"n_peaks": 2, "peak_mean": 1.5,  "status": "unknown",    "old": False},
-    "S6":                {"n_peaks": 3, "peak_mean": 3.0,  "status": "unknown",    "old": False},
-    "S7":                {"n_peaks": 5, "peak_mean": 4.0,  "status": "unknown",    "old": False},
-    "S8":                {"n_peaks": 5, "peak_mean": 1.5,  "status": "unknown",    "old": False},
-    "S9":                {"n_peaks": 1, "peak_mean": 5.0,  "status": "unknown",    "old": False},
-    "S10":               {"n_peaks": 3, "peak_mean": 5.0,  "status": "unknown",    "old": False},
-}
+total_discharge = 500  # m³/s
+
+scenarios = [
+    {"name": f"01_Qr{total_discharge}_pm1_n0",  "peak_ratio": 1.0, "n_peaks": 0, "status": "no_change"},
+    {"name": f"02_Qr{total_discharge}_pm2_n1",  "peak_ratio": 2,   "n_peaks": 1, "status": "no_change"},
+    {"name": f"03_Qr{total_discharge}_pm3_n5",  "peak_ratio": 3,   "n_peaks": 5, "status": "change"},
+    {"name": f"04_Qr{total_discharge}_pm3_n1",  "peak_ratio": 3,   "n_peaks": 1, "status": "no_change"},
+    {"name": f"05_Qr{total_discharge}_pm5_n1",  "peak_ratio": 5,   "n_peaks": 1, "status": "change"},
+    {"name": f"06_Qr{total_discharge}_pm4_n3",  "peak_ratio": 4,   "n_peaks": 3, "status": "change"},
+    {"name": f"07_Qr{total_discharge}_pm3_n4",  "peak_ratio": 3,   "n_peaks": 4, "status": "change"},
+    {"name": f"08_Qr{total_discharge}_pm2_n6",  "peak_ratio": 2,   "n_peaks": 6, "status": "change"},
+    {"name": f"09_Qr{total_discharge}_pm5_n3",  "peak_ratio": 5,   "n_peaks": 3, "status": "change"},
+    {"name": f"10_Qr{total_discharge}_pm3_n3",  "peak_ratio": 3,   "n_peaks": 3, "status": "change"},
+    {"name": f"11_Qr{total_discharge}_pm2_n3",  "peak_ratio": 2,   "n_peaks": 3, "status": "no_change"},
+    {"name": f"12_Qr{total_discharge}_pm5_n4",  "peak_ratio": 5,   "n_peaks": 4, "status": "change"},
+    {"name": f"13_Qr{total_discharge}_pm4_n4",  "peak_ratio": 4,   "n_peaks": 4, "status": "change"},
+    {"name": f"14_Qr{total_discharge}_pm2_n4",  "peak_ratio": 2,   "n_peaks": 4, "status": "no_change"},
+]
 
 # Hypothetical threshold curve (x = n_peaks, y = peak/mean)
-threshold_x = np.array([0.0, 0.8, 1.6, 2.5, 3.5, 4.5, 5.5, 6.5])
-threshold_y = np.array([4.8, 4.2, 3.6, 3.0, 2.5, 2.0, 1.65, 1.4])
+threshold_x = np.array([0.5, 1.1, 1.6, 2.5, 3.5, 4.5, 5.5, 6.5])
+threshold_y = np.array([5, 4.2, 3.6, 3.0, 2.5, 2.0, 1.65, 1.4])
 
 #%%
 # ── PLOT STYLE ────────────────────────────────────────────────────────────────
@@ -48,38 +52,33 @@ ax.fill_between(threshold_x, threshold_y, 5.2,
 
 # Label offsets (tweak per point to avoid overlap)
 offsets = {
-    "S1 (constant)":    ( 0.12, -0.18),
-    "S2 (seasonal)":    (-0.20, -0.18),
-    "S3 (flashy)":      (-0.20,  0.14),
-    "S4 (single peak)": ( 0.12, -0.18),
-    "S5":               ( 0.12,  0.12),
-    "S6":               ( 0.12,  0.12),
-    "S7":               ( 0.12,  0.12),
-    "S8":               ( 0.12, -0.18),
-    "S9":               (-0.22,  0.14),
-    "S10":              ( 0.12,  0.12),
+    f"01_Qr{total_discharge}_pm1_n0":  ( 0.12, -0.18),
+    f"02_Qr{total_discharge}_pm2_n1":  ( 0.12,  0.12),
+    f"03_Qr{total_discharge}_pm3_n5":  (-0.20,  0.14),
+    f"04_Qr{total_discharge}_pm3_n1":  ( 0.12, -0.18),
+    f"05_Qr{total_discharge}_pm5_n1":  (-0.22,  0.14),
+    f"06_Qr{total_discharge}_pm4_n3":  ( 0.12,  0.12),
+    f"07_Qr{total_discharge}_pm3_n4":  ( 0.12,  0.12),
+    f"08_Qr{total_discharge}_pm2_n6":  ( 0.12, -0.18),
+    f"09_Qr{total_discharge}_pm5_n3":  ( 0.12,  0.12),
+    f"10_Qr{total_discharge}_pm3_n3":  ( 0.12,  0.12),
+    f"11_Qr{total_discharge}_pm2_n3":  (-0.22, -0.18),
+    f"12_Qr{total_discharge}_pm5_n4":  ( 0.12,  0.12),
+    f"13_Qr{total_discharge}_pm4_n4":  (-0.22,  0.14),
+    f"14_Qr{total_discharge}_pm2_n4":  ( 0.12, -0.18),
 }
 
 # Plot each scenario
-for name, s in scenarios.items():
-    x, y = s["n_peaks"], s["peak_mean"]
+for s in scenarios:
+    name = s["name"]
+    x, y = s["n_peaks"], s["peak_ratio"]
     dx, dy = offsets.get(name, (0.12, 0.08))
-
-    if s["old"]:
-        # Old scenarios: hollow circles in their status color (dismissed but still visible)
-        color = COLORS[s["status"]]
-        ax.scatter(x, y, marker="o", s=70, facecolors="none",
-                   edgecolors=color, linewidths=1.2, zorder=3, alpha=0.6)
-        ax.text(x + dx, y + dy, name, fontsize=7.5, color=color,
-                va="center", zorder=4, alpha=0.7, style="italic")
-    else:
-        # New scenarios (S5–S10): colored diamond markers
-        color = COLORS["unknown"]
-        ax.scatter(x, y, marker="D", s=90,
-                   facecolors=color + "33", edgecolors=color,
-                   linewidths=1.5, zorder=3)
-        ax.text(x + dx, y + dy, name, fontsize=8.5,
-                color="#3d3d3a", va="center", zorder=4)
+    color = COLORS[s["status"]]
+    ax.scatter(x, y, marker="D", s=90,
+               facecolors=color + "33", edgecolors=color,
+               linewidths=1.5, zorder=3)
+    # ax.text(x + dx, y + dy, name, fontsize=8.5,
+    #         color="#3d3d3a", va="center", zorder=4)
 
 # ── AXES & LABELS ─────────────────────────────────────────────────────────────
 ax.set_xlabel("Number of peaks  (#)", fontsize=12)
@@ -95,17 +94,14 @@ for spine in ax.spines.values():
 
 # ── LEGEND ────────────────────────────────────────────────────────────────────
 legend_elements = [
-    plt.Line2D([0], [0], marker="o", color="w", markerfacecolor="none",
-               markeredgecolor=COLORS["no_change"], markeredgewidth=1.2,
-               markersize=7, label="No persistent change — old (dismissed)"),
-    plt.Line2D([0], [0], marker="o", color="w", markerfacecolor="none",
-               markeredgecolor=COLORS["change"], markeredgewidth=1.2,
-               markersize=7, label="Persistent change — old (dismissed)"),
-    mpatches.Patch(facecolor=COLORS["unknown"] + "33",
-                   edgecolor=COLORS["unknown"], linewidth=1.5,
-                   label="New scenarios S1, S5–S10 (proposed)"),
+    mpatches.Patch(facecolor=COLORS["no_change"] + "33",
+                   edgecolor=COLORS["no_change"], linewidth=1.5,
+                   label="No persistent change"),
+    mpatches.Patch(facecolor=COLORS["change"] + "33",
+                   edgecolor=COLORS["change"], linewidth=1.5,
+                   label="Persistent change"),
     plt.Line2D([0], [0], color="#73726c", linewidth=1.5,
-               linestyle="--", label="Threshold (hypothetical)"),
+               linestyle="--", label="Threshold"),
 ]
 ax.legend(handles=legend_elements, fontsize=8.5, framealpha=0.9,
           edgecolor="#cccccc", bbox_to_anchor=(1.02, 0.5))
