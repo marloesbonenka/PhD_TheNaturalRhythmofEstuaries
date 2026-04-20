@@ -253,3 +253,117 @@ def generate_river_discharges_fm_gaussian(grid_info, params, output_dir, start_d
 
     print(f"Scenario {params.get('name', '')} (Gaussian, peak_ratio={peak_ratio}, n_peaks={n_peaks}): "
           f"Successfully saved {num_cells + 1} CSVs.")
+
+
+def generate_river_discharges_fm_gaussian_phased(grid_info, params, output_dir, start_date_str='2024-01-01 00:00:00'):
+    """
+    Identical to generate_river_discharges_fm_gaussian, but the timing of the
+    Gaussian peaks can be controlled via ``first_peak_day`` in params.
+
+    Extra entry in params
+    ---------------------
+    first_peak_day : float
+        Day-of-year (0-based) at which the FIRST Gaussian peak is centred.
+        Subsequent peaks are evenly spaced after this one.
+        Default: same as the original function (segment / 2).
+
+    All other params and the output file format are identical to
+    generate_river_discharges_fm_gaussian.
+    """
+    total_q         = params['total_discharge']
+    duration_min    = params['duration_min']
+    time_step       = params['time_step']
+    peak_ratio      = params['peak_ratio']
+    n_peaks         = params['n_peaks']
+    Q_base_fraction = params.get('Q_base_fraction', 0.8)
+    first_peak_day  = params.get('first_peak_day', None)   # NEW parameter
+    num_cells       = len(grid_info['river_cells'])
+
+    # ------------------------------------------------------------------
+    # 1. Model time axis
+    # ------------------------------------------------------------------
+    time_minutes = np.arange(0, duration_min + time_step, time_step)
+    num_steps    = len(time_minutes)
+    t_days       = time_minutes / (60.0 * 24.0)
+
+    start_dt   = datetime.strptime(start_date_str, '%Y-%m-%d %H:%M:%S')
+    timestamps = [start_dt + timedelta(minutes=int(m)) for m in time_minutes]
+
+    # ------------------------------------------------------------------
+    # 2. Build the 1-year Gaussian pattern (daily resolution, 365 days)
+    # ------------------------------------------------------------------
+    days_year = 365
+    t_year    = np.arange(days_year, dtype=float)
+    Q_base    = Q_base_fraction * total_q
+
+    if n_peaks == 0:
+        q_year = np.full(days_year, total_q)
+    else:
+        Q_peak         = total_q * peak_ratio
+        A              = Q_peak - Q_base
+        V_total_excess = (total_q - Q_base) * days_year
+        V_event        = V_total_excess / n_peaks
+        sigma          = V_event / (A * np.sqrt(2.0 * np.pi))
+
+        segment = days_year / n_peaks
+
+        # Use provided first_peak_day, or fall back to original centring
+        if first_peak_day is None:
+            t0_first = segment / 2.0
+        else:
+            t0_first = float(first_peak_day)
+
+        event_centers = [(t0_first + i * segment) % days_year for i in range(n_peaks)]
+
+        q_year = np.full(days_year, Q_base)
+        for t0 in event_centers:
+            # Wrapped Gaussian: add contributions from t0-365 and t0+365 to
+            # handle peaks that are close to the year boundary.
+            for offset in (-days_year, 0, days_year):
+                q_year += A * np.exp(-(t_year - (t0 + offset)) ** 2 / (2.0 * sigma ** 2))
+
+    # ------------------------------------------------------------------
+    # 3. Map model time axis onto the yearly pattern (tiled, with wrap)
+    # ------------------------------------------------------------------
+    t_wrap = np.append(t_year, float(days_year))
+    q_wrap = np.append(q_year, q_year[0])
+
+    t_year_interp = np.mod(t_days, float(days_year))
+    discharge_abs = np.interp(t_year_interp, t_wrap, q_wrap)
+
+    # ------------------------------------------------------------------
+    # 4. Quasi-steady sinusoidal spatial partitioning (same as original)
+    # ------------------------------------------------------------------
+    A_spat    = 0.25
+    T_years   = 500
+    T_minutes = T_years * 365.25 * 24.0 * 60.0
+
+    x = np.linspace(0, 1, num_cells, endpoint=False)
+    weights_stack = np.zeros((num_cells, num_steps))
+
+    for t_idx, t_min in enumerate(time_minutes):
+        temporal_factor = np.sin(2.0 * np.pi * t_min / T_minutes)
+        spatial_factor  = np.sin(2.0 * np.pi * x)
+        w = (1.0 / num_cells) * (1.0 + A_spat * temporal_factor * spatial_factor)
+        w[w < 0] = 0.0
+        w /= w.sum()
+        weights_stack[:, t_idx] = w
+
+    # ------------------------------------------------------------------
+    # 5. Save CSV files
+    # ------------------------------------------------------------------
+    spinup_duration = 2880  # 2 days in minutes
+
+    pd.DataFrame({'timestamp': timestamps, 'discharge_m3s': discharge_abs}).to_csv(
+        os.path.join(output_dir, 'discharge_cumulative.csv'), index=False)
+
+    for i in range(num_cells):
+        section_q = discharge_abs * weights_stack[i, :]
+        mask = time_minutes <= spinup_duration
+        section_q[mask] = total_q / num_cells
+        pd.DataFrame({'timestamp': timestamps, 'discharge_m3s': section_q}).to_csv(
+            os.path.join(output_dir, f'river_section_{i+1}.csv'), index=False)
+
+    print(f"Scenario {params.get('name', '')} (Gaussian phased, peak_ratio={peak_ratio}, "
+          f"n_peaks={n_peaks}, first_peak_day={first_peak_day}): "
+          f"Successfully saved {num_cells + 1} CSVs.")
