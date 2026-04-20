@@ -8,6 +8,7 @@ import re
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from scipy import stats as _stats
 
 try:
     _base_path = Path(__file__).resolve().parent
@@ -47,6 +48,10 @@ run_startdate        = '2025-01-01'
 # Restrict mass-balance summation to an x-coordinate range [m].
 # Set to None to include the full domain.
 ANALYSIS_X_RANGE = [20000, 45000]
+
+# Toggle plot outputs independently
+PLOT_HEATMAPS = False   # set False to skip heatmap panels
+PLOT_SCATTER  = True   # set False to skip scatter-correlation plot
 
 # --- MORFAC mode settings ---
 discharge_type       = '02_seasonal'  # '01_constant' | '02_seasonal' | '03_flashy'
@@ -419,84 +424,196 @@ if ANALYSIS_MODE == 'variability':
         _pw = max(5, len(_hm_n_peaks) * 1.1)
         _ph = max(3, len(_hm_peak_ratios) * 0.9)
 
-        # ── Absolute heatmap ──────────────────────────────────────────
-        _grid_min = np.nanmin(_grid)
-        _grid_max = np.nanmax(_grid)
-        # If values are negative (erosion), use Blues_r: light blue near 0, dark blue most negative.
-        # Otherwise keep YlOrRd for deposition.
-        if _grid_min < 0:
-            _hm_cmap = "Blues_r"
-            _hm_vmin, _hm_vmax = _grid_min, 0
-        else:
-            _hm_cmap = "YlOrRd"
-            _hm_vmin, _hm_vmax = _grid_min, _grid_max
+        if PLOT_HEATMAPS:
+            # ── Absolute heatmap ──────────────────────────────────────────
+            _grid_min = np.nanmin(_grid)
+            _grid_max = np.nanmax(_grid)
+            # If values are negative (erosion), use Blues_r; otherwise YlOrRd.
+            if _grid_min < 0:
+                _hm_cmap = "Blues_r"
+                _hm_vmin, _hm_vmax = _grid_min, 0
+            else:
+                _hm_cmap = "YlOrRd"
+                _hm_vmin, _hm_vmax = _grid_min, _grid_max
 
-        fig_hm, ax_hm = plt.subplots(figsize=(_pw, _ph))
-        im = ax_hm.imshow(_grid, aspect="auto", cmap=_hm_cmap,
-                          vmin=_hm_vmin, vmax=_hm_vmax)
-        for ri in range(len(_hm_peak_ratios)):
-            for ci in range(len(_hm_n_peaks)):
-                val = _grid[ri, ci]
-                if not np.isnan(val):
-                    # dark text on light cells, white text on dark cells
-                    _rel = (val - _hm_vmin) / (_hm_vmax - _hm_vmin) if (_hm_vmax != _hm_vmin) else 0.5
-                    ax_hm.text(ci, ri, f"{val:.2e}", ha="center", va="center",
-                               fontsize=7.5,
-                               color="white" if _rel < 0.45 else "black")
-        ax_hm.set_xticks(range(len(_hm_n_peaks)))
-        ax_hm.set_xticklabels(_xticklabels)
-        ax_hm.set_yticks(range(len(_hm_peak_ratios)))
-        ax_hm.set_yticklabels(_yticklabels)
-        ax_hm.set_xlabel("Number of peaks per year  ($n_\\mathrm{peaks}$)", fontsize=10)
-        ax_hm.set_ylabel("Peak / mean ratio  ($R_\\mathrm{peak}$)", fontsize=10)
-        ax_hm.set_title(
-            f"Final cumulative volume change  (Q{DISCHARGE} m³/s)",
-            fontsize=11, fontweight="bold",
-        )
-        cbar = fig_hm.colorbar(im, ax=ax_hm, pad=0.02)
-        cbar.set_label("volume change [m³]", fontsize=9)
-        fig_hm.tight_layout()
-        fig_hm_path = run_base_path / "output_plots" / "plots_map_massbalance" / f"Q{DISCHARGE}_heatmap_massbalance{_x_tag}.png"
-        fig_hm.savefig(fig_hm_path, dpi=200, bbox_inches="tight")
-        plt.show()
-        print(f"Saved heatmap: {fig_hm_path}")
-
-        # ── Normalised heatmap (% change vs. constant pm1_n0) ─────────
-        _ref_entries = [e for e in _hm_entries if e["peak_ratio"] == 1.0 and e["n_peaks"] == 0]
-        if not _ref_entries:
-            print("[WARNING] Constant scenario (pm1_n0) not found; skipping normalised heatmap.")
-        else:
-            _ref_val = _ref_entries[0]["final_value"]
-            _grid_pct = (_grid - _ref_val) / abs(_ref_val) * 100.0 if _ref_val != 0 else np.full_like(_grid, np.nan)
-            _abs_max = np.nanmax(np.abs(_grid_pct))
-
-            fig_nm, ax_nm = plt.subplots(figsize=(_pw, _ph))
-            im_nm = ax_nm.imshow(_grid_pct, aspect="auto", cmap="RdBu_r",
-                                 vmin=-_abs_max, vmax=_abs_max)
+            fig_hm, ax_hm = plt.subplots(figsize=(_pw, _ph))
+            im = ax_hm.imshow(_grid, aspect="auto", cmap=_hm_cmap,
+                              vmin=_hm_vmin, vmax=_hm_vmax)
             for ri in range(len(_hm_peak_ratios)):
                 for ci in range(len(_hm_n_peaks)):
-                    val = _grid_pct[ri, ci]
+                    val = _grid[ri, ci]
                     if not np.isnan(val):
-                        ax_nm.text(ci, ri, f"{val:+.1f}%", ha="center", va="center",
+                        _rel = (val - _hm_vmin) / (_hm_vmax - _hm_vmin) if (_hm_vmax != _hm_vmin) else 0.5
+                        ax_hm.text(ci, ri, f"{val:.2e}", ha="center", va="center",
                                    fontsize=7.5,
-                                   color="black" if abs(val) < 0.55 * _abs_max else "white")
-            ax_nm.set_xticks(range(len(_hm_n_peaks)))
-            ax_nm.set_xticklabels(_xticklabels)
-            ax_nm.set_yticks(range(len(_hm_peak_ratios)))
-            ax_nm.set_yticklabels(_yticklabels)
-            ax_nm.set_xlabel("Number of peaks per year  ($n_\\mathrm{peaks}$)", fontsize=10)
-            ax_nm.set_ylabel("Peak / mean ratio  ($R_\\mathrm{peak}$)", fontsize=10)
-            ax_nm.set_title(
-                f"Change in final volume vs. constant  (Q{DISCHARGE} m³/s)",
+                                   color="white" if _rel < 0.45 else "black")
+            ax_hm.set_xticks(range(len(_hm_n_peaks)))
+            ax_hm.set_xticklabels(_xticklabels)
+            ax_hm.set_yticks(range(len(_hm_peak_ratios)))
+            ax_hm.set_yticklabels(_yticklabels)
+            ax_hm.set_xlabel("Number of peaks per year  ($n_\\mathrm{peaks}$)", fontsize=10)
+            ax_hm.set_ylabel("Peak / mean ratio  ($R_\\mathrm{peak}$)", fontsize=10)
+            ax_hm.set_title(
+                f"Final cumulative volume change  (Q{DISCHARGE} m\u00b3/s)",
                 fontsize=11, fontweight="bold",
             )
-            cbar_nm = fig_nm.colorbar(im_nm, ax=ax_nm, pad=0.02)
-            cbar_nm.set_label("change relative to constant scenario [%]", fontsize=9)
-            fig_nm.tight_layout()
-            fig_nm_path = run_base_path / "output_plots" / "plots_map_massbalance" / f"Q{DISCHARGE}_heatmap_normalised_massbalance{_x_tag}.png"
-            fig_nm.savefig(fig_nm_path, dpi=200, bbox_inches="tight")
+            cbar = fig_hm.colorbar(im, ax=ax_hm, pad=0.02)
+            cbar.set_label("volume change [m\u00b3]", fontsize=9)
+            fig_hm.tight_layout()
+            fig_hm_path = run_base_path / "output_plots" / "plots_map_massbalance" / f"Q{DISCHARGE}_heatmap_massbalance{_x_tag}.png"
+            fig_hm.savefig(fig_hm_path, dpi=200, bbox_inches="tight")
             plt.show()
-            print(f"Saved normalised heatmap: {fig_nm_path}")
+            print(f"Saved heatmap: {fig_hm_path}")
+
+            # ── Normalised heatmap (% change vs. constant pm1_n0) ─────────
+            _ref_entries = [e for e in _hm_entries if e["peak_ratio"] == 1.0 and e["n_peaks"] == 0]
+            if not _ref_entries:
+                print("[WARNING] Constant scenario (pm1_n0) not found; skipping normalised heatmap.")
+            else:
+                _ref_val = _ref_entries[0]["final_value"]
+                _grid_pct = (_grid - _ref_val) / abs(_ref_val) * 100.0 if _ref_val != 0 else np.full_like(_grid, np.nan)
+                _abs_max = np.nanmax(np.abs(_grid_pct))
+
+                fig_nm, ax_nm = plt.subplots(figsize=(_pw, _ph))
+                im_nm = ax_nm.imshow(_grid_pct, aspect="auto", cmap="RdBu_r",
+                                     vmin=-_abs_max, vmax=_abs_max)
+                for ri in range(len(_hm_peak_ratios)):
+                    for ci in range(len(_hm_n_peaks)):
+                        val = _grid_pct[ri, ci]
+                        if not np.isnan(val):
+                            ax_nm.text(ci, ri, f"{val:+.1f}%", ha="center", va="center",
+                                       fontsize=7.5,
+                                       color="black" if abs(val) < 0.55 * _abs_max else "white")
+                ax_nm.set_xticks(range(len(_hm_n_peaks)))
+                ax_nm.set_xticklabels(_xticklabels)
+                ax_nm.set_yticks(range(len(_hm_peak_ratios)))
+                ax_nm.set_yticklabels(_yticklabels)
+                ax_nm.set_xlabel("Number of peaks per year  ($n_\\mathrm{peaks}$)", fontsize=10)
+                ax_nm.set_ylabel("Peak / mean ratio  ($R_\\mathrm{peak}$)", fontsize=10)
+                ax_nm.set_title(
+                    f"Change in final volume vs. constant  (Q{DISCHARGE} m\u00b3/s)",
+                    fontsize=11, fontweight="bold",
+                )
+                cbar_nm = fig_nm.colorbar(im_nm, ax=ax_nm, pad=0.02)
+                cbar_nm.set_label("change relative to constant scenario [%]", fontsize=9)
+                fig_nm.tight_layout()
+                fig_nm_path = run_base_path / "output_plots" / "plots_map_massbalance" / f"Q{DISCHARGE}_heatmap_normalised_massbalance{_x_tag}.png"
+                fig_nm.savefig(fig_nm_path, dpi=200, bbox_inches="tight")
+                plt.show()
+                print(f"Saved normalised heatmap: {fig_nm_path}")
+
+        # ── Scatter: n_peaks vs. final volume change, coloured by R_peak ──────
+        if PLOT_SCATTER:
+            _sc_x_freq = np.array([e["n_peaks"]    for e in _hm_entries], dtype=float)
+            _sc_x_amp  = np.array([e["peak_ratio"] for e in _hm_entries], dtype=float)
+            _sc_y      = np.array([e["final_value"] for e in _hm_entries], dtype=float)
+
+            # Linear regression for each panel
+            _sl_f, _ic_f, _r_f, _p_f, _ = _stats.linregress(_sc_x_freq, _sc_y)
+            _sl_a, _ic_a, _r_a, _p_a, _ = _stats.linregress(_sc_x_amp,  _sc_y)
+            _xf_freq = np.linspace(_sc_x_freq.min(), _sc_x_freq.max(), 200)
+            _xf_amp  = np.linspace(_sc_x_amp.min(),  _sc_x_amp.max(),  200)
+
+            # Shared y-axis limits with a small pad
+            _y_pad = (_sc_y.max() - _sc_y.min()) * 0.06
+            _y_lim = (_sc_y.min() - _y_pad, _sc_y.max() + _y_pad)
+
+            # Colourmap normalisation
+            import matplotlib.colors as _mcolors
+            _norm_amp  = _mcolors.Normalize(vmin=_sc_x_amp.min(),  vmax=_sc_x_amp.max())
+            _norm_freq = _mcolors.Normalize(vmin=_sc_x_freq.min(), vmax=_sc_x_freq.max())
+
+            _domain_str = (
+                f"km {ANALYSIS_X_RANGE[0] // 1000}–{ANALYSIS_X_RANGE[1] // 1000}"
+                if ANALYSIS_X_RANGE else "full domain"
+            )
+            _ylabel = f"Final cumulative volume change  [{_domain_str}]  [m\u00b3]"
+
+            fig_sc, (ax_l, ax_r) = plt.subplots(
+                1, 2,
+                figsize=(13, 5),
+                sharey=True,
+            )
+
+            # ── Left panel: frequency ──────────────────────────────────────
+            sc_l = ax_l.scatter(
+                _sc_x_freq, _sc_y,
+                c=_sc_x_amp,
+                cmap="plasma",
+                norm=_norm_amp,
+                s=70,
+                edgecolors="0.25",
+                linewidths=0.5,
+                zorder=3,
+            )
+            ax_l.plot(
+                _xf_freq, _sl_f * _xf_freq + _ic_f,
+                color="0.2", linewidth=1.5, linestyle="--", zorder=2,
+                label=(
+                    f"$r$ = {_r_f:.3f}\n"
+                    f"$R^2$ = {_r_f**2:.3f}\n"
+                    f"$p$ = {_p_f:.3g}"
+                ),
+            )
+            cbar_l = fig_sc.colorbar(sc_l, ax=ax_l, pad=0.03, aspect=30)
+            cbar_l.set_label("Peak amplitude ratio  ($R_\\mathrm{peak}$)", fontsize=10)
+            ax_l.set_xlabel(
+                "Number of peaks per year  ($n_\\mathrm{peaks}$)", fontsize=11
+            )
+            ax_l.set_ylabel(_ylabel, fontsize=11)
+            ax_l.set_title("Mass balance vs. Peak Frequency",
+                           fontsize=12, fontweight="bold")
+            ax_l.set_ylim(_y_lim)
+            ax_l.legend(fontsize=9, loc="upper left", framealpha=0.85, title="Linear fit")
+            ax_l.grid(True, alpha=0.3, linewidth=0.5)
+
+            # ── Right panel: amplitude ─────────────────────────────────────
+            sc_r = ax_r.scatter(
+                _sc_x_amp, _sc_y,
+                c=_sc_x_freq,
+                cmap="viridis",
+                norm=_norm_freq,
+                s=70,
+                edgecolors="0.25",
+                linewidths=0.5,
+                zorder=3,
+            )
+            ax_r.plot(
+                _xf_amp, _sl_a * _xf_amp + _ic_a,
+                color="0.2", linewidth=1.5, linestyle="--", zorder=2,
+                label=(
+                    f"$r$ = {_r_a:.3f}\n"
+                    f"$R^2$ = {_r_a**2:.3f}\n"
+                    f"$p$ = {_p_a:.3g}"
+                ),
+            )
+            cbar_r = fig_sc.colorbar(sc_r, ax=ax_r, pad=0.03, aspect=30)
+            cbar_r.set_label(
+                "Number of peaks per year  ($n_\\mathrm{peaks}$)", fontsize=10
+            )
+            ax_r.set_xlabel(
+                "Peak amplitude ratio  ($R_\\mathrm{peak}$)", fontsize=11
+            )
+            ax_r.set_title("Mass balance vs. Peak Amplitude",
+                           fontsize=12, fontweight="bold")
+            ax_r.set_ylim(_y_lim)
+            ax_r.legend(fontsize=9, loc="upper left", framealpha=0.85, title="Linear fit")
+            ax_r.grid(True, alpha=0.3, linewidth=0.5)
+
+            fig_sc.suptitle(
+                f"Mass balance response vs. discharge variability  "
+                f"(Estuary domain, $Q_\\mathrm{{mean}}$ = {DISCHARGE} m\u00b3/s)",
+                fontsize=13, fontweight="bold", y=1.02,
+            )
+            fig_sc.tight_layout()
+
+            fig_sc_path = (
+                run_base_path / "output_plots" / "plots_map_massbalance"
+                / f"Q{DISCHARGE}_scatter_2panel_massbalance{_x_tag}.png"
+            )
+            fig_sc.savefig(fig_sc_path, dpi=200, bbox_inches="tight")
+            plt.show()
+            print(f"Saved two-panel scatter plot: {fig_sc_path}")
 
 else:
     # ------------------------------------------------------------------
