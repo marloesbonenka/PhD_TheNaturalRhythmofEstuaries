@@ -15,6 +15,7 @@ import re
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
+import matplotlib.patches as mpatches
 import sys
 
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
@@ -37,7 +38,6 @@ from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
 #%% --- CONFIGURATION ---
 DISCHARGE = 500
-NOISY = False
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian")
 config = f'Model_Output/Q{DISCHARGE}'
 
@@ -57,6 +57,21 @@ APPEND_VARIABLES = True
 SNAPSHOT_TARGET_DATES = None
 SNAPSHOT_DATE_RANGE = (np.datetime64('2025-01-01'), np.datetime64('2031-12-31'))
 SNAPSHOT_COUNT = 6
+
+# Natural variability envelope — noisy repeats of the constant scenario
+# from the 1_RiverDischargeVariability_domain45x15 model folder.
+# Set SHOW_NOISY_ENVELOPE = True to overlay the grey band on every panel.
+SHOW_NOISY_ENVELOPE = True
+NOISY_BASE_PATH = Path(
+    r"U:\PhDNaturalRhythmEstuaries\Models"
+    r"\1_RiverDischargeVariability_domain45x15"
+    r"\Model_Output\Q500\0_Noise_Q500"
+)
+NOISY_SUBFOLDERS = [
+    '1_Q500_noisy0.9095347',
+    '1_Q500_noisy1_rst.9160657',
+    '1_Q500_noisy2_rst.9160663',
+]
 
 
 #%% --- SCENARIO LABELS ---
@@ -91,7 +106,7 @@ model_folders = find_variability_model_folders(
     base_path=base_path,
     discharge=DISCHARGE,
     scenarios_to_process=None,
-    analyze_noisy=NOISY,
+    analyze_noisy=False,
 )
 
 assessment_dir = base_path / 'cached_data'
@@ -124,7 +139,7 @@ for folder in model_folders:
         folder_name=folder.name,
         timed_out_dir=timed_out_dir,
         variability_map=VARIABILITY_MAP,
-        analyze_noisy=NOISY,
+        analyze_noisy=False,
     )
     if not run_paths:
         run_paths = [base_path / folder]
@@ -184,6 +199,89 @@ for folder in model_folders:
         print(f"  Snapshot {_date_to_label(target_dt)}: computed p{depth_percentile} max depth.")
 
     ds.close()
+
+
+#%% --- LOAD NOISY ENVELOPE DATA ---
+# Builds {snapshot_key: {'env_min', 'env_max', 'x_km'}} from the noisy repeats.
+# env_min / env_max are expressed as BED ELEVATION [m] (negative = channel depth),
+# matching the sign convention used by _get_y().
+
+noisy_envelope_data = {}  # populated only when SHOW_NOISY_ENVELOPE is True
+
+if SHOW_NOISY_ENVELOPE:
+    if not NOISY_BASE_PATH.exists():
+        print(f"[WARNING] Noisy base path not found: {NOISY_BASE_PATH}")
+    else:
+        _dx = 1000
+        _x_bins = np.arange(x_targets[0], x_targets[-1] + _dx, _dx)
+        _x_centers = (_x_bins[:-1] + _x_bins[1:]) / 2
+
+        _noisy_cache_dir = NOISY_BASE_PATH / 'cached_data'
+        _noisy_cache_dir.mkdir(parents=True, exist_ok=True)
+
+        _noisy_profiles = {}  # {snapshot_key: [1-D array per run]}
+
+        for _subfolder in NOISY_SUBFOLDERS:
+            _noisy_folder = NOISY_BASE_PATH / _subfolder
+            if not _noisy_folder.exists():
+                print(f"[WARNING] Noisy subfolder not found: {_noisy_folder}")
+                continue
+            print(f"Loading noisy run: {_subfolder}")
+
+            _ds_n = load_or_update_map_cache_multi(
+                cache_dir=_noisy_cache_dir,
+                folder_name=_subfolder,
+                run_paths=[_noisy_folder],
+                var_names=['mesh2d_mor_bl'],
+                bbox=CACHE_BBOX,
+                append_time=APPEND_TIMESTEPS,
+                append_vars=APPEND_VARIABLES,
+                cache_tag=cache_tag_from_bbox(CACHE_BBOX, CACHE_TAG),
+            )
+            if _ds_n is None:
+                print(f"  No cached data for {_subfolder}, skipping.")
+                continue
+
+            _snaps_n = get_snapshot_matches_by_target_dates(
+                _ds_n.time.values, target_snapshot_dates
+            )
+            _fx_n, _fy_n = _get_face_coords(_ds_n)
+            _wmask_n = (_fy_n >= y_range[0]) & (_fy_n <= y_range[1])
+
+            for _tdt, _ts_idx, _adt in _snaps_n:
+                _snap_key = f"d{_date_to_filename_tag(_tdt)}"
+                _bl = _ds_n['mesh2d_mor_bl'].isel(time=_ts_idx).values.copy()
+                _dep = np.abs(_bl) if use_absolute_depth else -_bl
+                _valid = _wmask_n & (_bl < bed_threshold)
+
+                _mdepths = []
+                for _k in range(len(_x_bins) - 1):
+                    _bm = _valid & (_fx_n >= _x_bins[_k]) & (_fx_n < _x_bins[_k + 1])
+                    if np.any(_bm):
+                        _vd = _dep[_bm]
+                        _vd = _vd[~np.isnan(_vd)]
+                        _mdepths.append(
+                            np.percentile(_vd, depth_percentile)
+                            if len(_vd) > 0 else np.nan
+                        )
+                    else:
+                        _mdepths.append(np.nan)
+
+                _noisy_profiles.setdefault(_snap_key, []).append(np.array(_mdepths))
+                print(f"  {_subfolder}: snapshot {_date_to_label(_tdt)} OK")
+
+            _ds_n.close()
+
+        # Build envelope: convert MaxDepth (positive) → bed elevation (negative)
+        for _snap_key, _profs in _noisy_profiles.items():
+            if _profs:
+                _stacked = np.vstack(_profs)            # shape (n_runs, n_x)
+                noisy_envelope_data[_snap_key] = {
+                    'env_min': -np.nanmax(_stacked, axis=0),  # deepest (most negative)
+                    'env_max': -np.nanmin(_stacked, axis=0),  # shallowest
+                    'x_km':   _x_centers / 1000,
+                }
+        print(f"Noisy envelope ready for {len(noisy_envelope_data)} snapshots.")
 
 
 #%% --- HELPERS ---
@@ -251,10 +349,10 @@ for snapshot_key, snapshot_results in comparison_results.items():
     x_const = _get_x(baseline_scen) if baseline_scen else None
 
     for normalise in (False, True):
-        norm_tag   = '_difference' if normalise else ''
-        norm_title = '  (difference from constant)' if normalise else ''
+        norm_tag   = '_normalised' if normalise else ''
+        norm_title = '  (normalised by constant)' if normalise else ''
         ylabel = (
-            f'p{depth_percentile} depth\n(difference from constant)  [m]'
+            f'p{depth_percentile} depth\n(normalised by constant)  [-]'
             if normalise
             else f'bed level [m]  (p{depth_percentile} depth)'
         )
@@ -282,12 +380,26 @@ for snapshot_key, snapshot_results in comparison_results.items():
                     ax.axhline(0.0, color=GREY_CONST, linewidth=1.5, linestyle='--',
                                label='constant (pm1_n0)', zorder=2)
 
+                # Natural variability envelope
+                if SHOW_NOISY_ENVELOPE and snapshot_key in noisy_envelope_data:
+                    _env = noisy_envelope_data[snapshot_key]
+                    _emin = _env['env_min'].copy()
+                    _emax = _env['env_max'].copy()
+                    if normalise and y_const is not None:
+                        _emin = (_emin - y_const) / np.abs(y_const)
+                        _emax = (_emax - y_const) / np.abs(y_const)
+                    ax.fill_between(
+                        _env['x_km'], _emin, _emax,
+                        alpha=0.25, color='0.55', zorder=1,
+                        label='natural variability (noisy)',
+                    )
+
                 for pm_val, scen_key in pm_by_n[n_val]:
                     y = _get_y(scen_key)
                     if y is None:
                         continue
                     if normalise and y_const is not None:
-                        y = y - y_const
+                        y = (y - y_const) / np.abs(y_const)
                     x = _get_x(scen_key)
                     pr_label = str(int(pm_val)) if pm_val == int(pm_val) else str(pm_val)
                     ax.plot(x, y, color=PM_COLOR[pm_val], linewidth=1.8,
@@ -305,10 +417,18 @@ for snapshot_key, snapshot_results in comparison_results.items():
                     ax.tick_params(axis='y', labelsize=8)
 
             # Shared legend – constant first, then pm values sorted small→large
-            legend_handles = [
+            legend_handles = []
+            if SHOW_NOISY_ENVELOPE and snapshot_key in noisy_envelope_data:
+                legend_handles.append(
+                    mpatches.Patch(
+                        facecolor='0.55', alpha=0.4,
+                        label='natural variability (noisy)',
+                    )
+                )
+            legend_handles.append(
                 mlines.Line2D([], [], color=GREY_CONST, linewidth=1.5, linestyle='--',
                               label='constant (pm1_n0)')
-            ]
+            )
             for pm_val in sorted(all_pm_vals):
                 pr_label = str(int(pm_val)) if pm_val == int(pm_val) else str(pm_val)
                 legend_handles.append(
@@ -326,7 +446,8 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 fontsize=11, fontweight='bold', y=1.02,
             )
             fig.tight_layout()
-            fname = f'sensitivity_pm_effect_maxdepth{norm_tag}_{snap_label}_Q{DISCHARGE}.png'
+            _noisy_tag = '_noisy' if SHOW_NOISY_ENVELOPE else ''
+            fname = f'sensitivity_pm_effect_maxdepth{norm_tag}{_noisy_tag}_{snap_label}_Q{DISCHARGE}.png'
             fig.savefig(sensitivity_output_dir / fname, dpi=200, bbox_inches='tight', transparent=True)
             plt.show()
             plt.close(fig)
@@ -354,12 +475,26 @@ for snapshot_key, snapshot_results in comparison_results.items():
                     ax.axhline(0.0, color=GREY_CONST, linewidth=1.5, linestyle='--',
                                label='constant (pm1_n0)', zorder=2)
 
+                # Natural variability envelope
+                if SHOW_NOISY_ENVELOPE and snapshot_key in noisy_envelope_data:
+                    _env = noisy_envelope_data[snapshot_key]
+                    _emin = _env['env_min'].copy()
+                    _emax = _env['env_max'].copy()
+                    if normalise and y_const is not None:
+                        _emin = (_emin - y_const) / np.abs(y_const)
+                        _emax = (_emax - y_const) / np.abs(y_const)
+                    ax.fill_between(
+                        _env['x_km'], _emin, _emax,
+                        alpha=0.25, color='0.55', zorder=1,
+                        label='natural variability (noisy)',
+                    )
+
                 for n_val, scen_key in n_by_pm[pm_val]:
                     y = _get_y(scen_key)
                     if y is None:
                         continue
                     if normalise and y_const is not None:
-                        y = y - y_const
+                        y = (y - y_const) / np.abs(y_const)
                     x = _get_x(scen_key)
                     ax.plot(x, y, color=N_COLOR[n_val], linewidth=1.8,
                             label=f'$n_{{\\mathrm{{peaks}}}}$ = {n_val}', zorder=3)
@@ -377,10 +512,18 @@ for snapshot_key, snapshot_results in comparison_results.items():
                     ax.tick_params(axis='y', labelsize=8)
 
             # Shared legend – constant first, then n values sorted small→large
-            legend_handles = [
+            legend_handles = []
+            if SHOW_NOISY_ENVELOPE and snapshot_key in noisy_envelope_data:
+                legend_handles.append(
+                    mpatches.Patch(
+                        facecolor='0.55', alpha=0.4,
+                        label='natural variability (noisy)',
+                    )
+                )
+            legend_handles.append(
                 mlines.Line2D([], [], color=GREY_CONST, linewidth=1.5, linestyle='--',
                               label='constant (pm1_n0)')
-            ]
+            )
             for n_val in sorted(all_n_vals):
                 legend_handles.append(
                     mlines.Line2D([], [], color=N_COLOR[n_val], linewidth=1.8,
@@ -397,7 +540,8 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 fontsize=11, fontweight='bold', y=1.02,
             )
             fig.tight_layout()
-            fname = f'sensitivity_n_effect_maxdepth{norm_tag}_{snap_label}_Q{DISCHARGE}.png'
+            _noisy_tag = '_noisy' if SHOW_NOISY_ENVELOPE else ''
+            fname = f'sensitivity_n_effect_maxdepth{norm_tag}{_noisy_tag}_{snap_label}_Q{DISCHARGE}.png'
             fig.savefig(sensitivity_output_dir / fname, dpi=200, bbox_inches='tight', transparent=True)
             plt.show()
             plt.close(fig)
