@@ -59,7 +59,7 @@ SNAPSHOT_COUNT = 6
 # Natural variability envelope — noisy repeats of the constant scenario
 # from the 1_RiverDischargeVariability_domain45x15 model folder.
 # Set SHOW_NOISY_ENVELOPE = True to overlay the grey band on every panel.
-SHOW_NOISY_ENVELOPE = False
+SHOW_NOISY_ENVELOPE = True
 NOISY_BASE_PATH = Path(
     r"U:\PhDNaturalRhythmEstuaries\Models"
     r"\1_RiverDischargeVariability_domain45x15"
@@ -254,13 +254,15 @@ if SHOW_NOISY_ENVELOPE:
 
             _ds_n.close()
 
-        # Build envelope: min/max across noisy runs
+        # Build ±1σ envelope: mean ± 1 std across noisy runs.
         for _snap_key, _profs in _noisy_profiles.items():
             if _profs:
-                _stacked = np.vstack(_profs)  # shape (n_runs, n_x)
+                _stacked  = np.vstack(_profs)  # shape (n_runs, n_x)
+                _env_mean = np.nanmean(_stacked, axis=0)
+                _env_std  = np.nanstd(_stacked, axis=0)
                 noisy_envelope_data[_snap_key] = {
-                    'env_min': np.nanmin(_stacked, axis=0),
-                    'env_max': np.nanmax(_stacked, axis=0),
+                    'env_min': _env_mean - _env_std,
+                    'env_max': _env_mean + _env_std,
                     'x_km':   _x_centers / 1000,
                 }
         print(f"Noisy envelope ready for {len(noisy_envelope_data)} snapshots.")
@@ -331,10 +333,10 @@ for snapshot_key, snapshot_results in comparison_results.items():
     x_const = _get_x(baseline_scen) if baseline_scen else None
 
     for normalise in (False, True):
-        norm_tag   = '_normalised' if normalise else ''
-        norm_title = '  (normalised by constant)' if normalise else ''
+        norm_tag   = '_difference' if normalise else ''
+        norm_title = '  (difference from constant)' if normalise else ''
         ylabel = (
-            'width-averaged bed level\n(normalised by constant)  [-]'
+            'width-averaged bed level\n(difference from constant)  [m]'
             if normalise
             else 'bed level [m]'
         )
@@ -368,12 +370,12 @@ for snapshot_key, snapshot_results in comparison_results.items():
                     _emin = _env['env_min'].copy()
                     _emax = _env['env_max'].copy()
                     if normalise and y_const is not None:
-                        _emin = (_emin - y_const) / np.abs(y_const)
-                        _emax = (_emax - y_const) / np.abs(y_const)
+                        _emin = _emin - y_const
+                        _emax = _emax - y_const
                     ax.fill_between(
                         _env['x_km'], _emin, _emax,
                         alpha=0.25, color='0.55', zorder=1,
-                        label='natural variability (noisy)',
+                        label=r'$\pm 1\sigma$ natural variability',
                     )
 
                 for pm_val, scen_key in pm_by_n[n_val]:
@@ -381,7 +383,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                     if y is None:
                         continue
                     if normalise and y_const is not None:
-                        y = (y - y_const) / np.abs(y_const)
+                        y = y - y_const
                     x = _get_x(scen_key)
                     pr_label = str(int(pm_val)) if pm_val == int(pm_val) else str(pm_val)
                     ax.plot(x, y, color=PM_COLOR[pm_val], linewidth=1.8,
@@ -404,7 +406,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 legend_handles.append(
                     mpatches.Patch(
                         facecolor='0.55', alpha=0.4,
-                        label='natural variability (noisy)',
+                        label=r'$\pm 1\sigma$ natural variability',
                     )
                 )
             legend_handles.append(
@@ -463,12 +465,12 @@ for snapshot_key, snapshot_results in comparison_results.items():
                     _emin = _env['env_min'].copy()
                     _emax = _env['env_max'].copy()
                     if normalise and y_const is not None:
-                        _emin = (_emin - y_const) / np.abs(y_const)
-                        _emax = (_emax - y_const) / np.abs(y_const)
+                        _emin = _emin - y_const
+                        _emax = _emax - y_const
                     ax.fill_between(
                         _env['x_km'], _emin, _emax,
                         alpha=0.25, color='0.55', zorder=1,
-                        label='natural variability (noisy)',
+                        label=r'$\pm 1\sigma$ natural variability',
                     )
 
                 for n_val, scen_key in n_by_pm[pm_val]:
@@ -476,7 +478,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                     if y is None:
                         continue
                     if normalise and y_const is not None:
-                        y = (y - y_const) / np.abs(y_const)
+                        y = y - y_const
                     x = _get_x(scen_key)
                     ax.plot(x, y, color=N_COLOR[n_val], linewidth=1.8,
                             label=f'$n_{{\\mathrm{{peaks}}}}$ = {n_val}', zorder=3)
@@ -499,7 +501,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 legend_handles.append(
                     mpatches.Patch(
                         facecolor='0.55', alpha=0.4,
-                        label='natural variability (noisy)',
+                        label=r'$\pm 1\sigma$ natural variability',
                     )
                 )
             legend_handles.append(
