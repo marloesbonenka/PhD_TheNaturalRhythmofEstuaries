@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+from scipy import stats
 
 sys.path.append(r"C:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing\FUNCTIONS")
 
@@ -33,6 +34,10 @@ ANALYZE_NOISY = False
 # Toggle: set True to produce a matrix plot (columns = n_peaks, rows = peak_ratio)
 #         set False to produce the standard overlay comparison plot
 PLOT_AS_MATRIX = True
+
+# Toggle heatmap and scatter outputs independently
+PLOT_HEATMAPS = False   # set False to skip heatmap panels
+PLOT_SCATTER  = True   # set False to skip scatter-correlation plot
 
 SCENARIO_LABELS = None
 
@@ -456,7 +461,7 @@ else:
 # =============================================================================
 _hm_data = [s for s in comparison_series if s.get("peak_ratio") is not None]
 
-if _hm_data:
+if _hm_data and PLOT_HEATMAPS:
     _hm_n_peaks     = sorted({s["n_peaks"]    for s in _hm_data})
     _hm_peak_ratios = sorted({s["peak_ratio"] for s in _hm_data}, reverse=True)
 
@@ -564,4 +569,114 @@ if _hm_data:
 
 else:
     print("No parseable scenarios for heatmap.")
+
+# %%
+# =============================================================================
+# Two-panel scatter plot:
+#   Left  – n_peaks (x) vs. sediment transport (y), coloured by R_peak
+#   Right – R_peak  (x) vs. sediment transport (y), coloured by n_peaks
+# =============================================================================
+if PLOT_SCATTER and _hm_data:
+    _sc_series = [s for s in _hm_data if s["n_peaks"] is not None]
+
+    _x_freq = np.array([s["n_peaks"]    for s in _sc_series], dtype=float)
+    _x_amp  = np.array([s["peak_ratio"] for s in _sc_series], dtype=float)
+    _y_sed  = np.array([s["final_value"] for s in _sc_series], dtype=float)
+
+    # ── helper: linear regression stats ──────────────────────────────────────
+    def _regress(x, y):
+        slope, intercept, r, p, _ = stats.linregress(x, y)
+        x_fit = np.linspace(x.min(), x.max(), 200)
+        return slope, intercept, r, r**2, p, x_fit
+
+    sl_f, ic_f, r_f, r2_f, p_f, xf_freq = _regress(_x_freq, _y_sed)
+    sl_a, ic_a, r_a, r2_a, p_a, xf_amp  = _regress(_x_amp,  _y_sed)
+
+    # ── shared y-axis limits ──────────────────────────────────────────────────
+    _y_pad  = (_y_sed.max() - _y_sed.min()) * 0.06
+    _y_lim  = (_y_sed.min() - _y_pad, _y_sed.max() + _y_pad)
+
+    # ── colourmap normalisation ───────────────────────────────────────────────
+    import matplotlib.colors as mcolors
+    _norm_amp  = mcolors.Normalize(vmin=_x_amp.min(),  vmax=_x_amp.max())
+    _norm_freq = mcolors.Normalize(vmin=_x_freq.min(), vmax=_x_freq.max())
+
+    fig_sc, (ax_l, ax_r) = plt.subplots(
+        1, 2,
+        figsize=(13, 5),
+        sharey=True,
+    )
+
+    # ── Left panel: frequency (n_peaks) ──────────────────────────────────────
+    sc_l = ax_l.scatter(
+        _x_freq, _y_sed,
+        c=_x_amp,
+        cmap="plasma",
+        norm=_norm_amp,
+        s=70,
+        edgecolors="0.25",
+        linewidths=0.5,
+        zorder=3,
+    )
+    ax_l.plot(
+        xf_freq, sl_f * xf_freq + ic_f,
+        color="0.2", linewidth=1.5, linestyle="--", zorder=2,
+        label=(
+            f"$r$ = {r_f:.3f}\n"
+            f"$R^2$ = {r2_f:.3f}\n"
+            f"$p$ = {p_f:.3g}"
+        ),
+    )
+    cbar_l = fig_sc.colorbar(sc_l, ax=ax_l, pad=0.03, aspect=30)
+    cbar_l.set_label("Peak amplitude ratio  ($R_\\mathrm{peak}$)", fontsize=10)
+    ax_l.set_xlabel("Number of peaks per year  ($n_\\mathrm{peaks}$)", fontsize=11)
+    ax_l.set_ylabel(
+        f"Final cumulative sediment transport at km {RIVER_KM}  [kg]", fontsize=11
+    )
+    ax_l.set_title("Sediment supply vs. Peak Frequency", fontsize=12, fontweight="bold")
+    ax_l.set_ylim(_y_lim)
+    ax_l.legend(fontsize=9, loc="upper left", framealpha=0.85, title="Linear fit")
+    ax_l.grid(True, alpha=0.3, linewidth=0.5)
+
+    # ── Right panel: amplitude (R_peak) ──────────────────────────────────────
+    sc_r = ax_r.scatter(
+        _x_amp, _y_sed,
+        c=_x_freq,
+        cmap="viridis",
+        norm=_norm_freq,
+        s=70,
+        edgecolors="0.25",
+        linewidths=0.5,
+        zorder=3,
+    )
+    ax_r.plot(
+        xf_amp, sl_a * xf_amp + ic_a,
+        color="0.2", linewidth=1.5, linestyle="--", zorder=2,
+        label=(
+            f"$r$ = {r_a:.3f}\n"
+            f"$R^2$ = {r2_a:.3f}\n"
+            f"$p$ = {p_a:.3g}"
+        ),
+    )
+    cbar_r = fig_sc.colorbar(sc_r, ax=ax_r, pad=0.03, aspect=30)
+    cbar_r.set_label("Number of peaks per year  ($n_\\mathrm{peaks}$)", fontsize=10)
+    ax_r.set_xlabel("Peak amplitude ratio  ($R_\\mathrm{peak}$)", fontsize=11)
+    ax_r.set_title("Sediment supply vs. Peak Amplitude", fontsize=12, fontweight="bold")
+    ax_r.set_ylim(_y_lim)
+    ax_r.legend(fontsize=9, loc="upper left", framealpha=0.85, title="Linear fit")
+    ax_r.grid(True, alpha=0.3, linewidth=0.5)
+
+    fig_sc.suptitle(
+        f"Sediment supply vs. discharge variability  "
+        f"($Q_\\mathrm{{mean}}$ = {DISCHARGE} m³/s)",
+        fontsize=13, fontweight="bold", y=1.02,
+    )
+    fig_sc.tight_layout()
+
+    fig_sc_path = OUTPUT_DIR / f"scatter_2panel_km{RIVER_KM}_bedload_Q{DISCHARGE}.png"
+    fig_sc.savefig(fig_sc_path, dpi=200, bbox_inches="tight")
+    plt.show()
+    print(f"Saved two-panel scatter plot: {fig_sc_path}")
+elif PLOT_SCATTER:
+    print("[INFO] No parseable scenarios for scatter plot.")
 # %%

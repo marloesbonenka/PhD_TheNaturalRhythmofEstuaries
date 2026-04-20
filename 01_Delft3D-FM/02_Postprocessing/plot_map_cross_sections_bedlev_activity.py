@@ -66,7 +66,7 @@ PLOT_BI_MASK = True
 
 if ANALYSIS_MODE == "variability":
     DISCHARGE = 500  # or 1000, etc.
-    base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15")
+    base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian")
     config = f'Model_Output/Q{DISCHARGE}'
     VARIABILITY_MAP = None
     
@@ -92,7 +92,7 @@ timed_out_dir = base_directory / config / "timed-out"
 
 # --- CROSS-SECTION SETTINGS ---
 # X-coordinates in meters (km value * 1000)
-selected_x_coords = [20000, 25000, 30000, 35000, 40000]
+selected_x_coords = [35000, 40000]
 #%%
 # Y-range of the estuary (min, max) and sampling resolution
 # Compute exactly 5 km width to capture channel widening dynamics
