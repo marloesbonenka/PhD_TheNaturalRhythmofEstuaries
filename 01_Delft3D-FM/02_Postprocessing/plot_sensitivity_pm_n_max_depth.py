@@ -272,17 +272,14 @@ if SHOW_NOISY_ENVELOPE:
 
             _ds_n.close()
 
-        # Build ±1σ envelope: mean ± 1 std across noisy runs,
-        # converted to bed elevation (negative = deeper) to match _get_y().
+        # Store negated profiles (bed elevation, matching _get_y sign convention).
+        # The ±2σ envelope is finalised in the plotting loop once y_const is known,
+        # so the constant run can be included alongside the noisy repeats.
         for _snap_key, _profs in _noisy_profiles.items():
             if _profs:
-                _stacked  = np.vstack(_profs)          # shape (n_runs, n_x)
-                _env_mean = np.nanmean(_stacked, axis=0)
-                _env_std  = np.nanstd(_stacked, axis=0)
                 noisy_envelope_data[_snap_key] = {
-                    'env_min': -(_env_mean + _env_std),  # deepest (most negative)
-                    'env_max': -(_env_mean - _env_std),  # shallowest
-                    'x_km':   _x_centers / 1000,
+                    'profiles': [-_p for _p in _profs],  # negated to match _get_y()
+                    'x_km':     _x_centers / 1000,
                 }
         print(f"Noisy envelope ready for {len(noisy_envelope_data)} snapshots.")
 
@@ -351,6 +348,19 @@ for snapshot_key, snapshot_results in comparison_results.items():
     y_const = _get_y(baseline_scen) if baseline_scen else None
     x_const = _get_x(baseline_scen) if baseline_scen else None
 
+    # Finalise ±2σ envelope: noisy repeats + constant run
+    if SHOW_NOISY_ENVELOPE and snapshot_key in noisy_envelope_data:
+        _nd = noisy_envelope_data[snapshot_key]
+        if 'profiles' in _nd:
+            _all_profs = list(_nd['profiles'])
+            if y_const is not None:
+                _all_profs.append(y_const)
+            _stk = np.vstack(_all_profs)
+            _m   = np.nanmean(_stk, axis=0)
+            _s   = np.nanstd(_stk, axis=0)
+            _nd['env_min'] = _m - 2 * _s
+            _nd['env_max'] = _m + 2 * _s
+
     for normalise in (False, True):
         norm_tag   = '_difference' if normalise else ''
         norm_title = '  (difference from constant)' if normalise else ''
@@ -394,7 +404,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                     ax.fill_between(
                         _env['x_km'], _emin, _emax,
                         alpha=0.25, color='0.55', zorder=1,
-                        label=r'$\pm 1\sigma$ natural variability',
+                        label=r'$\pm 2\sigma$ natural variability',
                     )
 
                 for pm_val, scen_key in pm_by_n[n_val]:
@@ -425,7 +435,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 legend_handles.append(
                     mpatches.Patch(
                         facecolor='0.55', alpha=0.4,
-                        label=r'$\pm 1\sigma$ natural variability',
+                        label=r'$\pm 2\sigma$ natural variability',
                     )
                 )
             legend_handles.append(
@@ -489,7 +499,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                     ax.fill_between(
                         _env['x_km'], _emin, _emax,
                         alpha=0.25, color='0.55', zorder=1,
-                        label=r'$\pm 1\sigma$ natural variability',
+                        label=r'$\pm 2\sigma$ natural variability',
                     )
 
                 for n_val, scen_key in n_by_pm[pm_val]:
@@ -520,7 +530,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 legend_handles.append(
                     mpatches.Patch(
                         facecolor='0.55', alpha=0.4,
-                        label=r'$\pm 1\sigma$ natural variability',
+                        label=r'$\pm 2\sigma$ natural variability',
                     )
                 )
             legend_handles.append(
