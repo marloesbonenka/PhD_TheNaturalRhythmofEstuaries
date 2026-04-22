@@ -255,8 +255,9 @@ def validate_estuary_location(estuary_name, original_coords, grid_coords, savefi
 
 
 def plot_estuary_timeseries(estuary_name, discharge_series, sed_series, datetimes,
-                             savefig=False, output_dir=None, scaling_factor=1.0, 
-                             window_ma = 7):
+                             savefig=False, output_dir=None, scaling_factor=1.0,
+                             window_ma=7, color_discharge='#056C89',
+                             color_sediment='tab:green', color_moving_avg='tab:blue'):
     """
     Generate time series plots for a specific estuary's discharge and sediment data.
     
@@ -275,7 +276,7 @@ def plot_estuary_timeseries(estuary_name, discharge_series, sed_series, datetime
     fac_label = f"  [fac={scaling_factor:.3f}]" if scaling_factor != 1.0 else ""
 
     plt.figure(figsize=(10, 6))
-    plt.plot(datetimes, discharge_series, label=estuary_name, color='#056C89')  # Light blue
+    plt.plot(datetimes, discharge_series, label=estuary_name, color=color_discharge)
     # plt.axhline(mean_discharge, linestyle='dashed', color='orange',
                 # label=f'mean = {mean_discharge:.2f}')
     plt.xlabel('time')
@@ -290,11 +291,12 @@ def plot_estuary_timeseries(estuary_name, discharge_series, sed_series, datetime
         save_path = outdir / '01_River_discharge_Qriver_per_estuary'
         save_path.mkdir(parents=True, exist_ok=True)
         plt.savefig(save_path / f'Q_{estuary_name}.png', dpi=200, bbox_inches='tight')
+        plt.savefig(save_path / f'Q_{estuary_name}.pdf', bbox_inches='tight')
     plt.show()
 
     # --- Sediment plot ---
     plt.figure(figsize=(10, 6))
-    plt.plot(datetimes, sed_series, label='Sediment', color='green')
+    plt.plot(datetimes, sed_series, label='Sediment', color=color_sediment)
     plt.axhline(mean_sediment, linestyle='dashed', color='red',
                 label=f'mean = {mean_sediment:.2f}')
     plt.xlabel('Time')
@@ -307,11 +309,11 @@ def plot_estuary_timeseries(estuary_name, discharge_series, sed_series, datetime
         save_path_s = outdir / '02_Sediment_load_per_estuary'
         save_path_s.mkdir(parents=True, exist_ok=True)
         plt.savefig(save_path_s / f'Sediment_{estuary_name}.png', dpi=200, bbox_inches='tight')
+        plt.savefig(save_path_s / f'Sediment_{estuary_name}.pdf', bbox_inches='tight')
     plt.show()
 
     # --- Combined plot ---
     fig, ax1 = plt.subplots(figsize=(10, 6))
-    color_discharge = 'tab:blue'
     ax1.set_xlabel('Time')
     ax1.set_ylabel('River Discharge $Q_{river}$ [m³/s]', color=color_discharge)
     ax1.plot(datetimes, discharge_series, label='Discharge', color=color_discharge)
@@ -320,7 +322,6 @@ def plot_estuary_timeseries(estuary_name, discharge_series, sed_series, datetime
     ax1.tick_params(axis='y', labelcolor=color_discharge)
 
     ax2 = ax1.twinx()
-    color_sediment = 'tab:green'
     ax2.set_ylabel('Sediment Load [kg/s]', color=color_sediment)
     ax2.plot(datetimes, sed_series, label='Sediment', color=color_sediment)
     ax2.axhline(mean_sediment, linestyle='dashed', color='red',
@@ -343,6 +344,7 @@ def plot_estuary_timeseries(estuary_name, discharge_series, sed_series, datetime
         save_path_combined = outdir / '03_Combined_Qriver_qs'
         save_path_combined.mkdir(parents=True, exist_ok=True)
         plt.savefig(save_path_combined / f'Combined_{estuary_name}.png', dpi=200, bbox_inches='tight')
+        plt.savefig(save_path_combined / f'Combined_{estuary_name}.pdf', bbox_inches='tight')
     plt.show()
 
     # --- Moving Average plot ---
@@ -351,7 +353,7 @@ def plot_estuary_timeseries(estuary_name, discharge_series, sed_series, datetime
 
     plt.figure(figsize=(10, 6))
     plt.plot(datetimes, discharge_series, color='lightgrey', alpha=0.5, label='Daily Discharge')
-    plt.plot(datetimes, moving_avg, color='tab:blue', linewidth=2, label=f'{window_ma}-day Moving Average')
+    plt.plot(datetimes, moving_avg, color=color_moving_avg, linewidth=2, label=f'{window_ma}-day Moving Average')
     plt.axhline(mean_discharge, linestyle='dashed', color='orange',
                 label=f'mean = {mean_discharge:.2f}')
     plt.xlabel('Time')
@@ -364,6 +366,7 @@ def plot_estuary_timeseries(estuary_name, discharge_series, sed_series, datetime
         save_path_ma = outdir / '05_Moving_Average_Discharge'
         save_path_ma.mkdir(parents=True, exist_ok=True)
         plt.savefig(save_path_ma / f'Trend_{estuary_name}_MA{window_ma}.png', dpi=200, bbox_inches='tight')
+        plt.savefig(save_path_ma / f'Trend_{estuary_name}_MA{window_ma}.pdf', bbox_inches='tight')
     
     plt.show()
 

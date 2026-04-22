@@ -14,13 +14,39 @@ from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 # Which scenarios to process (set to None or empty list for all)
 SCENARIOS_TO_PROCESS = None #['1', '2', '3', '4']  # Use all scenarios
 DISCHARGE = 500
+
+# --- Figure style ---
+STYLE = 'whitefig'   # 'default'  →  white background, black text/ticks/labels
+                    # 'whitefig' →  transparent background, white text/ticks/labels
+STYLES = {
+    'default': {},   # use matplotlib defaults
+    'whitefig': {
+        'figure.facecolor':    'none',
+        'axes.facecolor':      'none',
+        'axes.edgecolor':      'white',
+        'axes.labelcolor':     'white',
+        'xtick.color':         'white',
+        'ytick.color':         'white',
+        'text.color':          'white',
+        'grid.color':          'white',
+        'legend.facecolor':    'none',
+        'legend.edgecolor':    'white',
+        'savefig.transparent': True,
+    },
+}
+plt.rcParams.update(plt.rcParamsDefault)
+plt.rcParams.update(STYLES[STYLE])
+
+# helper for per-element color (colorbar ticks etc.)
+_tc = plt.rcParams['text.color']
+
 # --- Variable selection ---
 var_names = ['mesh2d_mor_bl']#, 'mesh2d_s1', 'mesh2d_taus']  # e.g. ['mesh2d_mor_bl'] or all three
 time_to_extract = None
 target_hydrodynamic_date = None #'2055-12-31' # e.g. '2055-12-31'; when set, nearest timestep is used per run
 
 # Detrending settings (applies to bed level variable only)
-apply_detrending = True
+apply_detrending = False
 reference_time_idx = 0
 detrend_land_threshold = 6.0
 
@@ -55,7 +81,7 @@ model_folders = find_variability_model_folders(
 
 configs = {
     'mesh2d_mor_bl': {
-        'cmap': create_bedlevel_colormap(),
+        'cmap': create_terrain_colormap(),
         'vmin': -15,
         'vmax': 15,
         'label': 'Bed Level [m]',
@@ -188,6 +214,8 @@ for folder in model_folders:
                     vmax_to_use = detrended_limit
 
                 fig, ax = plt.subplots(figsize=(12, 8))
+                fig.patch.set_alpha(0)
+                ax.patch.set_alpha(0)
                 pc = data_to_plot.ugrid.plot(
                     ax=ax,
                     cmap=cmap_to_use,
@@ -197,17 +225,25 @@ for folder in model_folders:
                     vmax=vmax_to_use
                 )
                 ax.set_aspect('equal')
-                ax.set_title(f"{current_cfg['label']}{detrend_suffix} | {folder.name} | {actual_label}", color='black')
+                ax.set_title(f"{current_cfg['label']}{detrend_suffix} | {folder.name} | {actual_label}",
+                             color=_tc)
 
                 divider = make_axes_locatable(ax)
                 cax = divider.append_axes("right", size="3%", pad=0.1)
                 cbar = plt.colorbar(pc, cax=cax)
                 cbar.set_label(current_cfg['label'])
+                cbar.ax.yaxis.set_tick_params(color=_tc)
+                plt.setp(cbar.ax.yaxis.get_ticklabels(), color=_tc)
 
                 plt.tight_layout()
+                is_final_timestep = (idx == len(time_values) - 1)
                 save_name = f"{current_cfg['file_tag']}{file_detrend_tag}_{actual_tag}_{folder.name}.png"
                 save_path = output_plots_dir / save_name
-                plt.savefig(save_path, dpi=300, bbox_inches='tight')
+                plt.savefig(save_path, dpi=300, bbox_inches='tight', transparent=True)
+                if is_final_timestep:
+                    pdf_save_path = save_path.with_suffix('.pdf')
+                    plt.savefig(pdf_save_path, bbox_inches='tight', transparent=True)
+                    print(f"    Saved PDF: {pdf_save_path.name}")
                 plt.close(fig)  # prevents memory issues over many timesteps
                 print(f"    Saved: {save_name}")
     finally:

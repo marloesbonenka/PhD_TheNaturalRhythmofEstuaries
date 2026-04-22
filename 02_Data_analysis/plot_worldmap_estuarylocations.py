@@ -54,41 +54,91 @@ label_priority = {
     'Taeryong': -10,
     'Bian': -10
 }
+# %% --- SETTINGS: toggle style and dot color here ---
+STYLE = 'transparent'   # 'default'      →  white background, black outlines, no land fill
+                     # 'whitefig'     →  transparent background, white outlines, no land fill, white globe outline
+                     # 'transparent'  →  transparent background, black outlines, white land fill, no globe outline
+dot_color = '#023653'
+
+# -------------------------------------------------------------------------
+STYLES = {
+    'default': dict(
+        fig_facecolor='white',
+        ax_facecolor='white',
+        transparent_save=False,
+        land_facecolor='none',
+        land_edge='black',
+        coast_edge='black',
+        border_edge='black',
+        grid_color='grey',
+        label_color='black',
+        spine_visible=True,
+        spine_color='black',
+        savename='worldmap_estuary_locations.png',
+    ),
+    'whitefig': dict(
+        fig_facecolor='none',
+        ax_facecolor='none',
+        transparent_save=True,
+        land_facecolor='none',
+        land_edge='white',
+        coast_edge='white',
+        border_edge='white',
+        grid_color='white',
+        label_color='white',
+        spine_visible=True,
+        spine_color='white',
+        savename='worldmap_estuary_locations_whitefig.png',
+    ),
+    'transparent': dict(
+        fig_facecolor='none',
+        ax_facecolor='none',
+        transparent_save=True,
+        land_facecolor='#c3e4e9',
+        land_edge='black',
+        coast_edge='black',
+        border_edge='black',
+        grid_color='grey',
+        label_color='black',
+        spine_visible=True,
+        spine_color='black',
+        savename='worldmap_estuary_locations_transparent.png',
+    ),
+}
+cfg = STYLES[STYLE]
+# -------------------------------------------------------------------------
+
 #%%
 lats = [v[0] for v in estuary_coords.values()]
 lons = [v[1] for v in estuary_coords.values()]
 
 # Figure
 fig = plt.figure(figsize=(14, 7))
+fig.patch.set_facecolor(cfg['fig_facecolor'])
+if cfg['fig_facecolor'] == 'none':
+    fig.patch.set_alpha(0)
 ax = plt.axes(projection=ccrs.Robinson())
+ax.set_facecolor(cfg['ax_facecolor'])
+ax.spines['geo'].set_visible(cfg['spine_visible'])
+if cfg['spine_visible']:
+    ax.spines['geo'].set_edgecolor(cfg['spine_color'])
+    ax.spines['geo'].set_linewidth(1.0)
 
-# --- CLEAN MAP STYLE ---
-ax.set_facecolor("white")  # remove blue ocean
+# Land and coastlines
+ax.add_feature(cfeature.LAND, facecolor=cfg['land_facecolor'], edgecolor=cfg['land_edge'], linewidth=0.8)
+ax.add_feature(cfeature.COASTLINE, linewidth=0.8, edgecolor=cfg['coast_edge'])
+ax.add_feature(cfeature.BORDERS, linestyle=':', linewidth=0.7, edgecolor=cfg['border_edge'])
 
-# Land: only outline, no fill
-ax.add_feature(
-    cfeature.LAND,
-    facecolor="none",
-    edgecolor="black",
-    linewidth=0.8
-)
-
-# Coastlines (slightly thicker)
-ax.add_feature(cfeature.COASTLINE, linewidth=0.8)
-
-# Country borders (dashed as you liked)
-ax.add_feature(
-    cfeature.BORDERS,
-    linestyle=':',
-    linewidth=0.7
-)
+# Gridlines (only visible in 'whitefig' style)
+if STYLE == 'whitefig':
+    ax.gridlines(color=cfg['grid_color'], linewidth=0.5, linestyle='--', alpha=0.7)
 
 # --- POINTS ---
 ax.scatter(
     lons, lats,
     transform=ccrs.PlateCarree(),
-    color='#023653', #FFCD00',
-    s=75,           # bigger dots
+    color=dot_color,
+    s=75,
     zorder=2
 )
 
@@ -163,6 +213,7 @@ for name in filtered_names:
             fontsize=15,
             ha=ha,
             va=va,
+            color=cfg['label_color'],
             zorder=4,
         )
 
@@ -184,6 +235,8 @@ for name in filtered_names:
 ax.set_global()
 # plt.title("Global Distribution of Estuaries", fontsize=14)
 
-plt.savefig(r"u:\PhDNaturalRhythmEstuaries\Data\worldmap_estuary_locations.png", dpi=300, bbox_inches='tight')
+savepath = r"u:\PhDNaturalRhythmEstuaries\Data\\" + cfg['savename']
+plt.savefig(savepath, dpi=300, bbox_inches='tight', transparent=cfg['transparent_save'])
+plt.savefig(savepath.replace('.png', '.pdf'), bbox_inches='tight', transparent=cfg['transparent_save'])
 plt.show()
 # %%

@@ -29,7 +29,48 @@ BASE_DIR   = Path(
     r"\Model_Input\Q500"
 )
 OUTPUT_DIR  = BASE_DIR / "plots_river_bct"
-OUTPUT_FILE = OUTPUT_DIR / f"scenario_lines_Q{TOTAL_Q}.png"
+OUTPUT_FILE = OUTPUT_DIR / f"scenario_lines_Q{TOTAL_Q}_{STYLE}.png"
+
+# --- Figure style ---
+STYLE = 'default'   # 'default'   →  white background, black text
+                    # 'whitefig'  →  transparent figure, white axes background, white text
+                    # 'transparent_white' →  transparent figure, white axes background, black text
+STYLES = {
+    'default': {},
+    'transparent_white': {
+        'figure.facecolor':    'none',
+        'axes.facecolor':      'white',
+        'savefig.transparent': True,
+    },
+    'whitefig': {
+        'figure.facecolor':    'none',
+        'axes.facecolor':      'white',
+        'axes.edgecolor':      'white',
+        'axes.labelcolor':     'white',
+        'xtick.color':         'white',
+        'ytick.color':         'white',
+        'text.color':          'white',
+        'grid.color':          'white',
+        'legend.facecolor':    'none',
+        'legend.edgecolor':    'white',
+        'savefig.transparent': True,
+    },
+}
+
+# --- Font sizes ---
+FONTSIZE_TITLE  = 12
+FONTSIZE_LABELS = 9    # axis labels
+FONTSIZE_TICKS  = 8    # tick numbers
+
+plt.rcParams.update(plt.rcParamsDefault)
+plt.rcParams.update(STYLES[STYLE])
+plt.rcParams.update({
+    'axes.titlesize':  FONTSIZE_TITLE,
+    'axes.labelsize':  FONTSIZE_LABELS,
+    'xtick.labelsize': FONTSIZE_TICKS,
+    'ytick.labelsize': FONTSIZE_TICKS,
+})
+_tc = plt.rcParams['text.color']   # convenience shorthand
 
 # ============================================================================
 # Discover scenario folders and parse peak_ratio / n_peaks
@@ -164,18 +205,18 @@ for ci, n_peaks in enumerate(all_n_peaks):
     # x-axis formatting
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
     ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
-    ax.tick_params(axis="x", labelsize=8, rotation=40)
+    ax.tick_params(axis="x", labelsize=FONTSIZE_TICKS, rotation=40)
 
     # Panel title
     ax.set_title(
         f"$n_{{\\mathrm{{peaks}}}}$ = {n_peaks}",
-        fontsize=10, fontweight="bold", pad=5,
+        fontsize=FONTSIZE_TITLE, fontweight="bold", pad=5, color=_tc,
     )
 
     # y-axis label only on leftmost panel
     if ci == 0:
-        ax.set_ylabel("Q [m³/s]", fontsize=9, labelpad=4)
-        ax.tick_params(axis="y", labelsize=8)
+        ax.set_ylabel("Q [m³/s]", fontsize=FONTSIZE_LABELS, labelpad=4)
+        ax.tick_params(axis="y", labelsize=FONTSIZE_TICKS)
 
 # ============================================================================
 # Shared legend – build from the consistent color mapping
@@ -197,8 +238,8 @@ for peak_ratio in all_peak_ratios:
 fig.legend(
     handles=legend_handles,
     title="Peak / mean ratio",
-    title_fontsize=9,
-    fontsize=8,
+    title_fontsize=FONTSIZE_TICKS,
+    fontsize=FONTSIZE_TICKS,
     loc="lower center",
     ncol=len(all_peak_ratios),
     bbox_to_anchor=(0.5, -0.18),
@@ -207,7 +248,7 @@ fig.legend(
 
 fig.suptitle(
     f"River discharge scenarios  (Q = {TOTAL_Q} m³/s)",
-    fontsize=12, fontweight="bold", y=1.02,
+    fontsize=FONTSIZE_TITLE, fontweight="bold", y=1.02, color=_tc,
 )
 
 fig.tight_layout()
@@ -216,7 +257,8 @@ fig.tight_layout()
 # Save
 # ============================================================================
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-fig.savefig(OUTPUT_FILE, dpi=200, bbox_inches="tight", transparent=True)
+fig.savefig(OUTPUT_FILE, dpi=200, bbox_inches="tight",
+            transparent=plt.rcParams.get('savefig.transparent', False))
 plt.show(fig)
 print(f"\nSaved to:\n  {OUTPUT_FILE}")
 #%%

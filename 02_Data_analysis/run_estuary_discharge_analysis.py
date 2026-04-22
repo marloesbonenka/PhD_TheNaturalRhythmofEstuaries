@@ -35,10 +35,51 @@ from FUNCTIONS.FUNCS_discharge_timeseries_WBMsed import (
     validate_estuary_location
 )
 
+#%% --- FIGURE STYLE ---
+STYLE = 'whitefig'   # 'default'  →  standard white background
+                    # 'whitefig' →  transparent background, all axes/labels/text white, lines still colored
+
+# --- Font sizes ---
+FONTSIZE_TITLE  = 20
+FONTSIZE_LABELS = 16   # axis labels
+FONTSIZE_TICKS  = 14   # tick numbers
+
+# --- Line colors ---
+COLOR_DISCHARGE  = '#044457'   # discharge time series line
+COLOR_SEDIMENT   = 'tab:green' # sediment time series line
+COLOR_MOVING_AVG = 'tab:blue'  # moving average line
+
+STYLES = {
+    'default': {},   # use matplotlib defaults
+    'whitefig': {
+        'figure.facecolor':     'none',
+        'axes.facecolor':       'white',
+        'axes.edgecolor':       'white',
+        'axes.labelcolor':      'white',
+        'xtick.color':          'white',
+        'ytick.color':          'white',
+        'text.color':           'white',
+        'grid.color':           'white',
+        'legend.facecolor':     'none',
+        'legend.edgecolor':     'white',
+        'savefig.transparent':  True,
+    },
+}
+
+plt.rcParams.update(plt.rcParamsDefault)   # reset first
+plt.rcParams.update(STYLES[STYLE])
+plt.rcParams.update({
+    'axes.titlesize':  FONTSIZE_TITLE,
+    'axes.labelsize':  FONTSIZE_LABELS,
+    'xtick.labelsize': FONTSIZE_TICKS,
+    'ytick.labelsize': FONTSIZE_TICKS,
+})
+
 #%% --- CONFIGURATION ---
 
 INPUT_DIR  = r"U:\PhDNaturalRhythmEstuaries\Data\01_Discharge_var_int_flash"
 OUTPUT_DIR = r"U:\PhDNaturalRhythmEstuaries\Data\01_Discharge_var_int_flash\01_Analysis_smallselection_estuaries"
+FIG_DIR    = Path(OUTPUT_DIR) / STYLE if STYLE != 'default' else Path(OUTPUT_DIR)
 
 MAT_FILE          = "qs_timeseries_Nienhuis2020.mat"
 TIF_FILE          = r"Nienhuis2020_Scripts\bqart_a.tif"          # relative to INPUT_DIR; set None to skip
@@ -49,6 +90,7 @@ SAVE_DATA = True
 
 Path(INPUT_DIR).mkdir(parents=True, exist_ok=True)
 Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
+FIG_DIR.mkdir(parents=True, exist_ok=True)
 
 mat_file_path      = Path(INPUT_DIR) / MAT_FILE
 tif_path           = Path(INPUT_DIR) / TIF_FILE          if TIF_FILE          else None
@@ -194,9 +236,12 @@ for estuary in estuary_coords:
         estuary_sed_data[estuary],
         datetimes,
         SAVE_FIG,
-        OUTPUT_DIR,
+        FIG_DIR,
         scaling_factor=fac,
-        window_ma=window_ma
+        window_ma=window_ma,
+        color_discharge=COLOR_DISCHARGE,
+        color_sediment=COLOR_SEDIMENT,
+        color_moving_avg=COLOR_MOVING_AVG,
     )
     mean_discharge_values[estuary]            = mean_discharge
     mean_sediment_values[estuary]             = mean_sediment
@@ -207,7 +252,7 @@ for estuary in estuary_coords:
         estuary_coords[estuary],
         estuary_rm_coords[estuary],
         SAVE_FIG,
-        OUTPUT_DIR
+        FIG_DIR
     )
 #%%
 print("\n--- SCALING FACTOR DIAGNOSTIC ---")
@@ -226,9 +271,9 @@ mean_sediment_df = pd.DataFrame.from_dict(
 mean_sediment_df.index.name = 'Estuary'
 
 if SAVE_DATA:
-    discharge_path  = Path(OUTPUT_DIR) / '01_River_discharge_Qriver_per_estuary'
-    sediment_path   = Path(OUTPUT_DIR) / '02_Sediment_load_per_estuary'
-    moving_avg_path = Path(OUTPUT_DIR) / '05_Moving_Average_Discharge'
+    discharge_path  = FIG_DIR / '01_River_discharge_Qriver_per_estuary'
+    sediment_path   = FIG_DIR / '02_Sediment_load_per_estuary'
+    moving_avg_path = FIG_DIR / '05_Moving_Average_Discharge'
     for p in [discharge_path, sediment_path, moving_avg_path]:
         p.mkdir(parents=True, exist_ok=True)
 
@@ -258,7 +303,7 @@ if SAVE_DATA:
 
 # --- Method 2 (new): mean annual maximum / mean discharge (R_peak) ---
 # Consistent with model parameterization where peak_ratio = Q_peak / Q_mean
-metrics_output_dir = Path(OUTPUT_DIR) / "04_Metrics_per_estuary"
+metrics_output_dir = FIG_DIR / "04_Metrics_per_estuary"
 metrics_output_dir.mkdir(parents=True, exist_ok=True)
 
 df_metrics_annualmax = analyze_discharge_metrics_annualmax(estuary_discharge_data, datetimes)
@@ -269,6 +314,6 @@ visualize_discharge_metrics_annualmax(df_metrics_annualmax, metrics_output_dir)
 
 if SAVE_DATA:
     df_metrics_annualmax.to_excel(
-        Path(OUTPUT_DIR) / 'fluvial_sediment_flux_Qriver_metrics_annualmax.xlsx', index=False)
+        FIG_DIR / 'fluvial_sediment_flux_Qriver_metrics_annualmax.xlsx', index=False)
 
 # %%
