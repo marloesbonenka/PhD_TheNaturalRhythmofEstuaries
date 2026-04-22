@@ -22,6 +22,12 @@ import matplotlib.lines as mlines
 # ============================================================================
 # Configuration
 # ============================================================================
+# --- Figure style ---
+STYLE = 'whitefig'   # 'default'   →  white background, black text
+                    # 'whitefig'  →  transparent figure, white axes background, white text
+                    # 'transparent_white' →  transparent figure, white axes background, black text
+
+
 TOTAL_Q    = 500          # m³/s  – used only for labels and output filename
 BASE_DIR   = Path(
     r"u:\PhDNaturalRhythmEstuaries\Models"
@@ -29,19 +35,11 @@ BASE_DIR   = Path(
     r"\Model_Input\Q500"
 )
 OUTPUT_DIR  = BASE_DIR / "plots_river_bct"
-OUTPUT_FILE = OUTPUT_DIR / f"scenario_lines_Q{TOTAL_Q}_{STYLE}.png"
 
-# --- Figure style ---
-STYLE = 'default'   # 'default'   →  white background, black text
-                    # 'whitefig'  →  transparent figure, white axes background, white text
-                    # 'transparent_white' →  transparent figure, white axes background, black text
+OUTPUT_FILE = OUTPUT_DIR / f"scenario_lines_Q{TOTAL_Q}_{STYLE}.png"  # base; overridden per plot
+
 STYLES = {
     'default': {},
-    'transparent_white': {
-        'figure.facecolor':    'none',
-        'axes.facecolor':      'white',
-        'savefig.transparent': True,
-    },
     'whitefig': {
         'figure.facecolor':    'none',
         'axes.facecolor':      'white',
@@ -149,116 +147,111 @@ ypad = max((global_ymax - global_ymin) * 0.08, 1.0)
 global_ylim = (global_ymin - ypad, global_ymax + ypad)
 
 # ============================================================================
-# Create figure – one panel per n_peaks value
+# Plot 1 – one panel per n_peaks, lines colored by peak_ratio
 # ============================================================================
-n_panels = len(all_n_peaks)
-PANEL_W  = 4.0
-PANEL_H  = 3.0
+NPEAK_COLOR: dict[int, str] = {
+    n: PALETTE[i % len(PALETTE)]
+    for i, n in enumerate(all_n_peaks)
+}
 
-fig, axes = plt.subplots(
-    1, n_panels,
-    figsize=(PANEL_W * n_panels, PANEL_H),
-    sharey=True,
-    sharex=False,
-)
+fig1, axes1 = plt.subplots(1, len(all_n_peaks), figsize=(4 * len(all_n_peaks), 3),
+                            sharey=True, sharex=False)
+if len(all_n_peaks) == 1:
+    axes1 = [axes1]
 
-if n_panels == 1:
-    axes = [axes]
-
-# ============================================================================
-# Fill each panel
-# ============================================================================
 for ci, n_peaks in enumerate(all_n_peaks):
-    ax = axes[ci]
-
+    ax = axes1[ci]
     for peak_ratio in all_peak_ratios:
-        key = (peak_ratio, n_peaks)
-        if key not in scenarios:
+        if (peak_ratio, n_peaks) not in scenarios:
             continue
-
-        info = scenarios[key]
-        df = pd.read_csv(info["csv"])
-        if "timestamp" not in df.columns or "discharge_m3s" not in df.columns:
-            continue
-
+        df = pd.read_csv(scenarios[(peak_ratio, n_peaks)]["csv"])
         df["timestamp"] = pd.to_datetime(df["timestamp"])
         df = df.sort_values("timestamp")
-
-        first_year = df["timestamp"].dt.year.min()
-        df_yr = df[df["timestamp"].dt.year == first_year].copy()
-
-        pr_label = (f"{int(peak_ratio)}"
-                    if peak_ratio == int(peak_ratio)
-                    else f"{peak_ratio}")
-
-        ax.plot(
-            df_yr["timestamp"],
-            df_yr["discharge_m3s"],
-            color=RATIO_COLOR[peak_ratio],
-            linewidth=1.2,
-            label=f"$R_{{\\mathrm{{peak}}}}$ = {pr_label}",
-        )
-
+        df_yr = df[df["timestamp"].dt.year == df["timestamp"].dt.year.min()].copy()
+        pr_label = f"{int(peak_ratio)}" if peak_ratio == int(peak_ratio) else f"{peak_ratio}"
+        ax.plot(df_yr["timestamp"], df_yr["discharge_m3s"],
+                color=RATIO_COLOR[peak_ratio], linewidth=1.2,
+                label=f"$R_{{\\mathrm{{peak}}}}$ = {pr_label}")
     ax.set_ylim(global_ylim)
     ax.grid(True, alpha=0.22, linewidth=0.5)
-
-    # x-axis formatting
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
     ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
     ax.tick_params(axis="x", labelsize=FONTSIZE_TICKS, rotation=40)
-
-    # Panel title
-    ax.set_title(
-        f"$n_{{\\mathrm{{peaks}}}}$ = {n_peaks}",
-        fontsize=FONTSIZE_TITLE, fontweight="bold", pad=5, color=_tc,
-    )
-
-    # y-axis label only on leftmost panel
+    ax.set_title(f"$n_{{\\mathrm{{peaks}}}}$ = {n_peaks}",
+                 fontsize=FONTSIZE_TITLE, fontweight="bold", pad=5, color=_tc)
     if ci == 0:
         ax.set_ylabel("Q [m³/s]", fontsize=FONTSIZE_LABELS, labelpad=4)
         ax.tick_params(axis="y", labelsize=FONTSIZE_TICKS)
 
-# ============================================================================
-# Shared legend – build from the consistent color mapping
-# ============================================================================
-legend_handles = []
-for peak_ratio in all_peak_ratios:
-    pr_label = (f"{int(peak_ratio)}"
-                if peak_ratio == int(peak_ratio)
-                else f"{peak_ratio}")
-    legend_handles.append(
-        mlines.Line2D(
-            [], [],
-            color=RATIO_COLOR[peak_ratio],
-            linewidth=1.8,
-            label=f"$R_{{\\mathrm{{peak}}}}$ = {pr_label}",
-        )
-    )
-
-fig.legend(
-    handles=legend_handles,
-    title="Peak / mean ratio",
-    title_fontsize=FONTSIZE_TICKS,
-    fontsize=FONTSIZE_TICKS,
-    loc="lower center",
-    ncol=len(all_peak_ratios),
-    bbox_to_anchor=(0.5, -0.18),
-    frameon=True,
+fig1.legend(
+    handles=[mlines.Line2D([], [], color=RATIO_COLOR[r], linewidth=1.8,
+                           label=(f"$R_{{\\mathrm{{peak}}}}$ = {int(r)}"
+                                  if r == int(r) else f"$R_{{\\mathrm{{peak}}}}$ = {r}"))
+             for r in all_peak_ratios],
+    title="Peak / mean ratio", title_fontsize=FONTSIZE_TICKS, fontsize=FONTSIZE_TICKS,
+    loc="lower center", ncol=len(all_peak_ratios), bbox_to_anchor=(0.5, -0.18), frameon=True,
 )
+fig1.suptitle(f"River discharge scenarios  (Q = {TOTAL_Q} m³/s)",
+              fontsize=FONTSIZE_TITLE, fontweight="bold", y=1.02, color=_tc)
+fig1.tight_layout()
 
-fig.suptitle(
-    f"River discharge scenarios  (Q = {TOTAL_Q} m³/s)",
-    fontsize=FONTSIZE_TITLE, fontweight="bold", y=1.02, color=_tc,
-)
-
-fig.tight_layout()
-
-# ============================================================================
-# Save
-# ============================================================================
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-fig.savefig(OUTPUT_FILE, dpi=200, bbox_inches="tight",
-            transparent=plt.rcParams.get('savefig.transparent', False))
-plt.show(fig)
-print(f"\nSaved to:\n  {OUTPUT_FILE}")
+_tr = plt.rcParams.get('savefig.transparent', False)
+fig1.savefig(OUTPUT_DIR / f"scenario_lines_Q{TOTAL_Q}_{STYLE}_by_frequency.png", dpi=200, bbox_inches="tight", transparent=_tr)
+fig1.savefig(OUTPUT_DIR / f"scenario_lines_Q{TOTAL_Q}_{STYLE}_by_frequency.pdf", bbox_inches="tight", transparent=_tr)
+plt.show(fig1)
+print(f"Saved: scenario_lines_Q{TOTAL_Q}_{STYLE}_by_frequency (.png/.pdf)")
+
+# ============================================================================
+# Plot 2 – one panel per peak_ratio, lines colored by n_peaks
+# ============================================================================
+NPEAK_COLOR: dict[int, str] = {
+    n: PALETTE[i % len(PALETTE)]
+    for i, n in enumerate(all_n_peaks)
+}
+
+fig2, axes2 = plt.subplots(1, len(all_peak_ratios), figsize=(4 * len(all_peak_ratios), 3),
+                            sharey=True, sharex=False)
+if len(all_peak_ratios) == 1:
+    axes2 = [axes2]
+
+for ci, peak_ratio in enumerate(all_peak_ratios):
+    ax = axes2[ci]
+    for n_peaks in all_n_peaks:
+        if (peak_ratio, n_peaks) not in scenarios:
+            continue
+        df = pd.read_csv(scenarios[(peak_ratio, n_peaks)]["csv"])
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df = df.sort_values("timestamp")
+        df_yr = df[df["timestamp"].dt.year == df["timestamp"].dt.year.min()].copy()
+        ax.plot(df_yr["timestamp"], df_yr["discharge_m3s"],
+                color=NPEAK_COLOR[n_peaks], linewidth=1.2,
+                label=f"$n_{{\\mathrm{{peaks}}}}$ = {n_peaks}")
+    ax.set_ylim(global_ylim)
+    ax.grid(True, alpha=0.22, linewidth=0.5)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
+    ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
+    ax.tick_params(axis="x", labelsize=FONTSIZE_TICKS, rotation=40)
+    pr_label = f"{int(peak_ratio)}" if peak_ratio == int(peak_ratio) else f"{peak_ratio}"
+    ax.set_title(f"$R_{{\\mathrm{{peak}}}}$ = {pr_label}",
+                 fontsize=FONTSIZE_TITLE, fontweight="bold", pad=5, color=_tc)
+    if ci == 0:
+        ax.set_ylabel("Q [m³/s]", fontsize=FONTSIZE_LABELS, labelpad=4)
+        ax.tick_params(axis="y", labelsize=FONTSIZE_TICKS)
+
+fig2.legend(
+    handles=[mlines.Line2D([], [], color=NPEAK_COLOR[n], linewidth=1.8,
+                           label=f"$n_{{\\mathrm{{peaks}}}}$ = {n}")
+             for n in all_n_peaks],
+    title="Number of peaks", title_fontsize=FONTSIZE_TICKS, fontsize=FONTSIZE_TICKS,
+    loc="lower center", ncol=len(all_n_peaks), bbox_to_anchor=(0.5, -0.18), frameon=True,
+)
+fig2.suptitle(f"River discharge scenarios  (Q = {TOTAL_Q} m³/s)",
+              fontsize=FONTSIZE_TITLE, fontweight="bold", y=1.02, color=_tc)
+fig2.tight_layout()
+
+fig2.savefig(OUTPUT_DIR / f"scenario_lines_Q{TOTAL_Q}_{STYLE}_by_amplitude.png", dpi=200, bbox_inches="tight", transparent=_tr)
+fig2.savefig(OUTPUT_DIR / f"scenario_lines_Q{TOTAL_Q}_{STYLE}_by_amplitude.pdf", bbox_inches="tight", transparent=_tr)
+plt.show(fig2)
+print(f"Saved: scenario_lines_Q{TOTAL_Q}_{STYLE}_by_amplitude (.png/.pdf)")
 #%%
