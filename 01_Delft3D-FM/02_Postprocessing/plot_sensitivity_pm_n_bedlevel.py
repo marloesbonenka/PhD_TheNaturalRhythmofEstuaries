@@ -104,7 +104,7 @@ _WSPACE = 0.10  # gap between panels in inches (small; sharey=True)
 
 
 #%% --- FIGURE STYLE ---
-STYLE = 'default'   # 'default'   →  white background, black text
+STYLE = 'whitefig'   # 'default'   →  white background, black text
                     # 'whitefig'  →  transparent figure, white axes background, white text
 
 STYLES = {
@@ -470,7 +470,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
             fig.legend(
                 handles=legend_handles,
                 title_fontsize=9, fontsize=8, loc='lower center',
-                ncol=len(legend_handles), bbox_to_anchor=(0.5, -0.18), frameon=True,
+                ncol=len(legend_handles), bbox_to_anchor=(0.5, -0.1), frameon=True,
             )
             fig.suptitle(
                 f'Effect of $R_{{\\mathrm{{peak}}}}$ on width-averaged bed level{norm_title}\n'
