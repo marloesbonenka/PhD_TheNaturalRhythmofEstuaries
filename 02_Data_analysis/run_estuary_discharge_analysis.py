@@ -59,10 +59,10 @@ STYLES = {
         'xtick.color':          'white',
         'ytick.color':          'white',
         'text.color':           'white',
-        'grid.color':           'white',
+        'grid.color':           '#cccccc',
         'legend.facecolor':     'none',
         'legend.edgecolor':     'white',
-        'savefig.transparent':  True,
+        'savefig.transparent':  False,
     },
 }
 
@@ -74,6 +74,8 @@ plt.rcParams.update({
     'xtick.labelsize': FONTSIZE_TICKS,
     'ytick.labelsize': FONTSIZE_TICKS,
 })
+_tc = plt.rcParams['text.color']                        # convenience: text/title color
+_tr = plt.rcParams.get('savefig.transparent', False)    # convenience: transparent flag for savefig
 
 #%% --- CONFIGURATION ---
 

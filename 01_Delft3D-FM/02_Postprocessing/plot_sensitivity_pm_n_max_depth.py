@@ -95,7 +95,41 @@ SCENARIO_LABELS = {
 # Constant scenario colour
 GREY_CONST = "#7f7f7f"
 
-PANEL_W, PANEL_H = 4.0, 3.5
+# Fixed axes dimensions — same across all figure variants so subplots align
+AX_W, AX_H = 3.5, 3.0   # axes width / height in inches (not panel/figure size)
+# Margins in inches (space outside the axes area):
+_LEFT   = 0.95  # left:   y-label (up to 2 lines, 9pt) + ticks (8pt)
+_RIGHT  = 0.20  # right:  small buffer
+_TOP    = 0.80  # top:    subplot title (fontsize 10) + gap + suptitle (2 lines, fontsize 11)
+_BOT    = 0.65  # bottom: x-label + ticks at fontsize 8
+_WSPACE = 0.10  # gap between panels in inches (small; sharey=True)
+
+
+#%% --- FIGURE STYLE ---
+STYLE = 'whitefig'   # 'default'   →  white background, black text
+                    # 'whitefig'  →  transparent figure, white axes background, white text
+
+STYLES = {
+    'default': {},
+    'whitefig': {
+        'figure.facecolor':    'none',
+        'axes.facecolor':      'white',
+        'axes.edgecolor':      'white',
+        'axes.labelcolor':     'white',
+        'xtick.color':         'white',
+        'ytick.color':         'white',
+        'text.color':          'white',
+        'grid.color':          '#cccccc',
+        'legend.facecolor':    'none',
+        'legend.edgecolor':    'white',
+        'savefig.transparent': False,
+    },
+}
+
+plt.rcParams.update(plt.rcParamsDefault)
+plt.rcParams.update(STYLES[STYLE])
+_tc = plt.rcParams['text.color']                        # convenience: text/title color
+_tr = plt.rcParams.get('savefig.transparent', False)    # convenience: transparent flag for savefig
 
 
 #%% --- SEARCH FOLDERS ---
@@ -298,6 +332,8 @@ for snapshot_key, snapshot_results in comparison_results.items():
     if not snapshot_results:
         continue
 
+    is_last_snapshot = (snapshot_key == list(comparison_results.keys())[-1])
+
     scenario_groups = group_snapshot_by_scenario(snapshot_results)
     all_scen_keys = sort_scenario_keys(scenario_groups.keys())
     snap_label = comparison_labels.get(snapshot_key, snapshot_key)
@@ -374,9 +410,11 @@ for snapshot_key, snapshot_results in comparison_results.items():
         sorted_n_vals = sorted(pm_by_n.keys())
         if sorted_n_vals:
             n_panels = len(sorted_n_vals)
+            _fig_w = _LEFT + n_panels * AX_W + (n_panels - 1) * _WSPACE + _RIGHT
+            _fig_h = _BOT + AX_H + _TOP
             fig, axes = plt.subplots(
                 1, n_panels,
-                figsize=(PANEL_W * n_panels, PANEL_H),
+                figsize=(_fig_w, _fig_h),
                 sharey=True, sharex=False,
             )
             if n_panels == 1:
@@ -449,19 +487,27 @@ for snapshot_key, snapshot_results in comparison_results.items():
                                   linestyle='-', label=f'$R_{{\\mathrm{{peak}}}}$ = {pr_label}')
                 )
             fig.legend(
-                handles=legend_handles, title='Peak / mean ratio',
+                handles=legend_handles,
                 title_fontsize=9, fontsize=8, loc='lower center',
                 ncol=len(legend_handles), bbox_to_anchor=(0.5, -0.18), frameon=True,
             )
             fig.suptitle(
                 f'Effect of $R_{{\\mathrm{{peak}}}}$ on p{depth_percentile} channel depth{norm_title}\n'
                 f'Snapshot: {snap_label},  Q = {DISCHARGE} m³/s',
-                fontsize=11, fontweight='bold', y=1.02,
+                fontsize=11, fontweight='bold', y=0.99, color=_tc,
             )
-            fig.tight_layout()
+            fig.subplots_adjust(
+                left=_LEFT / _fig_w,
+                right=1 - _RIGHT / _fig_w,
+                bottom=_BOT / _fig_h,
+                top=1 - _TOP / _fig_h,
+                wspace=_WSPACE / AX_W,
+            )
             _noisy_tag = '_noisy' if SHOW_NOISY_ENVELOPE else ''
             fname = f'sensitivity_pm_effect_maxdepth{norm_tag}{_noisy_tag}_{snap_label}_Q{DISCHARGE}.png'
-            fig.savefig(sensitivity_output_dir / fname, dpi=200, bbox_inches='tight', transparent=True)
+            fig.savefig(sensitivity_output_dir / fname, dpi=200, bbox_inches='tight', transparent=_tr)
+            if is_last_snapshot:
+                fig.savefig(sensitivity_output_dir / fname.replace('.png', '.pdf'), bbox_inches='tight', transparent=_tr)
             plt.show()
             plt.close(fig)
             print(f'  Saved: {fname}')
@@ -470,9 +516,11 @@ for snapshot_key, snapshot_results in comparison_results.items():
         sorted_pm_vals = sorted(n_by_pm.keys())
         if sorted_pm_vals:
             pm_panels = len(sorted_pm_vals)
+            _fig_w = _LEFT + pm_panels * AX_W + (pm_panels - 1) * _WSPACE + _RIGHT
+            _fig_h = _BOT + AX_H + _TOP
             fig, axes = plt.subplots(
                 1, pm_panels,
-                figsize=(PANEL_W * pm_panels, PANEL_H),
+                figsize=(_fig_w, _fig_h),
                 sharey=True, sharex=False,
             )
             if pm_panels == 1:
@@ -550,12 +598,20 @@ for snapshot_key, snapshot_results in comparison_results.items():
             fig.suptitle(
                 f'Effect of $n_{{\\mathrm{{peaks}}}}$ on p{depth_percentile} channel depth{norm_title}\n'
                 f'Snapshot: {snap_label},  Q = {DISCHARGE} m³/s',
-                fontsize=11, fontweight='bold', y=1.02,
+                fontsize=11, fontweight='bold', y=0.99, color=_tc,
             )
-            fig.tight_layout()
+            fig.subplots_adjust(
+                left=_LEFT / _fig_w,
+                right=1 - _RIGHT / _fig_w,
+                bottom=_BOT / _fig_h,
+                top=1 - _TOP / _fig_h,
+                wspace=_WSPACE / AX_W,
+            )
             _noisy_tag = '_noisy' if SHOW_NOISY_ENVELOPE else ''
             fname = f'sensitivity_n_effect_maxdepth{norm_tag}{_noisy_tag}_{snap_label}_Q{DISCHARGE}.png'
-            fig.savefig(sensitivity_output_dir / fname, dpi=200, bbox_inches='tight', transparent=True)
+            fig.savefig(sensitivity_output_dir / fname, dpi=200, bbox_inches='tight', transparent=_tr)
+            if is_last_snapshot:
+                fig.savefig(sensitivity_output_dir / fname.replace('.png', '.pdf'), bbox_inches='tight', transparent=_tr)
             plt.show()
             plt.close(fig)
             print(f'  Saved: {fname}')
