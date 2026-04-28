@@ -23,11 +23,9 @@ import matplotlib.lines as mlines
 # Configuration
 # ============================================================================
 # --- Figure style ---
-STYLE = 'whitefig'   # 'default'   →  white background, black text
+STYLE = 'default'   # 'default'   →  white background, black text
                     # 'whitefig'  →  transparent figure, white axes background, white text
-                    # 'transparent_white' →  transparent figure, white axes background, black text
-
-
+                    
 TOTAL_Q    = 500          # m³/s  – used only for labels and output filename
 BASE_DIR   = Path(
     r"u:\PhDNaturalRhythmEstuaries\Models"
@@ -55,6 +53,12 @@ STYLES = {
     },
 }
 
+
+# --- Line width ---
+LINE_WIDTH = 1.8   # width of scenario lines in the plots
+
+# --- Constant scenario colour ---
+GREY_CONST = "#7f7f7f"   # grey for the constant (pm1_n0) reference line
 
 # --- Font sizes ---
 FONTSIZE_TITLE  = 20
@@ -178,8 +182,11 @@ for ci, n_peaks in enumerate(all_n_peaks):
         df = df.sort_values("timestamp")
         df_yr = df[df["timestamp"].dt.year == df["timestamp"].dt.year.min()].copy()
         pr_label = f"{int(peak_ratio)}" if peak_ratio == int(peak_ratio) else f"{peak_ratio}"
+        is_const = (peak_ratio == 1.0 and n_peaks == 0)
         ax.plot(df_yr["timestamp"], df_yr["discharge_m3s"],
-                color=RATIO_COLOR[peak_ratio], linewidth=1.2,
+                color=GREY_CONST if is_const else RATIO_COLOR[peak_ratio],
+                linewidth=LINE_WIDTH,
+                linestyle='--' if is_const else '-',
                 label=f"$R_{{\\mathrm{{peak}}}}$ = {pr_label}")
     ax.set_ylim(global_ylim)
     ax.grid(True, alpha=0.6, linewidth=0.5)
@@ -193,10 +200,15 @@ for ci, n_peaks in enumerate(all_n_peaks):
         ax.tick_params(axis="y", labelsize=FONTSIZE_TICKS)
 
 fig1.legend(
-    handles=[mlines.Line2D([], [], color=RATIO_COLOR[r], linewidth=1.8,
-                           label=(f"$R_{{\\mathrm{{peak}}}}$ = {int(r)}"
-                                  if r == int(r) else f"$R_{{\\mathrm{{peak}}}}$ = {r}"))
-             for r in all_peak_ratios],
+    handles=[
+        mlines.Line2D([], [], color=GREY_CONST if (r == 1.0 and min(all_n_peaks) == 0) else RATIO_COLOR[r],
+                      linewidth=LINE_WIDTH,
+                      linestyle='--' if (r == 1.0 and min(all_n_peaks) == 0) else '-',
+                      label=(f"$R_{{\\mathrm{{peak}}}}$ = {int(r)}"
+                             if r == int(r) else f"$R_{{\\mathrm{{peak}}}}$ = {r}")
+                           + (" (constant)" if (r == 1.0 and min(all_n_peaks) == 0) else ""))
+        for r in all_peak_ratios
+    ],
     # title="$R_{\\mathrm{peak}}$", title_fontsize=FONTSIZE_TICKS, fontsize=FONTSIZE_TICKS,
     loc="lower center", ncol=len(all_peak_ratios), bbox_to_anchor=(0.5, 0.0), frameon=True,
 )
@@ -243,8 +255,11 @@ for ci, peak_ratio in enumerate(all_peak_ratios):
         df["timestamp"] = pd.to_datetime(df["timestamp"])
         df = df.sort_values("timestamp")
         df_yr = df[df["timestamp"].dt.year == df["timestamp"].dt.year.min()].copy()
+        is_const = (peak_ratio == 1.0 and n_peaks == 0)
         ax.plot(df_yr["timestamp"], df_yr["discharge_m3s"],
-                color=NPEAK_COLOR[n_peaks], linewidth=1.2,
+                color=GREY_CONST if is_const else NPEAK_COLOR[n_peaks],
+                linewidth=LINE_WIDTH,
+                linestyle='--' if is_const else '-',
                 label=f"$n_{{\\mathrm{{peaks}}}}$ = {n_peaks}")
     ax.set_ylim(global_ylim)
     ax.grid(True, alpha=0.6, linewidth=0.5)
@@ -259,9 +274,14 @@ for ci, peak_ratio in enumerate(all_peak_ratios):
         ax.tick_params(axis="y", labelsize=FONTSIZE_TICKS)
 
 fig2.legend(
-    handles=[mlines.Line2D([], [], color=NPEAK_COLOR[n], linewidth=1.8,
-                           label=f"$n_{{\\mathrm{{peaks}}}}$ = {n}")
-             for n in all_n_peaks],
+    handles=[
+        mlines.Line2D([], [], color=GREY_CONST if (r == 1.0 and n == 0) else NPEAK_COLOR[n],
+                      linewidth=LINE_WIDTH,
+                      linestyle='--' if (r == 1.0 and n == 0) else '-',
+                      label=f"$n_{{\\mathrm{{peaks}}}}$ = {n}"
+                           + (" (constant)" if (r == 1.0 and n == 0) else ""))
+        for r in [min(all_peak_ratios)] for n in all_n_peaks
+    ],
     title="peak frequency", title_fontsize=FONTSIZE_TICKS, fontsize=FONTSIZE_TICKS,
     loc="lower center", ncol=len(all_n_peaks), bbox_to_anchor=(0.5, 0.0), frameon=True,
 )

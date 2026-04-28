@@ -96,15 +96,24 @@ GREY_CONST = "#7f7f7f"
 # Fixed axes dimensions — same across all figure variants so subplots align
 AX_W, AX_H = 3.5, 3.0   # axes width / height in inches (not panel/figure size)
 # Margins in inches (space outside the axes area):
-_LEFT   = 0.95  # left:   y-label (up to 2 lines, 9pt) + ticks (8pt)
+_LEFT   = 0.95  # left:   y-label + ticks
 _RIGHT  = 0.20  # right:  small buffer
-_TOP    = 0.80  # top:    subplot title (fontsize 10) + gap + suptitle (2 lines, fontsize 11)
-_BOT    = 0.65  # bottom: x-label + ticks at fontsize 8
+_TOP    = 0.80  # top:    panel title + gap + suptitle
+_BOT    = 0.65  # bottom: x-label + ticks
 _WSPACE = 0.10  # gap between panels in inches (small; sharey=True)
+
+# --- Line width ---
+LINE_WIDTH       = 1.8   # width of scenario lines in the plots
+LINE_WIDTH_CONST = 1.5   # width of the constant reference line
+
+# --- Font sizes ---
+FONTSIZE_TITLE  = 11   # figure suptitle and panel titles
+FONTSIZE_LABELS = 9    # axis labels and legend title
+FONTSIZE_TICKS  = 8    # tick labels and legend text
 
 
 #%% --- FIGURE STYLE ---
-STYLE = 'whitefig'   # 'default'   →  white background, black text
+STYLE = 'default'   # 'default'   →  white background, black text
                     # 'whitefig'  →  transparent figure, white axes background, white text
 
 STYLES = {
@@ -384,7 +393,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
         ylabel = (
             'width-averaged bed level\n(difference from constant)  [m]'
             if normalise
-            else 'bed level [m]'
+            else 'mean bed level [m]'
         )
 
         # ---- Figure A: pm-effect, one panel per n ----
@@ -406,10 +415,10 @@ for snapshot_key, snapshot_results in comparison_results.items():
 
                 # Grey dashed constant reference
                 if not normalise and y_const is not None:
-                    ax.plot(x_const, y_const, color=GREY_CONST, linewidth=1.5,
+                    ax.plot(x_const, y_const, color=GREY_CONST, linewidth=LINE_WIDTH_CONST,
                             linestyle='--', label='constant (pm1_n0)', zorder=2)
                 if normalise:
-                    ax.axhline(0.0, color=GREY_CONST, linewidth=1.5, linestyle='--',
+                    ax.axhline(0.0, color=GREY_CONST, linewidth=LINE_WIDTH_CONST, linestyle='--',
                                label='constant (pm1_n0)', zorder=2)
 
                 # Natural variability envelope
@@ -434,19 +443,19 @@ for snapshot_key, snapshot_results in comparison_results.items():
                         y = y - y_const
                     x = _get_x(scen_key)
                     pr_label = str(int(pm_val)) if pm_val == int(pm_val) else str(pm_val)
-                    ax.plot(x, y, color=PM_COLOR[pm_val], linewidth=1.8,
+                    ax.plot(x, y, color=PM_COLOR[pm_val], linewidth=LINE_WIDTH,
                             label=f'$R_{{\\mathrm{{peak}}}}$ = {pr_label}', zorder=3)
 
                 ax.set_title(
                     f'$n_{{\\mathrm{{peaks}}}}$ = {n_val}',
-                    fontsize=10, fontweight='bold', pad=5,
+                    fontsize=FONTSIZE_TITLE, fontweight='bold', pad=5,
                 )
                 ax.grid(True, alpha=0.22, linewidth=0.5)
-                ax.set_xlabel('distance along estuary [km]', fontsize=8)
-                ax.tick_params(labelsize=8)
+                ax.set_xlabel('distance along estuary [km]', fontsize=FONTSIZE_TICKS)
+                ax.tick_params(labelsize=FONTSIZE_TICKS)
                 if ci == 0:
-                    ax.set_ylabel(ylabel, fontsize=9)
-                    ax.tick_params(axis='y', labelsize=8)
+                    ax.set_ylabel(ylabel, fontsize=FONTSIZE_LABELS)
+                    ax.tick_params(axis='y', labelsize=FONTSIZE_TICKS)
 
             # Shared legend – constant first, then pm values sorted small→large
             legend_handles = []
@@ -458,24 +467,24 @@ for snapshot_key, snapshot_results in comparison_results.items():
                     )
                 )
             legend_handles.append(
-                mlines.Line2D([], [], color=GREY_CONST, linewidth=1.5, linestyle='--',
+                mlines.Line2D([], [], color=GREY_CONST, linewidth=LINE_WIDTH_CONST, linestyle='--',
                               label='constant (pm1_n0)')
             )
             for pm_val in sorted(all_pm_vals):
                 pr_label = str(int(pm_val)) if pm_val == int(pm_val) else str(pm_val)
                 legend_handles.append(
-                    mlines.Line2D([], [], color=PM_COLOR[pm_val], linewidth=1.8,
+                    mlines.Line2D([], [], color=PM_COLOR[pm_val], linewidth=LINE_WIDTH,
                                   linestyle='-', label=f'$R_{{\\mathrm{{peak}}}}$ = {pr_label}')
                 )
             fig.legend(
                 handles=legend_handles,
-                title_fontsize=9, fontsize=8, loc='lower center',
+                title_fontsize=FONTSIZE_LABELS, fontsize=FONTSIZE_TICKS, loc='lower center',
                 ncol=len(legend_handles), bbox_to_anchor=(0.5, -0.1), frameon=True,
             )
             fig.suptitle(
                 f'Effect of $R_{{\\mathrm{{peak}}}}$ on width-averaged bed level{norm_title}\n'
                 f'Snapshot: {snap_label},  Q = {DISCHARGE} m³/s',
-                fontsize=11, fontweight='bold', y=0.99, color=_tc,
+                fontsize=FONTSIZE_TITLE, fontweight='bold', y=0.99, color=_tc,
             )
             fig.subplots_adjust(
                 left=_LEFT / _fig_w,
@@ -485,7 +494,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 wspace=_WSPACE / AX_W,
             )
             _noisy_tag = '_noisy' if SHOW_NOISY_ENVELOPE else ''
-            fname = f'sensitivity_pm_effect_bedlevel{norm_tag}{_noisy_tag}_{snap_label}_Q{DISCHARGE}.png'
+            fname = f'sensitivity_pm_effect_bedlevel{norm_tag}{_noisy_tag}_{snap_label}_{STYLE}_Q{DISCHARGE}.png'
             fig.savefig(sensitivity_output_dir / fname, dpi=200, bbox_inches='tight', transparent=_tr)
             if is_last_snapshot:
                 fig.savefig(sensitivity_output_dir / fname.replace('.png', '.pdf'), bbox_inches='tight', transparent=_tr)
@@ -511,10 +520,10 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 ax = axes[ci]
 
                 if not normalise and y_const is not None:
-                    ax.plot(x_const, y_const, color=GREY_CONST, linewidth=1.5,
+                    ax.plot(x_const, y_const, color=GREY_CONST, linewidth=LINE_WIDTH_CONST,
                             linestyle='--', label='constant (pm1_n0)', zorder=2)
                 if normalise:
-                    ax.axhline(0.0, color=GREY_CONST, linewidth=1.5, linestyle='--',
+                    ax.axhline(0.0, color=GREY_CONST, linewidth=LINE_WIDTH_CONST, linestyle='--',
                                label='constant (pm1_n0)', zorder=2)
 
                 # Natural variability envelope
@@ -538,20 +547,20 @@ for snapshot_key, snapshot_results in comparison_results.items():
                     if normalise and y_const is not None:
                         y = y - y_const
                     x = _get_x(scen_key)
-                    ax.plot(x, y, color=N_COLOR[n_val], linewidth=1.8,
+                    ax.plot(x, y, color=N_COLOR[n_val], linewidth=LINE_WIDTH,
                             label=f'$n_{{\\mathrm{{peaks}}}}$ = {n_val}', zorder=3)
 
                 pr_label = str(int(pm_val)) if pm_val == int(pm_val) else str(pm_val)
                 ax.set_title(
                     f'$R_{{\\mathrm{{peak}}}}$ = {pr_label}',
-                    fontsize=10, fontweight='bold', pad=5,
+                    fontsize=FONTSIZE_TITLE, fontweight='bold', pad=5,
                 )
                 ax.grid(True, alpha=0.22, linewidth=0.5)
-                ax.set_xlabel('distance along estuary [km]', fontsize=8)
-                ax.tick_params(labelsize=8)
+                ax.set_xlabel('distance along estuary [km]', fontsize=FONTSIZE_TICKS)
+                ax.tick_params(labelsize=FONTSIZE_TICKS)
                 if ci == 0:
-                    ax.set_ylabel(ylabel, fontsize=9)
-                    ax.tick_params(axis='y', labelsize=8)
+                    ax.set_ylabel(ylabel, fontsize=FONTSIZE_LABELS)
+                    ax.tick_params(axis='y', labelsize=FONTSIZE_TICKS)
 
             # Shared legend – constant first, then n values sorted small→large
             legend_handles = []
@@ -563,23 +572,23 @@ for snapshot_key, snapshot_results in comparison_results.items():
                     )
                 )
             legend_handles.append(
-                mlines.Line2D([], [], color=GREY_CONST, linewidth=1.5, linestyle='--',
+                mlines.Line2D([], [], color=GREY_CONST, linewidth=LINE_WIDTH_CONST, linestyle='--',
                               label='constant (pm1_n0)')
             )
             for n_val in sorted(all_n_vals):
                 legend_handles.append(
-                    mlines.Line2D([], [], color=N_COLOR[n_val], linewidth=1.8,
+                    mlines.Line2D([], [], color=N_COLOR[n_val], linewidth=LINE_WIDTH,
                                   linestyle='-', label=f'$n_{{\\mathrm{{peaks}}}}$ = {n_val}')
                 )
             fig.legend(
                 handles=legend_handles, title='Number of peaks',
-                title_fontsize=9, fontsize=8, loc='lower center',
+                title_fontsize=FONTSIZE_LABELS, fontsize=FONTSIZE_TICKS, loc='lower center',
                 ncol=len(legend_handles), bbox_to_anchor=(0.5, -0.18), frameon=True,
             )
             fig.suptitle(
                 f'Effect of $n_{{\\mathrm{{peaks}}}}$ on width-averaged bed level{norm_title}\n'
                 f'Snapshot: {snap_label},  Q = {DISCHARGE} m³/s',
-                fontsize=11, fontweight='bold', y=0.99, color=_tc,
+                fontsize=FONTSIZE_TITLE, fontweight='bold', y=0.99, color=_tc,
             )
             fig.subplots_adjust(
                 left=_LEFT / _fig_w,
@@ -589,7 +598,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 wspace=_WSPACE / AX_W,
             )
             _noisy_tag = '_noisy' if SHOW_NOISY_ENVELOPE else ''
-            fname = f'sensitivity_n_effect_bedlevel{norm_tag}{_noisy_tag}_{snap_label}_Q{DISCHARGE}.png'
+            fname = f'sensitivity_n_effect_bedlevel{norm_tag}{_noisy_tag}_{snap_label}_{STYLE}_Q{DISCHARGE}.png'
             fig.savefig(sensitivity_output_dir / fname, dpi=200, bbox_inches='tight', transparent=_tr)
             if is_last_snapshot:
                 fig.savefig(sensitivity_output_dir / fname.replace('.png', '.pdf'), bbox_inches='tight', transparent=_tr)

@@ -16,7 +16,7 @@ SCENARIOS_TO_PROCESS = None #['1', '2', '3', '4']  # Use all scenarios
 DISCHARGE = 500
 
 # --- Figure style ---
-STYLE = 'whitefig'   # 'default'  →  white background, black text/ticks/labels
+STYLE = 'default'   # 'default'  →  white background, black text/ticks/labels
                     # 'whitefig' →  transparent background, white text/ticks/labels
 STYLES = {
     'default': {},   # use matplotlib defaults
@@ -49,6 +49,11 @@ target_hydrodynamic_date = None #'2055-12-31' # e.g. '2055-12-31'; when set, nea
 apply_detrending = False
 reference_time_idx = 0
 detrend_land_threshold = 6.0
+
+# Zoom settings
+ZOOM = True          # True → crop axes to ZOOM_XLIM / ZOOM_YLIM
+ZOOM_XLIM = (19000, 45000)   # x-range in model coordinates [m]
+ZOOM_YLIM = (5000, 10000)    # y-range in model coordinates [m]
 
 # Cache settings
 CACHE_BBOX = [1, 1, 45000, 15000] # xmin, ymin, xmax, ymax
@@ -109,7 +114,8 @@ configs = {
 
 for folder in model_folders:
     model_location = base_path / folder
-    output_plots_dir = base_path / 'output_plots' / 'map_plots'
+    _zoom_subfolder = f"zoom_x{ZOOM_XLIM[0]}-{ZOOM_XLIM[1]}_y{ZOOM_YLIM[0]}-{ZOOM_YLIM[1]}" if ZOOM else ""
+    output_plots_dir = base_path / 'output_plots' / 'map_plots' / STYLE / _zoom_subfolder if ZOOM else base_path / 'output_plots' / 'map_plots' / STYLE
     output_plots_dir.mkdir(parents=True, exist_ok=True)
     print(f"\nProcessing: {folder.name}")
 
@@ -225,6 +231,9 @@ for folder in model_folders:
                     vmax=vmax_to_use
                 )
                 ax.set_aspect('equal')
+                if ZOOM:
+                    ax.set_xlim(ZOOM_XLIM)
+                    ax.set_ylim(ZOOM_YLIM)
                 ax.set_title(f"{current_cfg['label']}{detrend_suffix} | {folder.name} | {actual_label}",
                              color=_tc)
 
@@ -237,7 +246,8 @@ for folder in model_folders:
 
                 plt.tight_layout()
                 is_final_timestep = (idx == len(time_values) - 1)
-                save_name = f"{current_cfg['file_tag']}{file_detrend_tag}_{actual_tag}_{folder.name}.png"
+                _zoom_tag = f"_zoom_x{ZOOM_XLIM[0]}-{ZOOM_XLIM[1]}_y{ZOOM_YLIM[0]}-{ZOOM_YLIM[1]}" if ZOOM else ""
+                save_name = f"{STYLE}_{current_cfg['file_tag']}{file_detrend_tag}{_zoom_tag}_{actual_tag}_{folder.name}.png"
                 save_path = output_plots_dir / save_name
                 plt.savefig(save_path, dpi=300, bbox_inches='tight', transparent=True)
                 if is_final_timestep:

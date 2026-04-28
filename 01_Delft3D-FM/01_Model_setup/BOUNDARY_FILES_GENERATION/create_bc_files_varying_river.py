@@ -26,7 +26,7 @@ from FUNCTIONS.FUNCS_plot_discharge_scenarios import (
 )
 
  #%% Configuration settings
-total_discharge = 500                   # Total river discharge in m³/s
+total_discharge = 250                   # Total river discharge in m³/s
 nyears = 52
 duration_min    = 365.25 * 24 * 60 * nyears               # Total simulation duration in minutes;  525600 = 1 year;     2629440 = 5 years
 time_step_rcel  = 1440                                  # Time step for variations over consecutive river cells in minutes, to force bar formation      
