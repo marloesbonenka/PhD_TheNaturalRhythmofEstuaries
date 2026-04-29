@@ -23,7 +23,7 @@ import matplotlib.lines as mlines
 # Configuration
 # ============================================================================
 # --- Figure style ---
-STYLE = 'default'   # 'default'   →  white background, black text
+STYLE = 'whitefig'   # 'default'   →  white background, black text
                     # 'whitefig'  →  transparent figure, white axes background, white text
                     
 TOTAL_Q    = 500          # m³/s  – used only for labels and output filename
