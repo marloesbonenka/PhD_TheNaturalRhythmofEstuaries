@@ -100,7 +100,7 @@ AX_W, AX_H = 3.5, 3.0   # axes width / height in inches (not panel/figure size)
 # Margins in inches (space outside the axes area):
 _LEFT   = 0.95  # left:   y-label + ticks
 _RIGHT  = 0.20  # right:  small buffer
-_TOP    = 0.80  # top:    panel title + gap + suptitle
+_TOP    = 1.30  # top:    panel title + gap + suptitle
 _BOT    = 0.65  # bottom: x-label + ticks
 _WSPACE = 0.10  # gap between panels in inches (small; sharey=True)
 
@@ -109,9 +109,9 @@ LINE_WIDTH       = 1.8   # width of scenario lines in the plots
 LINE_WIDTH_CONST = 1.5   # width of the constant reference line
 
 # --- Font sizes ---
-FONTSIZE_TITLE  = 11   # figure suptitle and panel titles
-FONTSIZE_LABELS = 9    # axis labels and legend title
-FONTSIZE_TICKS  = 8    # tick labels and legend text
+FONTSIZE_TITLE  = 18   # figure suptitle and panel titles
+FONTSIZE_LABELS = FONTSIZE_TITLE - 4    # axis labels and legend title
+FONTSIZE_TICKS  = FONTSIZE_LABELS - 2    # tick labels and legend text
 
 
 #%% --- FIGURE STYLE ---
