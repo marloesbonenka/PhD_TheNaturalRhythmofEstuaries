@@ -62,17 +62,29 @@ DISCHARGE_COLORS = {250: '#3B6064', 500: '#87BBA2', 1000: '#C9E4CA'}
 LINE_WIDTH = 1.8   # width of scatter marker edges / annotation lines
 
 # --- Font sizes ---
-FONTSIZE_TITLE  = 11   # figure suptitle and panel titles
-FONTSIZE_LABELS = 9    # axis labels and legend title
-FONTSIZE_TICKS  = 8    # tick labels and legend text
-
+FONTSIZE_TITLE  = 18   # figure suptitle and panel titles
+FONTSIZE_LABELS = FONTSIZE_TITLE - 4    # axis labels and legend title
+FONTSIZE_TICKS  = FONTSIZE_LABELS - 2    # tick labels and legend text
 
 #%% --- FIGURE STYLE ---
-STYLE = 'default'   # 'default'   →  white background, black text
+STYLE = 'bluefig'   # 'default'   →  white background, black text
                     # 'whitefig'  →  transparent figure, white axes background, white text
 
 STYLES = {
     'default': {},
+    'bluefig': {
+        'figure.facecolor':    'none',
+        'axes.facecolor':      'none',
+        'axes.edgecolor':      '#044457',
+        'axes.labelcolor':     '#044457',
+        'xtick.color':         '#044457',
+        'ytick.color':         '#044457',
+        'text.color':          '#044457',
+        'grid.color':          '#cccccc',
+        'legend.facecolor':    'none',
+        'legend.edgecolor':    '#044457',
+        'savefig.transparent': False,
+    },
     'whitefig': {
         'figure.facecolor':    'none',
         'axes.facecolor':      'white',
@@ -96,7 +108,6 @@ _tr = plt.rcParams.get('savefig.transparent', False)    # convenience: transpare
 dx = 100
 x_bins = np.arange(x_targets[0], x_targets[-1] + dx, dx)
 x_centers = (x_bins[:-1] + x_bins[1:]) / 2
-
 
 #%% --- HELPERS ---
 # Pattern:  \d{2}_Qr{Q}_pm{pm}_n{n}.{anything}
@@ -285,7 +296,46 @@ else:
     _date_end = _date_to_label(target_snapshot_dates[-1])
     _date_start = _date_to_label(target_snapshot_dates[0])
 
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+    fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+
+    for discharge in present_discharges:
+        color  = DISCHARGE_COLORS.get(discharge, 'tab:gray')
+        subset = {k: v for k, v in datadict.items() if v['discharge'] == discharge}
+
+        pm_arr     = np.array([v['pm']                  for v in subset.values()], dtype=float)
+        x_locs_arr = np.array([v['x_min_km_series'][-1] for v in subset.values()], dtype=float)
+        n_arr      = [v['n'] for v in subset.values()]
+        label_q    = f'Q = {discharge} m³/s'
+
+        # x-location at final snapshot vs pm
+        ax.scatter(x_locs_arr, pm_arr, color=color, zorder=3, label=label_q)
+        for x_, y_, n_ in zip(x_locs_arr, pm_arr, n_arr):
+            ax.annotate(f'n{n_}', (x_, y_), textcoords='offset points',
+                        xytext=(4, 4), fontsize=FONTSIZE_TICKS, color=color)
+
+    ax.set_xlabel('x-location of min depth [km]', fontsize=FONTSIZE_LABELS)
+    ax.set_ylabel('discharge amplitude $R_{\\mathrm{peak}}$', fontsize=FONTSIZE_LABELS)
+    ax.set_title(f'location of tidal-fluvial interaction zone', fontsize=FONTSIZE_TITLE)
+    # ax.set_title(f'Location of shallowest point at {_date_end}', fontsize=FONTSIZE_TITLE, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.tick_params(labelsize=FONTSIZE_TICKS)
+    ax.legend(fontsize=FONTSIZE_TICKS, loc='center left', bbox_to_anchor=(1.0, 0.5))
+
+    fig.suptitle(
+        f'p{depth_percentile} channel depth  |  dx = {dx} m bins  |  Q = {q_str}',
+        fontsize=FONTSIZE_TITLE, color=_tc,
+    )
+    fig.tight_layout()
+
+    fname = f'location_mindepth_{q_str}{_style_tag}.png'
+    fig.savefig(output_dir / fname, dpi=200, bbox_inches='tight', transparent=_tr)
+    fig.savefig(output_dir / fname.replace('.png', '.pdf'), bbox_inches='tight', transparent=_tr)
+    plt.show()
+    plt.close(fig)
+    print(f'Saved: {output_dir / fname}')
+
+    # ---- Figure: shallowest depth vs pm ----
+    fig2, ax2 = plt.subplots(1, 1, figsize=(10, 6))
 
     for discharge in present_discharges:
         color  = DISCHARGE_COLORS.get(discharge, 'tab:gray')
@@ -293,92 +343,80 @@ else:
 
         pm_arr     = np.array([v['pm']                   for v in subset.values()], dtype=float)
         depths_arr = np.array([v['min_depth_series'][-1] for v in subset.values()], dtype=float)
-        x_locs_arr = np.array([v['x_min_km_series'][-1]  for v in subset.values()], dtype=float)
         n_arr      = [v['n'] for v in subset.values()]
         label_q    = f'Q = {discharge} m³/s'
 
-        # Panel A: min depth at final snapshot vs pm
-        axes[0].scatter(pm_arr, depths_arr, color=color, zorder=3, label=label_q)
+        ax2.scatter(pm_arr, depths_arr, color=color, zorder=3, label=label_q)
         for x_, y_, n_ in zip(pm_arr, depths_arr, n_arr):
-            axes[0].annotate(f'n{n_}', (x_, y_), textcoords='offset points',
-                             xytext=(4, 4), fontsize=FONTSIZE_TICKS, color=color)
+            ax2.annotate(f'n{n_}', (x_, y_), textcoords='offset points',
+                         xytext=(4, 4), fontsize=FONTSIZE_TICKS, color=color)
 
-        # Panel B: x-location at final snapshot vs pm
-        axes[1].scatter(pm_arr, x_locs_arr, color=color, zorder=3, label=label_q)
-        for x_, y_, n_ in zip(pm_arr, x_locs_arr, n_arr):
-            axes[1].annotate(f'n{n_}', (x_, y_), textcoords='offset points',
-                             xytext=(4, 4), fontsize=FONTSIZE_TICKS, color=color)
+    ax2.set_xlabel('Discharge amplitude $R_{\\mathrm{peak}}$ (pm)', fontsize=FONTSIZE_LABELS)
+    ax2.set_ylabel(f'Min p{depth_percentile} depth [m]', fontsize=FONTSIZE_LABELS)
+    ax2.set_title(f'Shallowest depth at {_date_end}', fontsize=FONTSIZE_TITLE)
+    ax2.grid(True, alpha=0.3)
+    ax2.tick_params(labelsize=FONTSIZE_TICKS)
+    ax2.legend(fontsize=FONTSIZE_TICKS, loc='center left', bbox_to_anchor=(1.0, 0.5))
 
-    axes[0].set_xlabel('Discharge amplitude $R_{\\mathrm{peak}}$ (pm)', fontsize=FONTSIZE_LABELS)
-    axes[0].set_ylabel(f'Min p{depth_percentile} depth [m]', fontsize=FONTSIZE_LABELS)
-    axes[0].set_title(f'Shallowest depth at {_date_end}', fontsize=FONTSIZE_TITLE, fontweight='bold')
-    axes[0].grid(True, alpha=0.3)
-    axes[0].tick_params(labelsize=FONTSIZE_TICKS)
-    axes[0].legend(fontsize=FONTSIZE_TICKS)
-
-    axes[1].set_xlabel('Discharge amplitude $R_{\\mathrm{peak}}$ (pm)', fontsize=FONTSIZE_LABELS)
-    axes[1].set_ylabel('x-location of min depth [km]', fontsize=FONTSIZE_LABELS)
-    axes[1].set_title(f'Location of shallowest point at {_date_end}', fontsize=FONTSIZE_TITLE, fontweight='bold')
-    axes[1].grid(True, alpha=0.3)
-    axes[1].tick_params(labelsize=FONTSIZE_TICKS)
-    axes[1].legend(fontsize=FONTSIZE_TICKS)
-
-    fig.suptitle(
+    fig2.suptitle(
         f'p{depth_percentile} channel depth  |  dx = {dx} m bins  |  Q = {q_str}',
-        fontsize=FONTSIZE_TITLE, fontweight='bold', color=_tc,
+        fontsize=FONTSIZE_TITLE, color=_tc,
     )
-    fig.tight_layout()
+    fig2.tight_layout()
 
-    fname = f'location_mindepth_{q_str}{_style_tag}.png'
-    fig.savefig(output_dir / fname, dpi=200, bbox_inches='tight', transparent=_tr)
+    fname2 = f'shallowest_depth_{q_str}{_style_tag}.png'
+    fig2.savefig(output_dir / fname2, dpi=200, bbox_inches='tight', transparent=_tr)
+    fig2.savefig(output_dir / fname2.replace('.png', '.pdf'), bbox_inches='tight', transparent=_tr)
     plt.show()
-    plt.close(fig)
-    print(f'Saved: {output_dir / fname}')
+    plt.close(fig2)
+    print(f'Saved: {output_dir / fname2}')
 
-    # ---- Figure 2: pm × n scatter, colour = metric ----
-    METRICS = [
-        ('min_depth_series', -1, f'Min p{depth_percentile} depth [m]',  'viridis',  f'depth_{_date_end}'),
-        ('x_min_km_series',  -1, 'x-location of min depth [km]',        'plasma',   f'xloc_{_date_end}'),
-    ]
+    # # ---- Figure 2: pm × n scatter, colour = metric ----
+    # METRICS = [
+    #     ('min_depth_series', -1, f'Min p{depth_percentile} depth [m]',  'viridis',  f'depth_{_date_end}'),
+    #     ('x_min_km_series',  -1, 'x-location of min depth [km]',        'plasma',   f'xloc_{_date_end}'),
+    # ]
 
-    for discharge in present_discharges:
-        subset = {k: v for k, v in datadict.items() if v['discharge'] == discharge}
-        if not subset:
-            continue
+    # for discharge in present_discharges:
+    #     subset = {k: v for k, v in datadict.items() if v['discharge'] == discharge}
+    #     if not subset:
+    #         continue
 
-        pm_arr  = np.array([v['pm'] for v in subset.values()], dtype=float)
-        n_arr   = np.array([v['n']  for v in subset.values()], dtype=float)
+    #     pm_arr  = np.array([v['pm'] for v in subset.values()], dtype=float)
+    #     n_arr   = np.array([v['n']  for v in subset.values()], dtype=float)
 
-        fig2, axes2 = plt.subplots(1, len(METRICS), figsize=(5.5 * len(METRICS), 4.5))
-        if len(METRICS) == 1:
-            axes2 = [axes2]
+    #     fig2, axes2 = plt.subplots(1, len(METRICS), figsize=(5.5 * len(METRICS), 4.5))
+    #     if len(METRICS) == 1:
+    #         axes2 = [axes2]
 
-        for ax2, (key, idx, cbar_label, cmap, _) in zip(axes2, METRICS):
-            vals = np.array([v[key][idx] for v in subset.values()], dtype=float)
-            sc = ax2.scatter(pm_arr, n_arr, c=vals, cmap=cmap, s=120, zorder=3,
-                             edgecolors='0.3', linewidths=0.5)
-            cb = fig2.colorbar(sc, ax=ax2, pad=0.02)
-            cb.set_label(cbar_label, fontsize=FONTSIZE_LABELS)
-            cb.ax.tick_params(labelsize=FONTSIZE_TICKS)
-            for x_, y_, v_ in zip(pm_arr, n_arr, vals):
-                ax2.annotate(f'{v_:.2f}', (x_, y_), textcoords='offset points',
-                             xytext=(6, 4), fontsize=FONTSIZE_TICKS - 1)
-            ax2.set_xlabel('Discharge amplitude $R_{\\mathrm{peak}}$ (pm)', fontsize=FONTSIZE_LABELS)
-            ax2.set_ylabel('Number of peaks $n$', fontsize=FONTSIZE_LABELS)
-            ax2.set_title(cbar_label, fontsize=FONTSIZE_TITLE, fontweight='bold')
-            ax2.tick_params(labelsize=FONTSIZE_TICKS)
-            ax2.grid(True, alpha=0.25)
+    #     for ax2, (key, idx, cbar_label, cmap, _) in zip(axes2, METRICS):
+    #         vals = np.array([v[key][idx] for v in subset.values()], dtype=float)
+    #         sc = ax2.scatter(pm_arr, n_arr, c=vals, cmap=cmap, s=120, zorder=3,
+    #                          edgecolors='0.3', linewidths=0.5)
+    #         cb = fig2.colorbar(sc, ax=ax2, pad=0.02)
+    #         cb.set_label(cbar_label, fontsize=FONTSIZE_LABELS)
+    #         cb.ax.tick_params(labelsize=FONTSIZE_TICKS)
+    #         for x_, y_, v_ in zip(pm_arr, n_arr, vals):
+    #             ax2.annotate(f'{v_:.2f}', (x_, y_), textcoords='offset points',
+    #                          xytext=(6, 4), fontsize=FONTSIZE_TICKS - 1)
+    #         ax2.set_xlabel('Discharge amplitude $R_{\\mathrm{peak}}$ (pm)', fontsize=FONTSIZE_LABELS)
+    #         ax2.set_ylabel('Number of peaks $n$', fontsize=FONTSIZE_LABELS)
+    #         ax2.set_title(cbar_label, fontsize=FONTSIZE_TITLE, fontweight='bold')
+    #         ax2.tick_params(labelsize=FONTSIZE_TICKS)
+    #         ax2.grid(True, alpha=0.25)
 
-        fig2.suptitle(
-            f'pm × n parameter space  |  Q = {discharge} m³/s  |  {_date_end}',
-            fontsize=FONTSIZE_TITLE, fontweight='bold', color=_tc,
-        )
-        fig2.tight_layout()
+    #     fig2.suptitle(
+    #         f'pm × n parameter space  |  Q = {discharge} m³/s  |  {_date_end}',
+    #         fontsize=FONTSIZE_TITLE, fontweight='bold', color=_tc,
+    #     )
+    #     fig2.tight_layout()
 
-        fname2 = f'pmn_scatter_Q{discharge}{_style_tag}.png'
-        fig2.savefig(output_dir / fname2, dpi=200, bbox_inches='tight', transparent=_tr)
-        plt.show()
-        plt.close(fig2)
-        print(f'Saved: {output_dir / fname2}')
+    #     fname2 = f'pmn_scatter_Q{discharge}{_style_tag}.png'
+    #     fig2.savefig(output_dir / fname2, dpi=200, bbox_inches='tight', transparent=_tr)
+    #     plt.show()
+    #     plt.close(fig2)
+    #     print(f'Saved: {output_dir / fname2}')
 
 print("\nDone.")
+
+# %%
