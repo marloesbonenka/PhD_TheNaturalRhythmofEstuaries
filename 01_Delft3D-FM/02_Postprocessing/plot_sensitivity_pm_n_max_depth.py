@@ -1,4 +1,4 @@
-"""pm/n sensitivity analysis – p95 maximum channel depth
+"""pm/n sensitivity analysis – p5 minimum / p95 maximum bed levels
 
 Layout: one subplot per fixed parameter (n or pm), lines per varying parameter.
 Colors follow the same PALETTE as plot_scenario_lines.py.
@@ -35,7 +35,7 @@ from FUNCTIONS.F_general import (
 from FUNCTIONS.F_map_cache import cache_tag_from_bbox, load_or_update_map_cache_multi, _get_face_coords
 from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
-
+no 
 #%% --- CONFIGURATION ---
 DISCHARGE = 500
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian")
@@ -43,7 +43,6 @@ config = f'Model_Output/Q{DISCHARGE}'
 
 depth_percentile = 95
 bed_threshold = 6
-use_absolute_depth = True
 
 start_date = np.datetime64('2025-01-01')
 x_targets = np.arange(20000, 44001, 1000)
@@ -115,7 +114,7 @@ FONTSIZE_TICKS  = FONTSIZE_LABELS - 2    # tick labels and legend text
 
 
 #%% --- FIGURE STYLE ---
-STYLE = 'whitefig'   # 'default'   →  white background, black text
+STYLE = 'default'   # 'default'   →  white background, black text
                     # 'whitefig'  →  transparent figure, white axes background, white text
 
 STYLES = {
@@ -220,14 +219,13 @@ for folder in model_folders:
         comparison_labels[snapshot_key] = _date_to_label(target_dt)
 
         bedlev_data = ds['mesh2d_mor_bl'].isel(time=ts_idx).values.copy()
-        depths_field = np.abs(bedlev_data) if use_absolute_depth else -bedlev_data
         valid_mask = width_mask & (bedlev_data < bed_threshold)
 
         max_depths = []
         for k in range(len(x_bins) - 1):
             bin_mask = valid_mask & (face_x >= x_bins[k]) & (face_x < x_bins[k + 1])
             if np.any(bin_mask):
-                valid_depths = depths_field[bin_mask]
+                valid_depths = bedlev_data[bin_mask]
                 valid_depths = valid_depths[~np.isnan(valid_depths)]
                 max_depths.append(
                     np.percentile(valid_depths, depth_percentile) if len(valid_depths) > 0 else np.nan
@@ -245,10 +243,6 @@ for folder in model_folders:
 
 
 #%% --- LOAD NOISY ENVELOPE DATA ---
-# Builds {snapshot_key: {'env_min', 'env_max', 'x_km'}} from the noisy repeats.
-# env_min / env_max are expressed as BED ELEVATION [m] (negative = channel depth),
-# matching the sign convention used by _get_y().
-
 noisy_envelope_data = {}  # populated only when SHOW_NOISY_ENVELOPE is True
 
 if SHOW_NOISY_ENVELOPE:
@@ -294,7 +288,7 @@ if SHOW_NOISY_ENVELOPE:
             for _tdt, _ts_idx, _adt in _snaps_n:
                 _snap_key = f"d{_date_to_filename_tag(_tdt)}"
                 _bl = _ds_n['mesh2d_mor_bl'].isel(time=_ts_idx).values.copy()
-                _dep = np.abs(_bl) if use_absolute_depth else -_bl
+                _dep = -_bl  # signed depth: land flanks rank lower than channel thalweg
                 _valid = _wmask_n & (_bl < bed_threshold)
 
                 _mdepths = []
@@ -380,11 +374,11 @@ for snapshot_key, snapshot_results in comparison_results.items():
     N_COLOR  = {n:  plt.cm.Greens(0.35 + 0.55 * i / _n_n) for i, n  in enumerate(all_n_vals)}
 
     def _get_y(scen_key):
-        """Mean MaxDepth across runs, negated to show as bed elevation (negative = deeper)."""
+        """Mean MaxDepth across runs (raw bed elevation, negative = deeper)."""
         y_stack = stack_metric_arrays(scenario_groups[scen_key], 'MaxDepth')
         if y_stack is None:
             return None
-        return -np.nanmean(y_stack, axis=0)
+        return np.nanmean(y_stack, axis=0)
 
     def _get_x(scen_key):
         x_data = next((d for _, d in scenario_groups[scen_key] if 'x_centers' in d), None)
@@ -412,7 +406,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
         ylabel = (
             f'p{depth_percentile} depth\n(difference from constant)  [m]'
             if normalise
-            else f'bed level [m]  (p{depth_percentile} depth)'
+            else f'max (p{depth_percentile}) bed level [m]'
         )
 
         # ---- Figure A: pm-effect, one panel per n ----
@@ -513,7 +507,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 wspace=_WSPACE / AX_W,
             )
             _noisy_tag = '_noisy' if SHOW_NOISY_ENVELOPE else ''
-            fname = f'sensitivity_pm_effect_maxdepth{norm_tag}{_noisy_tag}_{snap_label}_{STYLE}_Q{DISCHARGE}.png'
+            fname = f'sensitivity_pm_effect_{norm_tag}{_noisy_tag}_{snap_label}_{STYLE}_Q{DISCHARGE}_p{depth_percentile}.png'
             fig.savefig(sensitivity_output_dir / fname, dpi=200, bbox_inches='tight', transparent=_tr)
             if is_last_snapshot:
                 fig.savefig(sensitivity_output_dir / fname.replace('.png', '.pdf'), bbox_inches='tight', transparent=_tr)
@@ -617,7 +611,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 wspace=_WSPACE / AX_W,
             )
             _noisy_tag = '_noisy' if SHOW_NOISY_ENVELOPE else ''
-            fname = f'sensitivity_n_effect_maxdepth{norm_tag}{_noisy_tag}_{snap_label}_{STYLE}_Q{DISCHARGE}.png'
+            fname = f'sensitivity_n_effect_{norm_tag}{_noisy_tag}_{snap_label}_{STYLE}_Q{DISCHARGE}_p{depth_percentile}.png'
             fig.savefig(sensitivity_output_dir / fname, dpi=200, bbox_inches='tight', transparent=_tr)
             if is_last_snapshot:
                 fig.savefig(sensitivity_output_dir / fname.replace('.png', '.pdf'), bbox_inches='tight', transparent=_tr)

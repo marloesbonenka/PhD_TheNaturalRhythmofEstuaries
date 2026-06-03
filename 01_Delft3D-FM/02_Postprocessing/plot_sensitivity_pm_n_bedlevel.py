@@ -113,7 +113,7 @@ FONTSIZE_TICKS  = FONTSIZE_LABELS - 2    # tick labels and legend text
 
 
 #%% --- FIGURE STYLE ---
-STYLE = 'whitefig'   # 'default'   →  white background, black text
+STYLE = 'default'   # 'default'   →  white background, black text
                     # 'whitefig'  →  transparent figure, white axes background, white text
 
 STYLES = {
