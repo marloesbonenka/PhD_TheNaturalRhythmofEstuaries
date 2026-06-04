@@ -35,7 +35,6 @@ from FUNCTIONS.F_general import (
 from FUNCTIONS.F_map_cache import cache_tag_from_bbox, load_or_update_map_cache_multi, _get_face_coords
 from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
-no 
 #%% --- CONFIGURATION ---
 DISCHARGE = 500
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian")
@@ -221,23 +220,23 @@ for folder in model_folders:
         bedlev_data = ds['mesh2d_mor_bl'].isel(time=ts_idx).values.copy()
         valid_mask = width_mask & (bedlev_data < bed_threshold)
 
-        max_depths = []
+        bedlev_percentiles = []
         for k in range(len(x_bins) - 1):
             bin_mask = valid_mask & (face_x >= x_bins[k]) & (face_x < x_bins[k + 1])
             if np.any(bin_mask):
-                valid_depths = bedlev_data[bin_mask]
-                valid_depths = valid_depths[~np.isnan(valid_depths)]
-                max_depths.append(
-                    np.percentile(valid_depths, depth_percentile) if len(valid_depths) > 0 else np.nan
+                bin_bedlevs = bedlev_data[bin_mask]
+                bin_bedlevs = bin_bedlevs[~np.isnan(bin_bedlevs)]
+                bedlev_percentiles.append(
+                    np.percentile(bin_bedlevs, depth_percentile) if len(bin_bedlevs) > 0 else np.nan
                 )
             else:
-                max_depths.append(np.nan)
+                bedlev_percentiles.append(np.nan)
 
         comparison_results[snapshot_key][folder_str] = {
-            'MaxDepth': np.array(max_depths),
+            f'p{depth_percentile} BedLevel': np.array(bedlev_percentiles),
             'x_centers': x_centers,
         }
-        print(f"  Snapshot {_date_to_label(target_dt)}: computed p{depth_percentile} max depth.")
+        print(f"  Snapshot {_date_to_label(target_dt)}: computed p{depth_percentile}.")
 
     ds.close()
 
@@ -288,34 +287,30 @@ if SHOW_NOISY_ENVELOPE:
             for _tdt, _ts_idx, _adt in _snaps_n:
                 _snap_key = f"d{_date_to_filename_tag(_tdt)}"
                 _bl = _ds_n['mesh2d_mor_bl'].isel(time=_ts_idx).values.copy()
-                _dep = -_bl  # signed depth: land flanks rank lower than channel thalweg
                 _valid = _wmask_n & (_bl < bed_threshold)
 
-                _mdepths = []
+                _p_bedlevs = []
                 for _k in range(len(_x_bins) - 1):
                     _bm = _valid & (_fx_n >= _x_bins[_k]) & (_fx_n < _x_bins[_k + 1])
                     if np.any(_bm):
-                        _vd = _dep[_bm]
+                        _vd = _bl[_bm]
                         _vd = _vd[~np.isnan(_vd)]
-                        _mdepths.append(
+                        _p_bedlevs.append(
                             np.percentile(_vd, depth_percentile)
                             if len(_vd) > 0 else np.nan
                         )
                     else:
-                        _mdepths.append(np.nan)
+                        _p_bedlevs.append(np.nan)
 
-                _noisy_profiles.setdefault(_snap_key, []).append(np.array(_mdepths))
+                _noisy_profiles.setdefault(_snap_key, []).append(np.array(_p_bedlevs))
                 print(f"  {_subfolder}: snapshot {_date_to_label(_tdt)} OK")
 
             _ds_n.close()
 
-        # Store negated profiles (bed elevation, matching _get_y sign convention).
-        # The ±2σ envelope is finalised in the plotting loop once y_const is known,
-        # so the constant run can be included alongside the noisy repeats.
         for _snap_key, _profs in _noisy_profiles.items():
             if _profs:
                 noisy_envelope_data[_snap_key] = {
-                    'profiles': [-_p for _p in _profs],  # negated to match _get_y()
+                    'profiles': [_p for _p in _profs],
                     'x_km':     _x_centers / 1000,
                 }
         print(f"Noisy envelope ready for {len(noisy_envelope_data)} snapshots.")
@@ -374,8 +369,8 @@ for snapshot_key, snapshot_results in comparison_results.items():
     N_COLOR  = {n:  plt.cm.Greens(0.35 + 0.55 * i / _n_n) for i, n  in enumerate(all_n_vals)}
 
     def _get_y(scen_key):
-        """Mean MaxDepth across runs (raw bed elevation, negative = deeper)."""
-        y_stack = stack_metric_arrays(scenario_groups[scen_key], 'MaxDepth')
+        """Mean p{depth_percentile} bed level across runs (raw bed elevation, negative = deeper)."""
+        y_stack = stack_metric_arrays(scenario_groups[scen_key], f'p{depth_percentile} BedLevel')
         if y_stack is None:
             return None
         return np.nanmean(y_stack, axis=0)
@@ -404,9 +399,9 @@ for snapshot_key, snapshot_results in comparison_results.items():
         norm_tag   = '_difference' if normalise else ''
         norm_title = '  (difference from constant)' if normalise else ''
         ylabel = (
-            f'p{depth_percentile} depth\n(difference from constant)  [m]'
+            f'p{depth_percentile} bed level \n(difference from constant)  [m]'
             if normalise
-            else f'max (p{depth_percentile}) bed level [m]'
+            else f'p{depth_percentile} bed level [m]'
         )
 
         # ---- Figure A: pm-effect, one panel per n ----
@@ -495,7 +490,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 ncol=len(legend_handles), bbox_to_anchor=(0.5, -0.1), frameon=True,
             )
             fig.suptitle(
-                f'Effect of $R_{{\\mathrm{{peak}}}}$ on p{depth_percentile} channel depth{norm_title}\n'
+                f'Effect of $R_{{\\mathrm{{peak}}}}$ on p{depth_percentile} bed level {norm_title}\n'
                 f'Snapshot: {snap_label},  Q = {DISCHARGE} m³/s',
                 fontsize=FONTSIZE_TITLE, fontweight='bold', y=0.99, color=_tc,
             )
@@ -599,7 +594,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 ncol=len(legend_handles), bbox_to_anchor=(0.5, -0.18), frameon=True,
             )
             fig.suptitle(
-                f'Effect of $n_{{\\mathrm{{peaks}}}}$ on p{depth_percentile} channel depth{norm_title}\n'
+                f'Effect of $n_{{\\mathrm{{peaks}}}}$ on p{depth_percentile} bed level {norm_title}\n'
                 f'Snapshot: {snap_label},  Q = {DISCHARGE} m³/s',
                 fontsize=FONTSIZE_TITLE, fontweight='bold', y=0.99, color=_tc,
             )
