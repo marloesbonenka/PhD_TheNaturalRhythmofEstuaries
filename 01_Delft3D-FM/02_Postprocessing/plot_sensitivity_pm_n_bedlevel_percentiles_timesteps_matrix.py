@@ -41,6 +41,8 @@ config = f'Model_Output/Q{DISCHARGE}'
 
 percentiles = [5, 50, 95]
 bed_threshold = 6
+CHANNEL_INIT_THRESHOLD = 2.2  # defines the channel footprint from t=0
+channel_masks = {}  # {folder_str: {bin_idx: boolean array}}
 
 start_date = np.datetime64('2025-01-01')
 x_targets = np.arange(20000, 44001, 1000)
@@ -68,6 +70,9 @@ NOISY_SUBFOLDERS = [
     '1_Q500_noisy1_rst.9160657',
     '1_Q500_noisy2_rst.9160663',
 ]
+
+SHOW_DIFFERENCE = True   # show difference-from-constant plot
+SHOW_DETRENDED  = True   # show detrended plot (change relative to initial bed level)
 
 
 #%% --- SCENARIO LABELS ---
@@ -157,7 +162,8 @@ matrix_output_dir.mkdir(parents=True, exist_ok=True)
 
 #%% --- LOAD DATA ---
 comparison_results = {}
-comparison_labels = {}
+comparison_labels  = {}
+initial_profiles   = {}  # {folder_str: {pct: 1-D array at t=0}}
 
 target_snapshot_dates = get_target_snapshot_dates(
     count=SNAPSHOT_COUNT,
@@ -210,19 +216,42 @@ for folder in model_folders:
     x_bins = np.arange(x_targets[0], x_targets[-1] + dx, dx)
     x_centers = (x_bins[:-1] + x_bins[1:]) / 2
 
+    # Initial (t=0) profile — builds frozen channel mask for all plot modes
+    if folder_str not in initial_profiles:
+        _init_bl = ds['mesh2d_mor_bl'].isel(time=0).values.copy()
+        _valid_init = width_mask & (_init_bl < CHANNEL_INIT_THRESHOLD)
+        channel_masks[folder_str] = {}
+        initial_profiles[folder_str] = {}
+
+        for _k in range(len(x_bins) - 1):
+            _bm = _valid_init & (face_x >= x_bins[_k]) & (face_x < x_bins[_k + 1])
+            channel_masks[folder_str][_k] = _bm  # frozen for all timesteps
+
+        for pct in percentiles:
+            _init_percs = []
+            for _k in range(len(x_bins) - 1):
+                _bm = channel_masks[folder_str][_k]
+                if np.any(_bm):
+                    _vd = _init_bl[_bm]
+                    _vd = _vd[~np.isnan(_vd)]
+                    _init_percs.append(np.percentile(_vd, pct) if len(_vd) > 0 else np.nan)
+                else:
+                    _init_percs.append(np.nan)
+            initial_profiles[folder_str][pct] = np.array(_init_percs)
+        print(f"  Initial profile (t=0) and channel mask computed.")
+
     for target_dt, ts_idx, actual_dt in snapshot_matches:
         snapshot_key = f"d{_date_to_filename_tag(target_dt)}"
         comparison_results.setdefault(snapshot_key, {})
         comparison_labels[snapshot_key] = _date_to_label(target_dt)
 
         bedlev_data = ds['mesh2d_mor_bl'].isel(time=ts_idx).values.copy()
-        valid_mask = width_mask & (bedlev_data < bed_threshold)
 
         result = {'x_centers': x_centers}
         for pct in percentiles:
             profile = []
             for k in range(len(x_bins) - 1):
-                bin_mask = valid_mask & (face_x >= x_bins[k]) & (face_x < x_bins[k + 1])
+                bin_mask = channel_masks[folder_str][k]  # <-- frozen t=0 channel mask
                 if np.any(bin_mask):
                     valid_depths = bedlev_data[bin_mask]
                     valid_depths = valid_depths[~np.isnan(valid_depths)]
@@ -252,7 +281,8 @@ if SHOW_NOISY_ENVELOPE:
         _noisy_cache_dir = NOISY_BASE_PATH / 'cached_data'
         _noisy_cache_dir.mkdir(parents=True, exist_ok=True)
 
-        _noisy_profiles = {pct: {} for pct in percentiles}
+        _noisy_profiles      = {pct: {} for pct in percentiles}
+        _noisy_init_profiles = {pct: [] for pct in percentiles}
 
         for _subfolder in NOISY_SUBFOLDERS:
             _noisy_folder = NOISY_BASE_PATH / _subfolder
@@ -281,18 +311,38 @@ if SHOW_NOISY_ENVELOPE:
             _fx_n, _fy_n = _get_face_coords(_ds_n)
             _wmask_n = (_fy_n >= y_range[0]) & (_fy_n <= y_range[1])
 
+            # Build frozen t=0 channel mask using CHANNEL_INIT_THRESHOLD
+            _init_bl_n = _ds_n['mesh2d_mor_bl'].isel(time=0).values.copy()
+            _valid_init_n = _wmask_n & (_init_bl_n < CHANNEL_INIT_THRESHOLD)
+            _noisy_channel_masks = {}
+            for _ki in range(len(_x_bins) - 1):
+                _bmi = _valid_init_n & (_fx_n >= _x_bins[_ki]) & (_fx_n < _x_bins[_ki + 1])
+                _noisy_channel_masks[_ki] = _bmi
+
+            # Initial (t=0) profile per percentile for detrended normalization
+            if SHOW_DETRENDED:
+                for pct in percentiles:
+                    _init_percs_n = []
+                    for _ki in range(len(_x_bins) - 1):
+                        _bmi = _noisy_channel_masks[_ki]
+                        if np.any(_bmi):
+                            _vdi = _init_bl_n[_bmi]
+                            _vdi = _vdi[~np.isnan(_vdi)]
+                            _init_percs_n.append(np.percentile(_vdi, pct) if len(_vdi) > 0 else np.nan)
+                        else:
+                            _init_percs_n.append(np.nan)
+                    _noisy_init_profiles[pct].append(np.array(_init_percs_n))
+
             for _tdt, _ts_idx, _adt in _snaps_n:
                 _snap_key = f"d{_date_to_filename_tag(_tdt)}"
                 _bl = _ds_n['mesh2d_mor_bl'].isel(time=_ts_idx).values.copy()
-                _dep = _bl
-                _valid = _wmask_n & (_bl < bed_threshold)
 
                 for pct in percentiles:
                     _mdepths = []
                     for _k in range(len(_x_bins) - 1):
-                        _bm = _valid & (_fx_n >= _x_bins[_k]) & (_fx_n < _x_bins[_k + 1])
+                        _bm = _noisy_channel_masks[_k]  # <-- frozen t=0 channel mask
                         if np.any(_bm):
-                            _vd = _dep[_bm]
+                            _vd = _bl[_bm]
                             _vd = _vd[~np.isnan(_vd)]
                             _mdepths.append(np.percentile(_vd, pct) if len(_vd) > 0 else np.nan)
                         else:
@@ -309,6 +359,11 @@ if SHOW_NOISY_ENVELOPE:
                         'profiles': list(_profs),
                         'x_km':     _x_centers / 1000,
                     }
+            if SHOW_DETRENDED and _noisy_init_profiles[pct]:
+                for _snap_key in noisy_envelope_data:
+                    noisy_envelope_data[_snap_key].setdefault(pct, {})['initial_profile'] = np.nanmean(
+                        np.vstack(_noisy_init_profiles[pct]), axis=0
+                    )
         print(f"Noisy envelope ready for {len(noisy_envelope_data)} snapshots.")
 
 
@@ -373,6 +428,18 @@ def _get_x_snap(scen_key, snap_key):
     return x_data['x_centers'] / 1000 if x_data else x_targets / 1000
 
 
+def _get_initial_profile_snap(scen_key, pct):
+    """Mean initial (t=0) p{pct} profile across runs in a scenario."""
+    grp = scenario_groups_all.get(first_snap_key, {})
+    if scen_key not in grp:
+        return None
+    profs = [initial_profiles[fn][pct] for fn, _ in grp[scen_key]
+             if fn in initial_profiles and pct in initial_profiles.get(fn, {})]
+    if not profs:
+        return None
+    return np.nanmean(np.vstack(profs), axis=0)
+
+
 # Constant scenario profile per snapshot, stored per percentile
 y_const_by_snap = {}
 x_const_by_snap = {}
@@ -416,14 +483,44 @@ n_cols = len(all_pm_vals)
 last_snap_key = all_snap_keys[-1]
 
 for pct in percentiles:
-    for normalise in (False, True):
-        norm_tag   = '_difference' if normalise else ''
-        norm_title = '  (difference from constant)' if normalise else ''
-        ylabel_phys = (
-            f'p{pct} depth\n(difference from constant)  [m]'
-            if normalise
-            else f'bed level [m]  (p{pct} depth)'
+    # Detrended references for this percentile
+    y_init_const_pct = _get_initial_profile_snap(baseline_scen, pct) if baseline_scen else None
+    y_const_det_pct = {
+        snap_key: (
+            y_const_by_snap[snap_key][pct] - y_init_const_pct
+            if y_const_by_snap[snap_key][pct] is not None and y_init_const_pct is not None
+            else None
         )
+        for snap_key in all_snap_keys
+    }
+    _noisy_init_pct = (
+        {snap_key: noisy_envelope_data.get(snap_key, {}).get(pct, {}).get('initial_profile')
+         for snap_key in all_snap_keys}
+        if SHOW_NOISY_ENVELOPE else {}
+    )
+
+    _plot_modes = ['absolute']
+    if SHOW_DIFFERENCE:
+        _plot_modes.append('difference')
+    if SHOW_DETRENDED:
+        _plot_modes.append('detrended')
+
+    for plot_mode in _plot_modes:
+        normalise = (plot_mode == 'difference')
+        detrended = (plot_mode == 'detrended')
+
+        if plot_mode == 'absolute':
+            norm_tag   = ''
+            norm_title = ''
+            ylabel_phys = f'bed level [m]  (p{pct})'
+        elif plot_mode == 'difference':
+            norm_tag   = '_difference'
+            norm_title = '  (difference from constant)'
+            ylabel_phys = f'p{pct} bed level\n(difference from constant)  [m]'
+        else:  # detrended
+            norm_tag   = '_detrended'
+            norm_title = '  (change from initial bed)'
+            ylabel_phys = f'p{pct} bed level\n(change from initial bed)  [m]'
 
         _fig_w = _LEFT + n_cols * AX_W + (n_cols - 1) * _WSPACE + _RIGHT
         _fig_h = _BOT + n_rows * AX_H + (n_rows - 1) * _HSPACE + _TOP
@@ -441,7 +538,7 @@ for pct in percentiles:
                 scen_key = pm_n_to_scen.get((pm_val, n_val))
 
                 # Grey dashed constant reference
-                if not normalise and baseline_scen:
+                if not normalise and not detrended and baseline_scen:
                     x_c = x_const_by_snap.get(first_snap_key)
                     y_c = y_const_by_snap.get(first_snap_key, {}).get(pct)
                     if y_c is not None and x_c is not None:
@@ -450,6 +547,12 @@ for pct in percentiles:
                 if normalise:
                     ax.axhline(0.0, color=GREY_CONST, linewidth=LINE_WIDTH_CONST,
                                linestyle='--', zorder=2)
+                if detrended:
+                    x_c = x_const_by_snap.get(first_snap_key)
+                    y_cd = y_const_det_pct.get(first_snap_key)
+                    if y_cd is not None and x_c is not None:
+                        ax.plot(x_c, y_cd, color=GREY_CONST, linewidth=LINE_WIDTH_CONST,
+                                linestyle='--', zorder=2)
 
                 # Natural variability envelope (last snapshot only, to avoid clutter)
                 if SHOW_NOISY_ENVELOPE and last_snap_key in noisy_envelope_data:
@@ -462,6 +565,11 @@ for pct in percentiles:
                             if y_c is not None:
                                 _emin = _emin - y_c
                                 _emax = _emax - y_c
+                        elif detrended:
+                            _ni = _noisy_init_pct.get(last_snap_key)
+                            if _ni is not None:
+                                _emin = _emin - _ni
+                                _emax = _emax - _ni
                         ax.fill_between(
                             _env['x_km'], _emin, _emax,
                             alpha=0.20, color='0.55', zorder=1,
@@ -476,6 +584,10 @@ for pct in percentiles:
                             y_c = y_const_by_snap.get(snap_key, {}).get(pct)
                             if y_c is not None:
                                 y = y - y_c
+                        elif detrended:
+                            _y_init = _get_initial_profile_snap(scen_key, pct)
+                            if _y_init is not None:
+                                y = y - _y_init
                         x = _get_x_snap(scen_key, snap_key)
                         ax.plot(x, y, color=SNAP_COLORS[snap_key], linewidth=LINE_WIDTH, zorder=3)
                 else:

@@ -1,4 +1,4 @@
-"""pm/n sensitivity analysis – p5 minimum / p95 maximum bed levels
+"""pm/n sensitivity analysis – p5 minimum / p95 maximum water depth
 
 Layout: one subplot per fixed parameter (n or pm), lines per varying parameter.
 Colors follow the same PALETTE as plot_scenario_lines.py.
@@ -6,6 +6,10 @@ Two figure sets per snapshot:
   A) Effect of R_peak  – one panel per n_peaks  (colours = R_peak values)
   B) Effect of n_peaks – one panel per R_peak   (colours = n_peaks values)
 Both sets are also saved as a normalised version (ratio to constant scenario).
+
+Channel mask is frozen from t=0 bed level (CHANNEL_INIT_THRESHOLD), identical
+to plot_sensitivity_pm_n_bedlevel_percentiles.py.  Only the quantity extracted
+within that mask differs: mesh2d_waterdepth instead of mesh2d_mor_bl.
 """
 
 #%% IMPORTS
@@ -40,9 +44,9 @@ DISCHARGE = 500
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian")
 config = f'Model_Output/Q{DISCHARGE}'
 
-depth_percentile = 5
+depth_percentile = 95   # 95 → deepest water depth;  5 → shallowest
 bed_threshold = 6
-CHANNEL_INIT_THRESHOLD = 2.2  # defines the channel footprint from t=0
+CHANNEL_INIT_THRESHOLD = 2.2  # defines the channel footprint from t=0 bed level
 channel_masks = {}  # {folder_str: {bin_idx: boolean array}}
 
 start_date = np.datetime64('2025-01-01')
@@ -74,7 +78,7 @@ NOISY_SUBFOLDERS = [
 ]
 
 SHOW_DIFFERENCE = True   # show difference-from-constant plot
-SHOW_DETRENDED  = True   # show detrended plot (change relative to initial bed level)
+SHOW_DETRENDED  = True   # show detrended plot (change relative to initial water depth)
 
 
 #%% --- SCENARIO LABELS ---
@@ -158,14 +162,14 @@ model_folders = find_variability_model_folders(
 assessment_dir = base_path / 'cached_data'
 assessment_dir.mkdir(parents=True, exist_ok=True)
 timed_out_dir = base_path / 'timed-out'
-sensitivity_output_dir = base_path / 'output_plots' / 'plots_pm_n_sensitivity'
+sensitivity_output_dir = base_path / 'output_plots' / 'plots_pm_n_sensitivity_waterdepth'
 sensitivity_output_dir.mkdir(parents=True, exist_ok=True)
 
 
 #%% --- LOAD DATA ---
 comparison_results = {}
 comparison_labels  = {}
-initial_profiles   = {}  # {folder_str: 1-D array of p{depth_percentile} at t=0}
+initial_profiles   = {}  # {folder_str: 1-D array of p{depth_percentile} water depth at t=0}
 
 target_snapshot_dates = get_target_snapshot_dates(
     count=SNAPSHOT_COUNT,
@@ -196,7 +200,7 @@ for folder in model_folders:
         cache_dir=assessment_dir,
         folder_name=folder.name,
         run_paths=run_paths,
-        var_names=['mesh2d_mor_bl'],
+        var_names=['mesh2d_mor_bl', 'mesh2d_waterdepth'],
         bbox=CACHE_BBOX,
         append_time=APPEND_TIMESTEPS,
         append_vars=APPEND_VARIABLES,
@@ -218,10 +222,12 @@ for folder in model_folders:
     x_bins = np.arange(x_targets[0], x_targets[-1] + dx, dx)
     x_centers = (x_bins[:-1] + x_bins[1:]) / 2
 
-    # Initial (t=0) profile — builds frozen channel mask for all plot modes
+    # Initial (t=0) profile — builds frozen channel mask from bed level,
+    # then records the initial water depth within that mask.
     if folder_str not in initial_profiles:
         _init_bl = ds['mesh2d_mor_bl'].isel(time=0).values.copy()
         _valid_init = width_mask & (_init_bl < CHANNEL_INIT_THRESHOLD)
+        _init_wd = ds['mesh2d_waterdepth'].isel(time=0).values.copy()
         _init_percs = []
         channel_masks[folder_str] = {}
 
@@ -230,7 +236,7 @@ for folder in model_folders:
             channel_masks[folder_str][_k] = _bm  # frozen for all timesteps
 
             if np.any(_bm):
-                _vd = _init_bl[_bm]
+                _vd = _init_wd[_bm]
                 _vd = _vd[~np.isnan(_vd)]
                 _init_percs.append(
                     np.percentile(_vd, depth_percentile) if len(_vd) > 0 else np.nan
@@ -242,29 +248,29 @@ for folder in model_folders:
         print(f"  Initial profile (t=0) and channel mask computed.")
 
     for target_dt, ts_idx, actual_dt in snapshot_matches:
-            snapshot_key = f"d{_date_to_filename_tag(target_dt)}"
-            comparison_results.setdefault(snapshot_key, {})
-            comparison_labels[snapshot_key] = _date_to_label(target_dt)
+        snapshot_key = f"d{_date_to_filename_tag(target_dt)}"
+        comparison_results.setdefault(snapshot_key, {})
+        comparison_labels[snapshot_key] = _date_to_label(target_dt)
 
-            bedlev_data = ds['mesh2d_mor_bl'].isel(time=ts_idx).values.copy()
+        waterdepth_data = ds['mesh2d_waterdepth'].isel(time=ts_idx).values.copy()
 
-            bedlev_percentiles = []
-            for k in range(len(x_bins) - 1):
-                bin_mask = channel_masks[folder_str][k]  # <-- frozen t=0 channel mask
-                if np.any(bin_mask):
-                    bin_bedlevs = bedlev_data[bin_mask]
-                    bin_bedlevs = bin_bedlevs[~np.isnan(bin_bedlevs)]
-                    bedlev_percentiles.append(
-                        np.percentile(bin_bedlevs, depth_percentile) if len(bin_bedlevs) > 0 else np.nan
-                    )
-                else:
-                    bedlev_percentiles.append(np.nan)
+        wd_percentiles = []
+        for k in range(len(x_bins) - 1):
+            bin_mask = channel_masks[folder_str][k]  # <-- frozen t=0 channel mask
+            if np.any(bin_mask):
+                bin_wd = waterdepth_data[bin_mask]
+                bin_wd = bin_wd[~np.isnan(bin_wd)]
+                wd_percentiles.append(
+                    np.percentile(bin_wd, depth_percentile) if len(bin_wd) > 0 else np.nan
+                )
+            else:
+                wd_percentiles.append(np.nan)
 
-            comparison_results[snapshot_key][folder_str] = {
-                f'p{depth_percentile} BedLevel': np.array(bedlev_percentiles),
-                'x_centers': x_centers,
-            }
-            print(f"  Snapshot {_date_to_label(target_dt)}: computed p{depth_percentile}.")
+        comparison_results[snapshot_key][folder_str] = {
+            f'p{depth_percentile} WaterDepth': np.array(wd_percentiles),
+            'x_centers': x_centers,
+        }
+        print(f"  Snapshot {_date_to_label(target_dt)}: computed p{depth_percentile} water depth.")
     ds.close()
 
 
@@ -283,7 +289,7 @@ if SHOW_NOISY_ENVELOPE:
         _noisy_cache_dir.mkdir(parents=True, exist_ok=True)
 
         _noisy_profiles      = {}   # {snapshot_key: [1-D array per run]}
-        _noisy_init_profiles = []   # initial (t=0) profiles from noisy runs (for detrending)
+        _noisy_init_profiles = []   # initial (t=0) water depth profiles from noisy runs
 
         for _subfolder in NOISY_SUBFOLDERS:
             _noisy_folder = NOISY_BASE_PATH / _subfolder
@@ -296,7 +302,7 @@ if SHOW_NOISY_ENVELOPE:
                 cache_dir=_noisy_cache_dir,
                 folder_name=_subfolder,
                 run_paths=[_noisy_folder],
-                var_names=['mesh2d_mor_bl'],
+                var_names=['mesh2d_mor_bl', 'mesh2d_waterdepth'],
                 bbox=CACHE_BBOX,
                 append_time=APPEND_TIMESTEPS,
                 append_vars=APPEND_VARIABLES,
@@ -312,7 +318,7 @@ if SHOW_NOISY_ENVELOPE:
             _fx_n, _fy_n = _get_face_coords(_ds_n)
             _wmask_n = (_fy_n >= y_range[0]) & (_fy_n <= y_range[1])
 
-            # Build frozen t=0 channel mask using CHANNEL_INIT_THRESHOLD
+            # Build frozen t=0 channel mask from bed level using CHANNEL_INIT_THRESHOLD
             _init_bl_n = _ds_n['mesh2d_mor_bl'].isel(time=0).values.copy()
             _valid_init_n = _wmask_n & (_init_bl_n < CHANNEL_INIT_THRESHOLD)
             _noisy_channel_masks = {}
@@ -320,13 +326,14 @@ if SHOW_NOISY_ENVELOPE:
                 _bmi = _valid_init_n & (_fx_n >= _x_bins[_ki]) & (_fx_n < _x_bins[_ki + 1])
                 _noisy_channel_masks[_ki] = _bmi
 
-            # Initial (t=0) profile for detrended normalization
+            # Initial (t=0) water depth profile for detrended normalization
             if SHOW_DETRENDED:
+                _init_wd_n = _ds_n['mesh2d_waterdepth'].isel(time=0).values.copy()
                 _init_percs_n = []
                 for _ki in range(len(_x_bins) - 1):
                     _bmi = _noisy_channel_masks[_ki]
                     if np.any(_bmi):
-                        _vdi = _init_bl_n[_bmi]
+                        _vdi = _init_wd_n[_bmi]
                         _vdi = _vdi[~np.isnan(_vdi)]
                         _init_percs_n.append(np.percentile(_vdi, depth_percentile) if len(_vdi) > 0 else np.nan)
                     else:
@@ -335,22 +342,22 @@ if SHOW_NOISY_ENVELOPE:
 
             for _tdt, _ts_idx, _adt in _snaps_n:
                 _snap_key = f"d{_date_to_filename_tag(_tdt)}"
-                _bl = _ds_n['mesh2d_mor_bl'].isel(time=_ts_idx).values.copy()
+                _wd = _ds_n['mesh2d_waterdepth'].isel(time=_ts_idx).values.copy()
 
-                _p_bedlevs = []
+                _p_wd = []
                 for _k in range(len(_x_bins) - 1):
                     _bm = _noisy_channel_masks[_k]  # <-- frozen t=0 channel mask
                     if np.any(_bm):
-                        _vd = _bl[_bm]
+                        _vd = _wd[_bm]
                         _vd = _vd[~np.isnan(_vd)]
-                        _p_bedlevs.append(
+                        _p_wd.append(
                             np.percentile(_vd, depth_percentile)
                             if len(_vd) > 0 else np.nan
                         )
                     else:
-                        _p_bedlevs.append(np.nan)
+                        _p_wd.append(np.nan)
 
-                _noisy_profiles.setdefault(_snap_key, []).append(np.array(_p_bedlevs))
+                _noisy_profiles.setdefault(_snap_key, []).append(np.array(_p_wd))
                 print(f"  {_subfolder}: snapshot {_date_to_label(_tdt)} OK")
 
             _ds_n.close()
@@ -421,8 +428,8 @@ for snapshot_key, snapshot_results in comparison_results.items():
     N_COLOR  = {n:  plt.cm.Greens(0.35 + 0.55 * i / _n_n) for i, n  in enumerate(all_n_vals)}
 
     def _get_y(scen_key):
-        """Mean p{depth_percentile} bed level across runs (raw bed elevation, negative = deeper)."""
-        y_stack = stack_metric_arrays(scenario_groups[scen_key], f'p{depth_percentile} BedLevel')
+        """Mean p{depth_percentile} water depth across runs."""
+        y_stack = stack_metric_arrays(scenario_groups[scen_key], f'p{depth_percentile} WaterDepth')
         if y_stack is None:
             return None
         return np.nanmean(y_stack, axis=0)
@@ -432,7 +439,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
         return x_data['x_centers'] / 1000 if x_data else x_targets / 1000
 
     def _get_initial_profile(scen_key):
-        """Mean initial (t=0) p{depth_percentile} profile across runs in a scenario."""
+        """Mean initial (t=0) p{depth_percentile} water depth profile across runs in a scenario."""
         profs = [initial_profiles[fn] for fn, _ in scenario_groups[scen_key]
                  if fn in initial_profiles]
         if not profs:
@@ -475,15 +482,15 @@ for snapshot_key, snapshot_results in comparison_results.items():
         if plot_mode == 'absolute':
             norm_tag   = ''
             norm_title = ''
-            ylabel     = f'p{depth_percentile} bed level [m]'
+            ylabel     = f'p{depth_percentile} water depth [m]'
         elif plot_mode == 'difference':
             norm_tag   = 'difference'
             norm_title = ' (difference from constant)'
-            ylabel     = f'p{depth_percentile} bed level \n(difference from constant)  [m]'
+            ylabel     = f'p{depth_percentile} water depth \n(difference from constant)  [m]'
         else:  # detrended
             norm_tag   = 'detrended'
-            norm_title = ' (change from initial bed)'
-            ylabel     = f'p{depth_percentile} bed level \n(change from initial bed)  [m]'
+            norm_title = ' (change from initial)'
+            ylabel     = f'p{depth_percentile} water depth \n(change from initial)  [m]'
 
         # ---- Figure A: pm-effect, one panel per n ----
         sorted_n_vals = sorted(pm_by_n.keys())
@@ -581,7 +588,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 ncol=len(legend_handles), bbox_to_anchor=(0.5, -0.1), frameon=True,
             )
             fig.suptitle(
-                f'Effect of $R_{{\\mathrm{{peak}}}}$ on p{depth_percentile} bed level {norm_title}\n'
+                f'Effect of $R_{{\\mathrm{{peak}}}}$ on p{depth_percentile} water depth {norm_title}\n'
                 f'Snapshot: {snap_label},  Q = {DISCHARGE} m³/s',
                 fontsize=FONTSIZE_TITLE, fontweight='bold', y=0.99, color=_tc,
             )
@@ -593,7 +600,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 wspace=_WSPACE / AX_W,
             )
             _noisy_tag = 'noisy' if SHOW_NOISY_ENVELOPE else ''
-            fname = f'sensitivity_pm_effect_{norm_tag}{_noisy_tag}_{snap_label}_{STYLE}_Q{DISCHARGE}_p{depth_percentile}.png'
+            fname = f'sensitivity_pm_effect_{norm_tag}{_noisy_tag}_{snap_label}_{STYLE}_Q{DISCHARGE}_waterdepth_p{depth_percentile}.png'
             fig.savefig(sensitivity_output_dir / fname, dpi=200, bbox_inches='tight', transparent=_tr)
             if is_last_snapshot:
                 fig.savefig(sensitivity_output_dir / fname.replace('.png', '.pdf'), bbox_inches='tight', transparent=_tr)
@@ -695,7 +702,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 ncol=len(legend_handles), bbox_to_anchor=(0.5, -0.18), frameon=True,
             )
             fig.suptitle(
-                f'Effect of $n_{{\\mathrm{{peaks}}}}$ on p{depth_percentile} bed level {norm_title}\n'
+                f'Effect of $n_{{\\mathrm{{peaks}}}}$ on p{depth_percentile} water depth {norm_title}\n'
                 f'Snapshot: {snap_label},  Q = {DISCHARGE} m³/s',
                 fontsize=FONTSIZE_TITLE, fontweight='bold', y=0.99, color=_tc,
             )
@@ -707,7 +714,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 wspace=_WSPACE / AX_W,
             )
             _noisy_tag = '_noisy' if SHOW_NOISY_ENVELOPE else ''
-            fname = f'sensitivity_n_effect_{norm_tag}{_noisy_tag}_{snap_label}_{STYLE}_Q{DISCHARGE}_p{depth_percentile}.png'
+            fname = f'sensitivity_n_effect_{norm_tag}{_noisy_tag}_{snap_label}_{STYLE}_Q{DISCHARGE}_waterdepth_p{depth_percentile}.png'
             fig.savefig(sensitivity_output_dir / fname, dpi=200, bbox_inches='tight', transparent=_tr)
             if is_last_snapshot:
                 fig.savefig(sensitivity_output_dir / fname.replace('.png', '.pdf'), bbox_inches='tight', transparent=_tr)
