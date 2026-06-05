@@ -40,11 +40,11 @@ from FUNCTIONS.F_map_cache import cache_tag_from_bbox, load_or_update_map_cache_
 from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
 #%% --- CONFIGURATION ---
-DISCHARGE = 500
+DISCHARGE = 250
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian")
 config = f'Model_Output/Q{DISCHARGE}'
 
-depth_percentile = 95   # 95 → deepest water depth;  5 → shallowest
+depth_percentile = 5   # 95 → deepest water depth;  5 → shallowest
 bed_threshold = 6
 CHANNEL_INIT_THRESHOLD = 2.2  # defines the channel footprint from t=0 bed level
 channel_masks = {}  # {folder_str: {bin_idx: boolean array}}
@@ -723,3 +723,5 @@ for snapshot_key, snapshot_results in comparison_results.items():
             print(f'  Saved: {fname}')
 
 print("\nDone.")
+
+# %%

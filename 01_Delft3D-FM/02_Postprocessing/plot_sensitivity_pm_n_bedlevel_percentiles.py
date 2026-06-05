@@ -1,11 +1,15 @@
-"""pm/n sensitivity analysis – p5 minimum / p95 maximum bed levels
+"""pm/n sensitivity analysis – bed level metric (percentile or mean)
+
+Toggle COMPUTE_MEAN to switch between:
+  False (default) → p{depth_percentile} bed level within frozen t=0 channel mask
+  True            → width-averaged mean bed level within frozen t=0 channel mask
 
 Layout: one subplot per fixed parameter (n or pm), lines per varying parameter.
 Colors follow the same PALETTE as plot_scenario_lines.py.
 Two figure sets per snapshot:
   A) Effect of R_peak  – one panel per n_peaks  (colours = R_peak values)
   B) Effect of n_peaks – one panel per R_peak   (colours = n_peaks values)
-Both sets are also saved as a normalised version (ratio to constant scenario).
+Both sets are also saved as normalised / detrended versions.
 """
 
 #%% IMPORTS
@@ -32,15 +36,17 @@ from FUNCTIONS.F_general import (
     group_snapshot_by_scenario,
     stack_metric_arrays,
 )
+
 from FUNCTIONS.F_map_cache import cache_tag_from_bbox, load_or_update_map_cache_multi, _get_face_coords
 from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
 #%% --- CONFIGURATION ---
-DISCHARGE = 500
+DISCHARGE = 250
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian")
 config = f'Model_Output/Q{DISCHARGE}'
 
-depth_percentile = 5
+depth_percentile = 95
+COMPUTE_MEAN = False  # True → width-averaged mean; False → p{depth_percentile} within frozen channel mask
 bed_threshold = 6
 CHANNEL_INIT_THRESHOLD = 2.2  # defines the channel footprint from t=0
 channel_masks = {}  # {folder_str: {bin_idx: boolean array}}
@@ -61,17 +67,28 @@ SNAPSHOT_COUNT = 6
 # Natural variability envelope — noisy repeats of the constant scenario
 # from the 1_RiverDischargeVariability_domain45x15 model folder.
 # Set SHOW_NOISY_ENVELOPE = True to overlay the grey band on every panel.
-SHOW_NOISY_ENVELOPE = True
-NOISY_BASE_PATH = Path(
-    r"U:\PhDNaturalRhythmEstuaries\Models"
-    r"\1_RiverDischargeVariability_domain45x15"
-    r"\Model_Output\Q500\0_Noise_Q500"
-)
-NOISY_SUBFOLDERS = [
-    '1_Q500_noisy0.9095347',
-    '1_Q500_noisy1_rst.9160657',
-    '1_Q500_noisy2_rst.9160663',
-]
+SHOW_NOISY_ENVELOPE = False
+
+if DISCHARGE == 500:
+        
+    NOISY_BASE_PATH = Path(
+        r"U:\PhDNaturalRhythmEstuaries\Models"
+        r"\1_RiverDischargeVariability_domain45x15"
+        r"\Model_Output\Q500\0_Noise_Q500"
+    )
+    NOISY_SUBFOLDERS = [
+        '1_Q500_noisy0.9095347',
+        '1_Q500_noisy1_rst.9160657',
+        '1_Q500_noisy2_rst.9160663',
+    ]
+
+elif DISCHARGE == 1000:
+    NOISY_BASE_PATH = Path(r"u:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Output\Q1000\0_Noise_Q1000")
+    NOISY_SUBFOLDERS = []
+
+elif DISCHARGE == 250:
+    NOISY_BASE_PATH = Path(r"u:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Output\Q250\0_Noise_Q250")
+    NOISY_SUBFOLDERS = []
 
 SHOW_DIFFERENCE = True   # show difference-from-constant plot
 SHOW_DETRENDED  = True   # show detrended plot (change relative to initial bed level)
@@ -248,23 +265,27 @@ for folder in model_folders:
 
             bedlev_data = ds['mesh2d_mor_bl'].isel(time=ts_idx).values.copy()
 
-            bedlev_percentiles = []
+            bin_metrics = []
             for k in range(len(x_bins) - 1):
                 bin_mask = channel_masks[folder_str][k]  # <-- frozen t=0 channel mask
                 if np.any(bin_mask):
                     bin_bedlevs = bedlev_data[bin_mask]
                     bin_bedlevs = bin_bedlevs[~np.isnan(bin_bedlevs)]
-                    bedlev_percentiles.append(
-                        np.percentile(bin_bedlevs, depth_percentile) if len(bin_bedlevs) > 0 else np.nan
-                    )
+                    if len(bin_bedlevs) > 0:
+                        val = np.mean(bin_bedlevs) if COMPUTE_MEAN else np.percentile(bin_bedlevs, depth_percentile)
+                    else:
+                        val = np.nan
+                    bin_metrics.append(val)
                 else:
-                    bedlev_percentiles.append(np.nan)
+                    bin_metrics.append(np.nan)
 
+            _metric_key = 'BL' if COMPUTE_MEAN else f'p{depth_percentile} BedLevel'
             comparison_results[snapshot_key][folder_str] = {
-                f'p{depth_percentile} BedLevel': np.array(bedlev_percentiles),
+                _metric_key: np.array(bin_metrics),
                 'x_centers': x_centers,
             }
-            print(f"  Snapshot {_date_to_label(target_dt)}: computed p{depth_percentile}.")
+            _metric_label = 'mean' if COMPUTE_MEAN else f'p{depth_percentile}'
+            print(f"  Snapshot {_date_to_label(target_dt)}: computed {_metric_label}.")
     ds.close()
 
 
@@ -328,7 +349,10 @@ if SHOW_NOISY_ENVELOPE:
                     if np.any(_bmi):
                         _vdi = _init_bl_n[_bmi]
                         _vdi = _vdi[~np.isnan(_vdi)]
-                        _init_percs_n.append(np.percentile(_vdi, depth_percentile) if len(_vdi) > 0 else np.nan)
+                        _init_percs_n.append(
+                            (np.mean(_vdi) if COMPUTE_MEAN else np.percentile(_vdi, depth_percentile))
+                            if len(_vdi) > 0 else np.nan
+                        )
                     else:
                         _init_percs_n.append(np.nan)
                 _noisy_init_profiles.append(np.array(_init_percs_n))
@@ -344,7 +368,7 @@ if SHOW_NOISY_ENVELOPE:
                         _vd = _bl[_bm]
                         _vd = _vd[~np.isnan(_vd)]
                         _p_bedlevs.append(
-                            np.percentile(_vd, depth_percentile)
+                            (np.mean(_vd) if COMPUTE_MEAN else np.percentile(_vd, depth_percentile))
                             if len(_vd) > 0 else np.nan
                         )
                     else:
@@ -421,8 +445,9 @@ for snapshot_key, snapshot_results in comparison_results.items():
     N_COLOR  = {n:  plt.cm.Greens(0.35 + 0.55 * i / _n_n) for i, n  in enumerate(all_n_vals)}
 
     def _get_y(scen_key):
-        """Mean p{depth_percentile} bed level across runs (raw bed elevation, negative = deeper)."""
-        y_stack = stack_metric_arrays(scenario_groups[scen_key], f'p{depth_percentile} BedLevel')
+        """Mean metric bed level across runs (raw bed elevation, negative = deeper)."""
+        _mk = 'BL' if COMPUTE_MEAN else f'p{depth_percentile} BedLevel'
+        y_stack = stack_metric_arrays(scenario_groups[scen_key], _mk)
         if y_stack is None:
             return None
         return np.nanmean(y_stack, axis=0)
@@ -472,18 +497,19 @@ for snapshot_key, snapshot_results in comparison_results.items():
         normalise = (plot_mode == 'difference')
         detrended = (plot_mode == 'detrended')
 
+        _metric_desc = 'mean' if COMPUTE_MEAN else f'p{depth_percentile}'
         if plot_mode == 'absolute':
             norm_tag   = ''
             norm_title = ''
-            ylabel     = f'p{depth_percentile} bed level [m]'
+            ylabel     = f'{_metric_desc} bed level [m]'
         elif plot_mode == 'difference':
             norm_tag   = 'difference'
             norm_title = ' (difference from constant)'
-            ylabel     = f'p{depth_percentile} bed level \n(difference from constant)  [m]'
+            ylabel     = f'{_metric_desc} bed level \n(difference from constant)  [m]'
         else:  # detrended
             norm_tag   = 'detrended'
             norm_title = ' (change from initial bed)'
-            ylabel     = f'p{depth_percentile} bed level \n(change from initial bed)  [m]'
+            ylabel     = f'{_metric_desc} bed level \n(change from initial bed)  [m]'
 
         # ---- Figure A: pm-effect, one panel per n ----
         sorted_n_vals = sorted(pm_by_n.keys())
@@ -581,7 +607,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 ncol=len(legend_handles), bbox_to_anchor=(0.5, -0.1), frameon=True,
             )
             fig.suptitle(
-                f'Effect of $R_{{\\mathrm{{peak}}}}$ on p{depth_percentile} bed level {norm_title}\n'
+                f'Effect of $R_{{\\mathrm{{peak}}}}$ on {_metric_desc} bed level {norm_title}\n'
                 f'Snapshot: {snap_label},  Q = {DISCHARGE} m³/s',
                 fontsize=FONTSIZE_TITLE, fontweight='bold', y=0.99, color=_tc,
             )
@@ -593,7 +619,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 wspace=_WSPACE / AX_W,
             )
             _noisy_tag = 'noisy' if SHOW_NOISY_ENVELOPE else ''
-            fname = f'sensitivity_pm_effect_{norm_tag}{_noisy_tag}_{snap_label}_{STYLE}_Q{DISCHARGE}_p{depth_percentile}.png'
+            fname = f'sensitivity_pm_effect_{norm_tag}_{_noisy_tag}_{snap_label}_{STYLE}_Q{DISCHARGE}_{_metric_desc}.png'
             fig.savefig(sensitivity_output_dir / fname, dpi=200, bbox_inches='tight', transparent=_tr)
             if is_last_snapshot:
                 fig.savefig(sensitivity_output_dir / fname.replace('.png', '.pdf'), bbox_inches='tight', transparent=_tr)
@@ -695,7 +721,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 ncol=len(legend_handles), bbox_to_anchor=(0.5, -0.18), frameon=True,
             )
             fig.suptitle(
-                f'Effect of $n_{{\\mathrm{{peaks}}}}$ on p{depth_percentile} bed level {norm_title}\n'
+                f'Effect of $n_{{\\mathrm{{peaks}}}}$ on {_metric_desc} bed level {norm_title}\n'
                 f'Snapshot: {snap_label},  Q = {DISCHARGE} m³/s',
                 fontsize=FONTSIZE_TITLE, fontweight='bold', y=0.99, color=_tc,
             )
@@ -706,8 +732,8 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 top=1 - _TOP / _fig_h,
                 wspace=_WSPACE / AX_W,
             )
-            _noisy_tag = '_noisy' if SHOW_NOISY_ENVELOPE else ''
-            fname = f'sensitivity_n_effect_{norm_tag}{_noisy_tag}_{snap_label}_{STYLE}_Q{DISCHARGE}_p{depth_percentile}.png'
+            _noisy_tag = 'noisy' if SHOW_NOISY_ENVELOPE else ''
+            fname = f'sensitivity_n_effect_{norm_tag}{_noisy_tag}_{snap_label}_{STYLE}_Q{DISCHARGE}_{_metric_desc}.png'
             fig.savefig(sensitivity_output_dir / fname, dpi=200, bbox_inches='tight', transparent=_tr)
             if is_last_snapshot:
                 fig.savefig(sensitivity_output_dir / fname.replace('.png', '.pdf'), bbox_inches='tight', transparent=_tr)
