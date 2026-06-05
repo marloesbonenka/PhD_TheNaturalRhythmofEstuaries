@@ -483,14 +483,18 @@ for snapshot_key, snapshot_results in comparison_results.items():
             norm_tag   = ''
             norm_title = ''
             ylabel     = f'p{depth_percentile} water depth [m]'
+            _out_dir   = sensitivity_output_dir
         elif plot_mode == 'difference':
             norm_tag   = 'difference'
             norm_title = ' (difference from constant)'
             ylabel     = f'p{depth_percentile} water depth \n(difference from constant)  [m]'
+            _out_dir   = sensitivity_output_dir / 'difference_from_constantdischarge'
         else:  # detrended
             norm_tag   = 'detrended'
             norm_title = ' (change from initial)'
             ylabel     = f'p{depth_percentile} water depth \n(change from initial)  [m]'
+            _out_dir   = sensitivity_output_dir / 'detrended'
+        _out_dir.mkdir(parents=True, exist_ok=True)
 
         # ---- Figure A: pm-effect, one panel per n ----
         sorted_n_vals = sorted(pm_by_n.keys())
@@ -601,9 +605,9 @@ for snapshot_key, snapshot_results in comparison_results.items():
             )
             _noisy_tag = 'noisy' if SHOW_NOISY_ENVELOPE else ''
             fname = f'sensitivity_pm_effect_{norm_tag}{_noisy_tag}_{snap_label}_{STYLE}_Q{DISCHARGE}_waterdepth_p{depth_percentile}.png'
-            fig.savefig(sensitivity_output_dir / fname, dpi=200, bbox_inches='tight', transparent=_tr)
+            fig.savefig(_out_dir / fname, dpi=200, bbox_inches='tight', transparent=_tr)
             if is_last_snapshot:
-                fig.savefig(sensitivity_output_dir / fname.replace('.png', '.pdf'), bbox_inches='tight', transparent=_tr)
+                fig.savefig(_out_dir / fname.replace('.png', '.pdf'), bbox_inches='tight', transparent=_tr)
             plt.show()
             plt.close(fig)
             print(f'  Saved: {fname}')
@@ -715,9 +719,9 @@ for snapshot_key, snapshot_results in comparison_results.items():
             )
             _noisy_tag = '_noisy' if SHOW_NOISY_ENVELOPE else ''
             fname = f'sensitivity_n_effect_{norm_tag}{_noisy_tag}_{snap_label}_{STYLE}_Q{DISCHARGE}_waterdepth_p{depth_percentile}.png'
-            fig.savefig(sensitivity_output_dir / fname, dpi=200, bbox_inches='tight', transparent=_tr)
+            fig.savefig(_out_dir / fname, dpi=200, bbox_inches='tight', transparent=_tr)
             if is_last_snapshot:
-                fig.savefig(sensitivity_output_dir / fname.replace('.png', '.pdf'), bbox_inches='tight', transparent=_tr)
+                fig.savefig(_out_dir / fname.replace('.png', '.pdf'), bbox_inches='tight', transparent=_tr)
             plt.show()
             plt.close(fig)
             print(f'  Saved: {fname}')
