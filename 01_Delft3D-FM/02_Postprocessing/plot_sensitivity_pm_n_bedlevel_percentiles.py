@@ -504,12 +504,12 @@ for snapshot_key, snapshot_results in comparison_results.items():
             ylabel     = f'{_metric_desc} bed level [m]'
             _out_dir   = sensitivity_output_dir
         elif plot_mode == 'difference':
-            norm_tag   = 'difference'
+            norm_tag   = '_difference'
             norm_title = ' (difference from constant)'
             ylabel     = f'{_metric_desc} bed level \n(difference from constant)  [m]'
-            _out_dir   = sensitivity_output_dir / 'difference_from_constantdischarge'
+            _out_dir   = sensitivity_output_dir / 'difference_from_Qconstant'
         else:  # detrended
-            norm_tag   = 'detrended'
+            norm_tag   = '_detrended'
             norm_title = ' (change from initial bed)'
             ylabel     = f'{_metric_desc} bed level \n(change from initial bed)  [m]'
             _out_dir   = sensitivity_output_dir / 'detrended'
@@ -623,7 +623,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 wspace=_WSPACE / AX_W,
             )
             _noisy_tag = 'noisy' if SHOW_NOISY_ENVELOPE else ''
-            fname = f'sensitivity_pm_effect_{norm_tag}_{_noisy_tag}_{snap_label}_{STYLE}_Q{DISCHARGE}_{_metric_desc}.png'
+            fname = f'sensitivity_pm_effect{norm_tag}_{_noisy_tag}_{snap_label}_{STYLE}_Q{DISCHARGE}_{_metric_desc}.png'
             fig.savefig(_out_dir / fname, dpi=200, bbox_inches='tight', transparent=_tr)
             if is_last_snapshot:
                 fig.savefig(_out_dir / fname.replace('.png', '.pdf'), bbox_inches='tight', transparent=_tr)
@@ -737,7 +737,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
                 wspace=_WSPACE / AX_W,
             )
             _noisy_tag = 'noisy' if SHOW_NOISY_ENVELOPE else ''
-            fname = f'sensitivity_n_effect_{norm_tag}_{_noisy_tag}_{snap_label}_{STYLE}_Q{DISCHARGE}_{_metric_desc}.png'
+            fname = f'sensitivity_n_effect{norm_tag}_{_noisy_tag}_{snap_label}_{STYLE}_Q{DISCHARGE}_{_metric_desc}.png'
             fig.savefig(_out_dir / fname, dpi=200, bbox_inches='tight', transparent=_tr)
             if is_last_snapshot:
                 fig.savefig(_out_dir / fname.replace('.png', '.pdf'), bbox_inches='tight', transparent=_tr)

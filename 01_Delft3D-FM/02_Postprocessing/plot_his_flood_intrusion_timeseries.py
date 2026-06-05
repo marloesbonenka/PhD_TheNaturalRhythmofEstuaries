@@ -9,8 +9,10 @@ auto-detects the flood sign convention.
 """
 
 # ── IMPORTS ────────────────────────────────────────────────────────────────────
+import re
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.lines as mlines
 import matplotlib as mpl
 import sys
 from pathlib import Path
@@ -49,22 +51,24 @@ SCENARIOS_TO_PROCESS = None
 DISCHARGE            = 500
 
 SCENARIO_LABELS = {
-    '1': 'Constant',
-    '2': 'Seasonal',
-    '3': 'Flashy',
-    '4': 'Single peak',
+    '1':  'pm1_n0 (constant)',
+    '2':  'pm2_n1',
+    '3':  'pm3_n5',
+    '4':  'pm3_n1',
+    '5':  'pm5_n1',
+    '6':  'pm4_n3',
+    '7':  'pm3_n4',
+    '8':  'pm2_n6',
+    '9':  'pm5_n3',
+    '10': 'pm3_n3',
+    '11': 'pm2_n3',
+    '12': 'pm5_n4',
+    '13': 'pm4_n4',
+    '14': 'pm2_n4',
 }
-# colorblind friendly
-SCENARIO_COLORS = {
-    '1': '#56B4E9', #'#1f77b4',   # blue       – Constant
-    '2': '#E69F00', #'#ff7f0e',   # orange     – Seasonal
-    '3': '#009E73', # '#2ca02c',  # green      – Flashy
-    '4': '#D55E00', #'#d62728',   # red        – Single peak
-    '5': '#0072B2',               # dark blue  – pm5_n1
-    '6': '#D55E00',               # red-orange – pm4_n3
-    '7': '#009E73',               # teal       – pm3_n4
-    '8': '#CC79A7',               # pink       – pm2_n6
-}
+
+# Constant scenario colour (same as bedlevel script)
+GREY_CONST = '#7f7f7f'
 
 # ── PATHS ──────────────────────────────────────────────────────────────────────
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian")
@@ -144,6 +148,43 @@ for folder in model_folders:
     print(f"Scenario {scenario_key} ({SCENARIO_LABELS.get(scenario_key, '')}): "
           f"{data['n_timesteps']} tidal cycles loaded, flood_sign={data['flood_sign_used']}")
 
+# ── COLORMAPS  (Blues = R_peak effect, Greens = n_peaks effect) ───────────────
+def _parse_pm_n(label_str):
+    """Extract (pm, n) ints from a label like 'pm3_n5' or 'pm1_n0 (constant)'."""
+    m = re.match(r'pm(\d+)_n(\d+)', label_str.strip())
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    return None, None
+
+scen_pm_n = {}
+for _sk in scenario_data:
+    _label = SCENARIO_LABELS.get(_sk, _sk)
+    _pm, _n = _parse_pm_n(_label)
+    if _pm is not None:
+        scen_pm_n[_sk] = (_pm, _n)
+
+all_pm_vals = sorted({pm for pm, n in scen_pm_n.values() if n > 0})
+all_n_vals  = sorted({n  for pm, n in scen_pm_n.values() if n > 0})
+_n_pm = max(len(all_pm_vals) - 1, 1)
+PM_COLOR = {pm: plt.cm.Blues(0.35 + 0.55 * i / _n_pm) for i, pm in enumerate(all_pm_vals)}
+_n_n = max(len(all_n_vals) - 1, 1)
+N_COLOR  = {n:  plt.cm.Greens(0.35 + 0.55 * i / _n_n) for i, n  in enumerate(all_n_vals)}
+
+# Group scenarios for panel plots (same logic as bedlevel script)
+baseline_scen = next((k for k, (pm, n) in scen_pm_n.items() if n == 0), None)
+
+pm_by_n = {}   # {n_val: [(pm_val, scen_key), ...]}
+n_by_pm = {}   # {pm_val: [(n_val, scen_key), ...]}
+for _sk, (_pm, _n) in scen_pm_n.items():
+    if _n == 0:
+        continue
+    pm_by_n.setdefault(_n, []).append((_pm, _sk))
+    n_by_pm.setdefault(_pm, []).append((_n, _sk))
+for _n in pm_by_n:
+    pm_by_n[_n].sort()
+for _pm in n_by_pm:
+    n_by_pm[_pm].sort()
+
 # ── HELPER ────────────────────────────────────────────────────────────────────
 def compute_max_flood_km(q, km_positions, flood_sign):
     """
@@ -173,37 +214,44 @@ for scenario_key, data in scenario_data.items():
     # Simulation time in years from start of series
     t_years = (t - t[0]) / np.timedelta64(1, 'D') / 365.25
 
+    _pm_val, _n_val = scen_pm_n.get(scenario_key, (None, None))
+    _is_const = (_n_val == 0)
     processed[scenario_key] = dict(
         label        = SCENARIO_LABELS.get(scenario_key, scenario_key),
-        color        = SCENARIO_COLORS.get(scenario_key, 'grey'),
+        pm_color     = GREY_CONST if _is_const else PM_COLOR.get(_pm_val, 'grey'),
+        n_color      = GREY_CONST if _is_const else N_COLOR.get(_n_val, 'grey'),
         t_years      = t_years,
         max_flood_km = max_flood_km,
     )
 #%%
 # ── PLOT ──────────────────────────────────────────────────────────────────────
-fig, ax = plt.subplots(figsize=(10, 6))
+for color_mode in ['pm', 'n']:
+    color_key   = f'{color_mode}_color'
+    color_title = 'R_peak' if color_mode == 'pm' else 'n_peaks'
+    fig, ax = plt.subplots(figsize=(10, 6))
 
-for scenario_key in sorted(processed.keys()):
-    d = processed[scenario_key]
-    ax.plot(d['max_flood_km'], d['t_years'], 
-            color=d['color'], linewidth=1.2,
-            label=d['label'])
-    
-ax.set_xlim(20,45)
-ax.set_xlabel('flood intrusion (x-coordinate along estuary)', fontsize=11)
-ax.set_ylabel('years', fontsize=11)
-ax.set_title(
-    f'Maximum flood intrusion point over time  (Q{DISCHARGE}, daily max-flood per tidal cycle)',
-    fontsize=12
-)
-ax.legend(fontsize=10)
-ax.grid(alpha=0.3)
+    for scenario_key in sorted(processed.keys()):
+        d = processed[scenario_key]
+        ax.plot(d['max_flood_km'], d['t_years'],
+                color=d[color_key], linewidth=1.2,
+                label=d['label'])
 
-fig.tight_layout()
-fname = f"flood_intrusion_km_over_time_Q{DISCHARGE}.png"
-fig.savefig(output_dir / fname, dpi=300, bbox_inches='tight')
-plt.show()
-print(f"\nSaved: {output_dir / fname}")
+    ax.set_xlim(20, 45)
+    ax.set_xlabel('flood intrusion (x-coordinate along estuary)', fontsize=11)
+    ax.set_ylabel('years', fontsize=11)
+    ax.set_title(
+        f'Maximum flood intrusion point over time  (Q{DISCHARGE}, daily max-flood per tidal cycle)\n'
+        f'coloured by {color_title}',
+        fontsize=12
+    )
+    ax.legend(fontsize=10)
+    ax.grid(alpha=0.3)
+
+    fig.tight_layout()
+    fname = f"flood_intrusion_km_over_time_Q{DISCHARGE}_{color_mode}.png"
+    fig.savefig(output_dir / fname, dpi=300, bbox_inches='tight')
+    plt.show()
+    print(f"\nSaved: {output_dir / fname}")
 
 #%%
 # ── PER-SCENARIO PLOTS ────────────────────────────────────────────────────────
@@ -219,8 +267,8 @@ for scenario_key in scenario_keys:
 
     fig, ax = plt.subplots(figsize=(10, 5))
 
-    ax.plot(flood, t, color=d['color'], linewidth=0.5, alpha=0.3, label='Raw')
-    ax.plot(flood_ma, t, color=d['color'], linewidth=1.8, label=f'{MA_PERIOD.capitalize()} MA')
+    ax.plot(flood, t, color=d['pm_color'], linewidth=0.5, alpha=0.3, label='Raw')
+    ax.plot(flood_ma, t, color=d['pm_color'], linewidth=1.8, label=f'{MA_PERIOD.capitalize()} MA')
 
     ax.set_xlim(20, 45)
     ax.set_xlabel('flood intrusion (x-coordinate along estuary)', fontsize=11)
@@ -239,104 +287,205 @@ for scenario_key in scenario_keys:
     print(f"Saved: {output_dir / fname_s}")
 
 # %%
+# ── PANEL FIGURE A: Effect of R_peak  (one panel per n_peaks, coloured by pm) ──
+_d_const = processed.get(baseline_scen)
+sorted_n_vals = sorted(pm_by_n.keys())
+if sorted_n_vals:
+    n_panels = len(sorted_n_vals)
+    fig, axes = plt.subplots(1, n_panels, figsize=(5 * n_panels, 8),
+                             sharey=True, sharex=True)
+    if n_panels == 1:
+        axes = [axes]
 
-fig, ax = plt.subplots(figsize=(10, 10))
+    for ci, n_val in enumerate(sorted_n_vals):
+        ax = axes[ci]
 
-for scenario_key in sorted(processed.keys()):
-    d = processed[scenario_key]
+        # grey dashed constant reference
+        if _d_const is not None:
+            _t = np.array(_d_const['t_years'])
+            _f = np.array(_d_const['max_flood_km'])
+            _dt = np.median(np.diff(_t))
+            _win = max(1, round(period_years / _dt))
+            _ma = pd.Series(_f).rolling(window=_win, center=True, min_periods=1).mean()
+            ax.plot(_ma, _t, color=GREY_CONST, linewidth=1.5, linestyle='--',
+                    label='constant (pm1_n0)', zorder=2)
 
-    t = np.array(d['t_years'])
-    flood = np.array(d['max_flood_km'])
+        for pm_val, scen_key in pm_by_n[n_val]:
+            d = processed.get(scen_key)
+            if d is None:
+                continue
+            t = np.array(d['t_years'])
+            flood = np.array(d['max_flood_km'])
+            dt = np.median(np.diff(t))
+            window = max(1, round(period_years / dt))
+            flood_ma = pd.Series(flood).rolling(window=window, center=True, min_periods=1).mean()
+            ax.plot(flood, t, color=PM_COLOR[pm_val], linewidth=0.5, alpha=0.3, zorder=1)
+            ax.plot(flood_ma, t, color=PM_COLOR[pm_val], linewidth=1.8,
+                    label=f'$R_{{\\mathrm{{peak}}}}$ = {int(pm_val)}', zorder=3)
 
-    dt = np.median(np.diff(t))
-    window = max(1, round(period_years / dt))
+        ax.set_title(f'$n_{{\\mathrm{{peaks}}}}$ = {n_val}', fontsize=13, fontweight='bold')
+        ax.set_xlim(20, 45)
+        ax.set_xlabel('flood intrusion [km]', fontsize=11)
+        ax.grid(alpha=0.3)
+        if ci == 0:
+            ax.set_ylabel('years', fontsize=11)
 
-    flood_ma = pd.Series(flood).rolling(window=window, center=True, min_periods=1).mean()
+    legend_handles = [
+        mlines.Line2D([], [], color=GREY_CONST, linewidth=1.5, linestyle='--',
+                      label='constant (pm1_n0)')
+    ]
+    for pm_val in sorted(all_pm_vals):
+        legend_handles.append(
+            mlines.Line2D([], [], color=PM_COLOR[pm_val], linewidth=1.8,
+                          label=f'$R_{{\\mathrm{{peak}}}}$ = {int(pm_val)}')
+        )
+    fig.legend(handles=legend_handles, fontsize=10, loc='lower center',
+               ncol=len(legend_handles), bbox_to_anchor=(0.5, -0.05), frameon=True)
+    fig.suptitle(
+        f'Effect of $R_{{\\mathrm{{peak}}}}$ on flood intrusion  (Q{DISCHARGE}, {MA_PERIOD} MA)',
+        fontsize=13, fontweight='bold', y=1.01,
+    )
+    fig.tight_layout()
+    fname = f"flood_intrusion_panels_pm_effect_{MA_PERIOD}_Q{DISCHARGE}.png"
+    fig.savefig(output_dir / fname, dpi=300, bbox_inches='tight')
+    plt.show()
+    print(f"\nSaved: {output_dir / fname}")
 
-    ax.plot(flood, t, color=d['color'], linewidth=0.5, alpha=0.3)
-    ax.plot(flood_ma, t, color=d['color'], linewidth=1.8, label=d['label'])
+# ── PANEL FIGURE B: Effect of n_peaks  (one panel per R_peak, coloured by n) ──
+sorted_pm_vals = sorted(n_by_pm.keys())
+if sorted_pm_vals:
+    pm_panels = len(sorted_pm_vals)
+    fig, axes = plt.subplots(1, pm_panels, figsize=(5 * pm_panels, 8),
+                             sharey=True, sharex=True)
+    if pm_panels == 1:
+        axes = [axes]
 
-ax.set_xlim(20, 45)
-ax.set_xlabel('flood intrusion (x-coordinate along estuary)', fontsize=11)
-ax.set_ylabel('years', fontsize=11)
-ax.set_title(
-    f'Maximum flood intrusion point over time  (Q{DISCHARGE}, {MA_PERIOD} moving average)',
-    fontsize=12
-)
-ax.legend(fontsize=10)
-ax.grid(alpha=0.3)
+    for ci, pm_val in enumerate(sorted_pm_vals):
+        ax = axes[ci]
 
-fig.tight_layout()
-fname = f"moving_avg_{MA_PERIOD}_flood_intrusion_km_over_time_Q{DISCHARGE}.png"
-fig.savefig(output_dir / fname, dpi=300, bbox_inches='tight')
-plt.show()
-print(f"\nSaved: {output_dir / fname}")
+        if _d_const is not None:
+            _t = np.array(_d_const['t_years'])
+            _f = np.array(_d_const['max_flood_km'])
+            _dt = np.median(np.diff(_t))
+            _win = max(1, round(period_years / _dt))
+            _ma = pd.Series(_f).rolling(window=_win, center=True, min_periods=1).mean()
+            ax.plot(_ma, _t, color=GREY_CONST, linewidth=1.5, linestyle='--',
+                    label='constant (pm1_n0)', zorder=2)
+
+        for n_val, scen_key in n_by_pm[pm_val]:
+            d = processed.get(scen_key)
+            if d is None:
+                continue
+            t = np.array(d['t_years'])
+            flood = np.array(d['max_flood_km'])
+            dt = np.median(np.diff(t))
+            window = max(1, round(period_years / dt))
+            flood_ma = pd.Series(flood).rolling(window=window, center=True, min_periods=1).mean()
+            ax.plot(flood, t, color=N_COLOR[n_val], linewidth=0.5, alpha=0.3, zorder=1)
+            ax.plot(flood_ma, t, color=N_COLOR[n_val], linewidth=1.8,
+                    label=f'$n_{{\\mathrm{{peaks}}}}$ = {n_val}', zorder=3)
+
+        ax.set_title(f'$R_{{\\mathrm{{peak}}}}$ = {int(pm_val)}', fontsize=13, fontweight='bold')
+        ax.set_xlim(20, 45)
+        ax.set_xlabel('flood intrusion [km]', fontsize=11)
+        ax.grid(alpha=0.3)
+        if ci == 0:
+            ax.set_ylabel('years', fontsize=11)
+
+    legend_handles = [
+        mlines.Line2D([], [], color=GREY_CONST, linewidth=1.5, linestyle='--',
+                      label='constant (pm1_n0)')
+    ]
+    for n_val in sorted(all_n_vals):
+        legend_handles.append(
+            mlines.Line2D([], [], color=N_COLOR[n_val], linewidth=1.8,
+                          label=f'$n_{{\\mathrm{{peaks}}}}$ = {n_val}')
+        )
+    fig.legend(handles=legend_handles, fontsize=10, loc='lower center',
+               ncol=len(legend_handles), bbox_to_anchor=(0.5, -0.05), frameon=True)
+    fig.suptitle(
+        f'Effect of $n_{{\\mathrm{{peaks}}}}$ on flood intrusion  (Q{DISCHARGE}, {MA_PERIOD} MA)',
+        fontsize=13, fontweight='bold', y=1.01,
+    )
+    fig.tight_layout()
+    fname = f"flood_intrusion_panels_n_effect_{MA_PERIOD}_Q{DISCHARGE}.png"
+    fig.savefig(output_dir / fname, dpi=300, bbox_inches='tight')
+    plt.show()
+    print(f"\nSaved: {output_dir / fname}")
 
 # %%
 # ── SEPARATE P50 PLOT ────────────────────────────────────────────────────────
-fig, ax = plt.subplots(figsize=(10, 6))
+for color_mode in ['pm', 'n']:
+    color_key   = f'{color_mode}_color'
+    color_title = 'R_peak' if color_mode == 'pm' else 'n_peaks'
+    fig, ax = plt.subplots(figsize=(10, 6))
 
-for scenario_key in sorted(processed.keys()):
-    d = processed[scenario_key]
+    for scenario_key in sorted(processed.keys()):
+        d = processed[scenario_key]
 
-    t = np.array(d['t_years'])
-    flood = np.array(d['max_flood_km'])
+        t = np.array(d['t_years'])
+        flood = np.array(d['max_flood_km'])
 
-    dt = np.median(np.diff(t))
-    window = max(1, round(period_years / dt))
+        dt = np.median(np.diff(t))
+        window = max(1, round(period_years / dt))
 
-    flood_p50 = pd.Series(flood).rolling(window=window, center=True, min_periods=1).quantile(0.5)
+        flood_p50 = pd.Series(flood).rolling(window=window, center=True, min_periods=1).quantile(0.5)
 
-    ax.plot(flood, 100 * t, color=d['color'], linewidth=0.5, alpha=0.3)
-    ax.plot(flood_p50, 100 * t, color=d['color'], linewidth=2.0, linestyle='--', label=d['label'])
+        ax.plot(flood, 100 * t, color=d[color_key], linewidth=0.5, alpha=0.3)
+        ax.plot(flood_p50, 100 * t, color=d[color_key], linewidth=2.0, linestyle='--', label=d['label'])
 
-ax.set_xlim(19.5, 45)
-ax.set_ylim(0, 3100)
-ax.set_xlabel('flood intrusion (x-coordinate along estuary)', fontsize=11)
-ax.set_ylabel('years', fontsize=11)
-ax.set_title(
-    f'Maximum flood intrusion point over time  (Q{DISCHARGE}, {MA_PERIOD} rolling p50)',
-    fontsize=12
-)
-ax.legend(fontsize=10)
-ax.grid(alpha=0.3)
+    ax.set_xlim(19.5, 45)
+    ax.set_ylim(0, 3100)
+    ax.set_xlabel('flood intrusion (x-coordinate along estuary)', fontsize=11)
+    ax.set_ylabel('years', fontsize=11)
+    ax.set_title(
+        f'Maximum flood intrusion point over time  (Q{DISCHARGE}, {MA_PERIOD} rolling p50)\n'
+        f'coloured by {color_title}',
+        fontsize=12
+    )
+    ax.legend(fontsize=10)
+    ax.grid(alpha=0.3)
 
-fig.tight_layout()
-fname = f"moving_p50_{MA_PERIOD}_flood_intrusion_km_over_time_Q{DISCHARGE}.png"
-fig.savefig(output_dir / fname, dpi=300, bbox_inches='tight')
-plt.show()
-print(f"\nSaved: {output_dir / fname}")
+    fig.tight_layout()
+    fname = f"moving_p50_{MA_PERIOD}_flood_intrusion_km_over_time_Q{DISCHARGE}_{color_mode}.png"
+    fig.savefig(output_dir / fname, dpi=300, bbox_inches='tight')
+    plt.show()
+    print(f"\nSaved: {output_dir / fname}")
 # %%
 # ── SEPARATE P40 PLOT ────────────────────────────────────────────────────────
-fig, ax = plt.subplots(figsize=(10, 10))
+for color_mode in ['pm', 'n']:
+    color_key   = f'{color_mode}_color'
+    color_title = 'R_peak' if color_mode == 'pm' else 'n_peaks'
+    fig, ax = plt.subplots(figsize=(10, 10))
 
-for scenario_key in sorted(processed.keys()):
-    d = processed[scenario_key]
+    for scenario_key in sorted(processed.keys()):
+        d = processed[scenario_key]
 
-    t = np.array(d['t_years'])
-    flood = np.array(d['max_flood_km'])
+        t = np.array(d['t_years'])
+        flood = np.array(d['max_flood_km'])
 
-    dt = np.median(np.diff(t))
-    window = max(1, round(period_years / dt))
+        dt = np.median(np.diff(t))
+        window = max(1, round(period_years / dt))
 
-    flood_p40 = pd.Series(flood).rolling(window=window, center=True, min_periods=1).quantile(0.4)
+        flood_p40 = pd.Series(flood).rolling(window=window, center=True, min_periods=1).quantile(0.4)
 
-    ax.plot(flood, t, color=d['color'], linewidth=0.5, alpha=0.3)
-    ax.plot(flood_p40, t, color=d['color'], linewidth=2.0, linestyle='--', label=d['label'])
+        ax.plot(flood, t, color=d[color_key], linewidth=0.5, alpha=0.3)
+        ax.plot(flood_p40, t, color=d[color_key], linewidth=2.0, linestyle='--', label=d['label'])
 
-ax.set_xlim(20, 45)
-ax.set_xlabel('flood intrusion (x-coordinate along estuary)', fontsize=11)
-ax.set_ylabel('years', fontsize=11)
-ax.set_title(
-    f'Maximum flood intrusion point over time  (Q{DISCHARGE}, {MA_PERIOD} rolling p40)',
-    fontsize=12
-)
-ax.legend(fontsize=10)
-ax.grid(alpha=0.3)
+    ax.set_xlim(20, 45)
+    ax.set_xlabel('flood intrusion (x-coordinate along estuary)', fontsize=11)
+    ax.set_ylabel('years', fontsize=11)
+    ax.set_title(
+        f'Maximum flood intrusion point over time  (Q{DISCHARGE}, {MA_PERIOD} rolling p40)\n'
+        f'coloured by {color_title}',
+        fontsize=12
+    )
+    ax.legend(fontsize=10)
+    ax.grid(alpha=0.3)
 
-fig.tight_layout()
-fname = f"moving_p40_{MA_PERIOD}_flood_intrusion_km_over_time_Q{DISCHARGE}.png"
-fig.savefig(output_dir / fname, dpi=300, bbox_inches='tight')
-plt.show()
-print(f"\nSaved: {output_dir / fname}")
+    fig.tight_layout()
+    fname = f"moving_p40_{MA_PERIOD}_flood_intrusion_km_over_time_Q{DISCHARGE}_{color_mode}.png"
+    fig.savefig(output_dir / fname, dpi=300, bbox_inches='tight')
+    plt.show()
+    print(f"\nSaved: {output_dir / fname}")
 # %%
