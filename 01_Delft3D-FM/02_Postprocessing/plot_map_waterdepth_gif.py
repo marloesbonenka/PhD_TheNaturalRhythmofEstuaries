@@ -16,7 +16,7 @@ from PIL import Image
 
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
 
-from FUNCTIONS.F_general import create_water_colormap
+from FUNCTIONS.F_general import create_shear_stress_colormap, create_water_colormap
 from FUNCTIONS.F_map_cache import cache_tag_from_bbox, load_or_update_map_cache_multi
 from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
@@ -24,14 +24,17 @@ from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
 # Scenarios: label → full path to the run folder
 SCENARIOS = {
-    'constant':  Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_01_Qr500_pm1_n0.9724783"),
-    'low_flow':  Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_12_Qr500_pm5_n4_lowflow.9728497"),
-    'peak_flow': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_12_Qr500_pm5_n4_peakflow.9728503"),
+    # 'constant':  Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_01_Qr500_pm1_n0.9724783"),
+    # 'low_flow':  Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_12_Qr500_pm5_n4_lowflow.9728497"),
+    # 'peak_flow':  Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_12_Qr500_pm5_n4_peakflow"),
+    'mean_flow': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_12_Qr500_pm5_n4_meanflow.9728503")
 }
 
-VAR_NAME   = 'mesh2d_waterdepth'
-VAR_LABEL  = 'Water Depth [m]'
-VMIN, VMAX = 0, 10          # colour scale — adjust to your data range
+VARIABLE_TO_ANALYZE = 'water depth'  # for labeling only: 
+                                     # options are 
+                                     # 'water depth'            (mesh2d_waterdepth)
+                                     # 'shear stress magnitude'     (mesh2d_taus)
+
 
 # Spatial zoom (model coordinates [m])
 ZOOM     = True
@@ -67,6 +70,35 @@ plt.rcParams.update(plt.rcParamsDefault)
 plt.rcParams.update(STYLES[STYLE])
 _tc = plt.rcParams['text.color']
 
+# Vector display settings (only used when VARIABLE_TO_ANALYZE == 'velocity')
+QUIVER_STRIDE = 10       # plot every Nth wet cell — increase to reduce clutter
+QUIVER_SCALE  = 50       # higher = shorter arrows, lower = longer
+QUIVER_COLOR  = 'white'
+QUIVER_WET_THRESHOLD = 0.01   # m/s — cells below this are treated as dry
+
+# --- VARIABLE-SPECIFIC SETTINGS ---
+
+if VARIABLE_TO_ANALYZE == 'water depth':
+    VAR_NAME   = 'mesh2d_waterdepth'
+    VAR_LABEL  = 'Water Depth [m]'
+    VMIN, VMAX = 0, 10
+    cmap       = create_water_colormap()
+    LOAD_VARS  = [VAR_NAME]
+
+elif VARIABLE_TO_ANALYZE == 'shear stress magnitude':
+    VAR_NAME   = 'mesh2d_taus'
+    VAR_LABEL  = 'Shear Stress Magnitude [Pa]'
+    VMIN, VMAX = 0, 5
+    cmap       = create_shear_stress_colormap()
+    LOAD_VARS  = [VAR_NAME]
+
+elif VARIABLE_TO_ANALYZE == 'velocity':
+    VAR_NAME   = 'mesh2d_ucmag'
+    VAR_LABEL  = 'Velocity Magnitude [m/s]'
+    VMIN, VMAX = 0, 2
+    cmap       = plt.cm.plasma
+    LOAD_VARS  = ['mesh2d_ucmag', 'mesh2d_ucx', 'mesh2d_ucy']   # all three needed
+
 # %% --- PROCESSING ---
 
 for label, folder_path in SCENARIOS.items():
@@ -74,16 +106,16 @@ for label, folder_path in SCENARIOS.items():
     print(f"Scenario: {label}  ({folder_path.name})")
     print(f"{'='*60}")
 
-    base_path     = folder_path.parent   # detailed-hydro-run dir
-    folder_name   = folder_path.name
+    base_path      = folder_path.parent
+    folder_name    = folder_path.name
     assessment_dir = base_path / 'cached_data'
     assessment_dir.mkdir(parents=True, exist_ok=True)
 
-    _zoom_tag = f"_zoom_x{ZOOM_XLIM[0]}-{ZOOM_XLIM[1]}_y{ZOOM_YLIM[0]}-{ZOOM_YLIM[1]}" if ZOOM else ""
+    _zoom_tag  = f"_zoom_x{ZOOM_XLIM[0]}-{ZOOM_XLIM[1]}_y{ZOOM_YLIM[0]}-{ZOOM_YLIM[1]}" if ZOOM else ""
     output_dir = base_path / 'output_plots' / 'waterdepth_gif' / label
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # --- Resolve run paths (handles potential timed-out stitching) ---
+    # --- Resolve run paths ---
     run_paths = get_stitched_map_run_paths(
         base_path=base_path,
         folder_name=folder_name,
@@ -92,7 +124,7 @@ for label, folder_path in SCENARIOS.items():
         analyze_noisy=False,
     )
     if not run_paths:
-        run_paths = [folder_path]   # fall back to the folder itself
+        run_paths = [folder_path]
 
     # --- Load / update cache ---
     cache_tag = cache_tag_from_bbox(CACHE_BBOX, CACHE_TAG)
@@ -100,7 +132,7 @@ for label, folder_path in SCENARIOS.items():
         cache_dir=assessment_dir,
         folder_name=folder_name,
         run_paths=run_paths,
-        var_names=[VAR_NAME],
+        var_names=LOAD_VARS,          # ← was [VAR_NAME]
         bbox=CACHE_BBOX,
         append_time=APPEND_TIMESTEPS,
         append_vars=APPEND_VARIABLES,
@@ -123,19 +155,25 @@ for label, folder_path in SCENARIOS.items():
         time_values = np.asarray(ds.time.values).astype('datetime64[ns]')
         print(f"  Timesteps: {len(time_values)}  ({time_values[0]} → {time_values[-1]})")
 
-        cmap = create_water_colormap()
+        # --- Pre-extract face coordinates once (needed for quiver) ---
+        if VARIABLE_TO_ANALYZE == 'velocity':
+            face_x = ds.grid.face_coordinates[:, 0]
+            face_y = ds.grid.face_coordinates[:, 1]
+
         frame_paths = []
 
         # --- Plot each timestep ---
         for idx in range(len(time_values)):
-            dt_str  = str(np.datetime_as_string(np.datetime64(time_values[idx], 'ns'), unit='s')).replace('T', ' ')
-            dt_tag  = str(np.datetime_as_string(np.datetime64(time_values[idx], 'ns'), unit='D'))
+            dt_str = str(np.datetime_as_string(np.datetime64(time_values[idx], 'ns'), unit='s')).replace('T', ' ')
+            dt_tag = str(np.datetime_as_string(np.datetime64(time_values[idx], 'ns'), unit='D'))
             print(f"  [{idx+1}/{len(time_values)}] {dt_str}")
 
-            data_t = ds.isel(time=idx)[VAR_NAME]
+            data_t = ds.isel(time=idx)
 
             fig, ax = plt.subplots(figsize=(12, 4))
-            pc = data_t.ugrid.plot(
+
+            # --- Colour fill ---
+            pc = data_t[VAR_NAME].ugrid.plot(
                 ax=ax,
                 cmap=cmap,
                 add_colorbar=False,
@@ -147,6 +185,27 @@ for label, folder_path in SCENARIOS.items():
             if ZOOM:
                 ax.set_xlim(ZOOM_XLIM)
                 ax.set_ylim(ZOOM_YLIM)
+
+            # --- Velocity vectors (only for 'velocity' mode) ---
+            if VARIABLE_TO_ANALYZE == 'velocity':
+                ucx = data_t['mesh2d_ucx'].values
+                ucy = data_t['mesh2d_ucy'].values
+                mag = data_t['mesh2d_ucmag'].values
+
+                # Mask dry/negligible cells, then stride to avoid clutter
+                wet      = mag > QUIVER_WET_THRESHOLD                        # m/s threshold — tune as needed
+                idx_plot = np.where(wet)[0][::QUIVER_STRIDE]
+
+                ax.quiver(
+                    face_x[idx_plot], face_y[idx_plot],
+                    ucx[idx_plot],    ucy[idx_plot],
+                    scale=QUIVER_SCALE,
+                    color=QUIVER_COLOR,
+                    width=0.002,
+                    headwidth=4,
+                    zorder=5,
+                )
+
             ax.set_title(f"{VAR_LABEL} | {label} | {dt_str}", color=_tc)
 
             divider = make_axes_locatable(ax)
@@ -173,10 +232,9 @@ for label, folder_path in SCENARIOS.items():
                 gif_path,
                 save_all=True,
                 append_images=frames[1:],
-                duration=int(1000 / GIF_FPS),  # ms per frame
+                duration=int(1000 / GIF_FPS),
                 loop=0,
             )
-            # Close images to release file handles
             for f in frames:
                 f.close()
             print(f"\n  GIF saved: {gif_path}")
@@ -187,3 +245,4 @@ for label, folder_path in SCENARIOS.items():
 print("\n" + "=" * 60)
 print("DONE")
 print("=" * 60)
+#%%
