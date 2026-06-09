@@ -41,11 +41,11 @@ from FUNCTIONS.F_map_cache import cache_tag_from_bbox, load_or_update_map_cache_
 from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
 #%% --- CONFIGURATION ---
-DISCHARGE = 250
+DISCHARGE = 500
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian")
 config = f'Model_Output/Q{DISCHARGE}'
 
-depth_percentile = 95
+depth_percentile = 5
 COMPUTE_MEAN = False  # True → width-averaged mean; False → p{depth_percentile} within frozen channel mask
 bed_threshold = 6
 CHANNEL_INIT_THRESHOLD = 2.2  # defines the channel footprint from t=0
@@ -67,7 +67,7 @@ SNAPSHOT_COUNT = 6
 # Natural variability envelope — noisy repeats of the constant scenario
 # from the 1_RiverDischargeVariability_domain45x15 model folder.
 # Set SHOW_NOISY_ENVELOPE = True to overlay the grey band on every panel.
-SHOW_NOISY_ENVELOPE = False
+SHOW_NOISY_ENVELOPE = True
 
 if DISCHARGE == 500:
         
@@ -467,10 +467,18 @@ for snapshot_key, snapshot_results in comparison_results.items():
     y_const = _get_y(baseline_scen) if baseline_scen else None
     x_const = _get_x(baseline_scen) if baseline_scen else None
 
+    # Precompute detrended references (needed before envelope computation)
+    y_init_const = _get_initial_profile(baseline_scen) if baseline_scen else None
+    y_const_det  = (y_const - y_init_const
+                    if y_const is not None and y_init_const is not None else None)
+    _noisy_init  = (noisy_envelope_data[snapshot_key].get('initial_profile')
+                    if SHOW_NOISY_ENVELOPE and snapshot_key in noisy_envelope_data else None)
+
     # Finalise ±2σ envelope: noisy repeats + constant run
     if SHOW_NOISY_ENVELOPE and snapshot_key in noisy_envelope_data:
         _nd = noisy_envelope_data[snapshot_key]
         if 'profiles' in _nd:
+            # Absolute envelope (used for absolute and difference plot modes)
             _all_profs = list(_nd['profiles'])
             if y_const is not None:
                 _all_profs.append(y_const)
@@ -480,12 +488,21 @@ for snapshot_key, snapshot_results in comparison_results.items():
             _nd['env_min'] = _m - 2 * _s
             _nd['env_max'] = _m + 2 * _s
 
-    # Precompute detrended references
-    y_init_const = _get_initial_profile(baseline_scen) if baseline_scen else None
-    y_const_det  = (y_const - y_init_const
-                    if y_const is not None and y_init_const is not None else None)
-    _noisy_init  = (noisy_envelope_data[snapshot_key].get('initial_profile')
-                    if SHOW_NOISY_ENVELOPE and snapshot_key in noisy_envelope_data else None)
+            # Detrended envelope: built in detrended space so that y_const_det
+            # (detrended by its own initial profile) is correctly encompassed,
+            # even when the noisy model and sensitivity model have different
+            # initial bed levels.
+            _all_det = []
+            for _p in _nd['profiles']:
+                _all_det.append(_p - _noisy_init if _noisy_init is not None else _p)
+            if y_const_det is not None:
+                _all_det.append(y_const_det)
+            if _all_det:
+                _det_stk = np.vstack(_all_det)
+                _det_m = np.nanmean(_det_stk, axis=0)
+                _det_s = np.nanstd(_det_stk, axis=0)
+                _nd['env_min_det'] = _det_m - 2 * _det_s
+                _nd['env_max_det'] = _det_m + 2 * _det_s
 
     _plot_modes = ['absolute']
     if SHOW_DIFFERENCE:
@@ -543,17 +560,14 @@ for snapshot_key, snapshot_results in comparison_results.items():
                     ax.plot(x_const, y_const_det, color=GREY_CONST, linewidth=LINE_WIDTH_CONST,
                             linestyle='--', label='constant (pm1_n0)', zorder=2)
 
-                # Natural variability envelope
-                if SHOW_NOISY_ENVELOPE and snapshot_key in noisy_envelope_data:
+                # Natural variability envelope (not shown in detrended mode)
+                if SHOW_NOISY_ENVELOPE and not detrended and snapshot_key in noisy_envelope_data:
                     _env = noisy_envelope_data[snapshot_key]
                     _emin = _env['env_min'].copy()
                     _emax = _env['env_max'].copy()
                     if normalise and y_const is not None:
                         _emin = _emin - y_const
                         _emax = _emax - y_const
-                    elif detrended and _noisy_init is not None:
-                        _emin = _emin - _noisy_init
-                        _emax = _emax - _noisy_init
                     ax.fill_between(
                         _env['x_km'], _emin, _emax,
                         alpha=0.25, color='0.55', zorder=1,
@@ -588,7 +602,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
 
             # Shared legend – constant first, then pm values sorted small→large
             legend_handles = []
-            if SHOW_NOISY_ENVELOPE and snapshot_key in noisy_envelope_data:
+            if SHOW_NOISY_ENVELOPE and not detrended and snapshot_key in noisy_envelope_data:
                 legend_handles.append(
                     mpatches.Patch(
                         facecolor='0.55', alpha=0.4,
@@ -658,17 +672,14 @@ for snapshot_key, snapshot_results in comparison_results.items():
                     ax.plot(x_const, y_const_det, color=GREY_CONST, linewidth=LINE_WIDTH_CONST,
                             linestyle='--', label='constant (pm1_n0)', zorder=2)
 
-                # Natural variability envelope
-                if SHOW_NOISY_ENVELOPE and snapshot_key in noisy_envelope_data:
+                # Natural variability envelope (not shown in detrended mode)
+                if SHOW_NOISY_ENVELOPE and not detrended and snapshot_key in noisy_envelope_data:
                     _env = noisy_envelope_data[snapshot_key]
                     _emin = _env['env_min'].copy()
                     _emax = _env['env_max'].copy()
                     if normalise and y_const is not None:
                         _emin = _emin - y_const
                         _emax = _emax - y_const
-                    elif detrended and _noisy_init is not None:
-                        _emin = _emin - _noisy_init
-                        _emax = _emax - _noisy_init
                     ax.fill_between(
                         _env['x_km'], _emin, _emax,
                         alpha=0.25, color='0.55', zorder=1,
@@ -703,7 +714,7 @@ for snapshot_key, snapshot_results in comparison_results.items():
 
             # Shared legend – constant first, then n values sorted small→large
             legend_handles = []
-            if SHOW_NOISY_ENVELOPE and snapshot_key in noisy_envelope_data:
+            if SHOW_NOISY_ENVELOPE and not detrended and snapshot_key in noisy_envelope_data:
                 legend_handles.append(
                     mpatches.Patch(
                         facecolor='0.55', alpha=0.4,

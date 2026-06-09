@@ -180,7 +180,7 @@ def create_bedlevel_colormap():
 def create_water_colormap():
     # Highlights shallow areas (light) to deep channels (dark)
     colors = [
-        (0.00, "#e0f7fa"), # Very shallow / Shoreline
+        (0.00, "#ffffff"), # Very shallow / Shoreline
         (0.20, "#80deea"), # Shallow water
         (0.40, "#26c6da"), # Mid-depth
         (0.60, "#0097a7"), # Deepening
