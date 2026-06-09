@@ -11,9 +11,9 @@ from FUNCTIONS.F_loaddata import load_cross_section_data
 
 
 HIS_FILE = Path(
-    r"u:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Output\Q1000\01_baserun1000\output\FlowFM_0000_his.nc"
-    #r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Output\Q1000\02_run1000_seasonal\output\FlowFM_0000_his.nc"
-    #r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\TestingBoundaries_and_SensitivityAnalyses\Test_OneRiverBoundary\01_constant_Qr1000_T2m_D3D4comparison\output\FlowFM_0000_his.nc"
+    #r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_01_Qr500_pm1_n0.9724783\output\FlowFM_0000_his.nc"
+    #r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_12_Qr500_pm5_n4_lowflow.9728497\output\FlowFM_0000_his.nc"
+    r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_12_Qr500_pm5_n4_peakflow.9728503\output\FlowFM_0000_his.nc"
 )
 # List of river kms to plot
 RIVER_KMS = [30, 32, 33, 35, 40, 42, 44, 45]

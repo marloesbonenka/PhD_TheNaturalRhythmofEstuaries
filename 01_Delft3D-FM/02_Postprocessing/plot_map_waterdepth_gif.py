@@ -31,7 +31,7 @@ SCENARIOS = {
 
 VAR_NAME   = 'mesh2d_waterdepth'
 VAR_LABEL  = 'Water Depth [m]'
-VMIN, VMAX = 0, 15          # colour scale — adjust to your data range
+VMIN, VMAX = 0, 10          # colour scale — adjust to your data range
 
 # Spatial zoom (model coordinates [m])
 ZOOM     = True
@@ -45,7 +45,7 @@ APPEND_TIMESTEPS   = True
 APPEND_VARIABLES   = True
 
 # GIF settings
-GIF_FPS   = 5          # frames per second
+GIF_FPS   = 2          # frames per second
 FRAME_DPI = 150        # lower than PNG saves to keep file sizes manageable
 
 # Output

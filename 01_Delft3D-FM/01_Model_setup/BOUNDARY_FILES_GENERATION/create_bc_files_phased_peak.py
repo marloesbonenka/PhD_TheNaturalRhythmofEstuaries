@@ -80,7 +80,7 @@ params = {
 scenario_dir  = os.path.join(output_dir, scenario["name"])
 boundary_dir  = os.path.join(scenario_dir, "boundaryfiles_csv")
 os.makedirs(boundary_dir, exist_ok=True)
-
+#%%
 generate_river_discharges_fm_gaussian_phased(
     grid_info=grid_info,
     params=params,

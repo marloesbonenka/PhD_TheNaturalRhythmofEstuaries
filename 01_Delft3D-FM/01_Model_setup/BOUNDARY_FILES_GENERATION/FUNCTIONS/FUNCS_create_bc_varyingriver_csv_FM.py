@@ -352,7 +352,7 @@ def generate_river_discharges_fm_gaussian_phased(grid_info, params, output_dir, 
     # ------------------------------------------------------------------
     # 5. Save CSV files
     # ------------------------------------------------------------------
-    spinup_duration = 2880  # 2 days in minutes
+    spinup_duration = 0  # 2 days in minutes
 
     pd.DataFrame({'timestamp': timestamps, 'discharge_m3s': discharge_abs}).to_csv(
         os.path.join(output_dir, 'discharge_cumulative.csv'), index=False)
