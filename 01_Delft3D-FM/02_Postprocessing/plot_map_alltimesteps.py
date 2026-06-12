@@ -1,4 +1,4 @@
-"""Plot water depth (mesh2d_waterdepth) for every map timestep and create a GIF
+"""Plot a variable (e.g., water depth (mesh2d_waterdepth)) for every map timestep and create a GIF
 for three specific detailed-hydro-run scenarios:
   - constant flow
   - low flow snapshot
@@ -24,16 +24,18 @@ from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
 # Scenarios: label → full path to the run folder
 SCENARIOS = {
-    # 'constant':  Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_01_Qr500_pm1_n0.9724783"),
-    # 'low_flow':  Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_12_Qr500_pm5_n4_lowflow.9728497"),
-    # 'peak_flow':  Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_12_Qr500_pm5_n4_peakflow"),
+    'constant':  Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_01_Qr500_pm1_n0.9724783"),
+    'low_flow':  Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_12_Qr500_pm5_n4_lowflow.9728497"),
+    'peak_flow':  Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_12_Qr500_pm5_n4_peakflow"),
     'mean_flow': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_12_Qr500_pm5_n4_meanflow.9728503")
 }
 
-VARIABLE_TO_ANALYZE = 'water depth'  # for labeling only: 
-                                     # options are 
-                                     # 'water depth'            (mesh2d_waterdepth)
-                                     # 'shear stress magnitude'     (mesh2d_taus)
+VARIABLE_TO_ANALYZE = 'sediment transport'    
+                    # options are 
+                    # 'water depth'            (mesh2d_waterdepth)
+                    # 'shear stress'           (mesh2d_taus)
+                    # 'velocity'               (mesh2d_ucmag + quiver of mesh2d_ucx/ucy)
+                    # 'sediment transport'     (mesh2d_sxtot/sytot combined magnitude + quiver)
 
 
 # Spatial zoom (model coordinates [m])
@@ -80,24 +82,31 @@ QUIVER_WET_THRESHOLD = 0.01   # m/s — cells below this are treated as dry
 
 if VARIABLE_TO_ANALYZE == 'water depth':
     VAR_NAME   = 'mesh2d_waterdepth'
-    VAR_LABEL  = 'Water Depth [m]'
+    VAR_LABEL  = 'water depth [m]'
     VMIN, VMAX = 0, 10
     cmap       = create_water_colormap()
     LOAD_VARS  = [VAR_NAME]
 
-elif VARIABLE_TO_ANALYZE == 'shear stress magnitude':
+elif VARIABLE_TO_ANALYZE == 'shear stress':
     VAR_NAME   = 'mesh2d_taus'
-    VAR_LABEL  = 'Shear Stress Magnitude [Pa]'
+    VAR_LABEL  = 'shear stress [Pa]'
     VMIN, VMAX = 0, 5
     cmap       = create_shear_stress_colormap()
     LOAD_VARS  = [VAR_NAME]
 
 elif VARIABLE_TO_ANALYZE == 'velocity':
     VAR_NAME   = 'mesh2d_ucmag'
-    VAR_LABEL  = 'Velocity Magnitude [m/s]'
+    VAR_LABEL  = 'velocity [m/s]'
     VMIN, VMAX = 0, 2
     cmap       = plt.cm.plasma
     LOAD_VARS  = ['mesh2d_ucmag', 'mesh2d_ucx', 'mesh2d_ucy']   # all three needed
+
+elif VARIABLE_TO_ANALYZE == 'sediment transport':
+    VAR_NAME   = 'mesh2d_smag'          # synthetic name — we'll compute this
+    VAR_LABEL  = 'sed. transport [m²/s]'
+    VMIN, VMAX = 0, 0.01                # tune to your model output range
+    cmap       = plt.cm.hot_r
+    LOAD_VARS  = ['mesh2d_sxtot', 'mesh2d_sytot']
 
 # %% --- PROCESSING ---
 
@@ -112,7 +121,7 @@ for label, folder_path in SCENARIOS.items():
     assessment_dir.mkdir(parents=True, exist_ok=True)
 
     _zoom_tag  = f"_zoom_x{ZOOM_XLIM[0]}-{ZOOM_XLIM[1]}_y{ZOOM_YLIM[0]}-{ZOOM_YLIM[1]}" if ZOOM else ""
-    output_dir = base_path / 'output_plots' / 'waterdepth_gif' / label
+    output_dir = base_path / 'output_plots' / VARIABLE_TO_ANALYZE / label
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # --- Resolve run paths ---
@@ -160,6 +169,15 @@ for label, folder_path in SCENARIOS.items():
             face_x = ds.grid.face_coordinates[:, 0]
             face_y = ds.grid.face_coordinates[:, 1]
 
+        if VARIABLE_TO_ANALYZE == 'sediment transport':
+            sx   = ds['mesh2d_sxtot'].values.sum(axis=1)   # (time, nFaces)
+            sy   = ds['mesh2d_sytot'].values.sum(axis=1)
+            smag = np.sqrt(sx**2 + sy**2)
+
+            # Store as a plain (time, nFaces) UgridDataArray — same topology as ucmag
+            ds['mesh2d_smag'] = ds['mesh2d_ucmag'].copy(data=smag) if 'mesh2d_ucmag' in ds \
+                                else ds['mesh2d_sxtot'].isel(nSedTot=0).copy(data=smag)
+
         frame_paths = []
 
         # --- Plot each timestep ---
@@ -206,6 +224,20 @@ for label, folder_path in SCENARIOS.items():
                     zorder=5,
                 )
 
+            elif VARIABLE_TO_ANALYZE == 'sediment transport':
+                sx   = data_t['mesh2d_sxtot'].values.sum(axis=0)   # (nFaces,)
+                sy   = data_t['mesh2d_sytot'].values.sum(axis=0)
+                smag = data_t[VAR_NAME].values
+
+                wet      = smag > 1e-6
+                idx_plot = np.where(wet)[0][::QUIVER_STRIDE]
+                ax.quiver(
+                    face_x[idx_plot], face_y[idx_plot],
+                    sx[idx_plot],     sy[idx_plot],
+                    scale=QUIVER_SCALE, color=QUIVER_COLOR,
+                    width=0.002, headwidth=4, zorder=5,
+                )
+
             ax.set_title(f"{VAR_LABEL} | {label} | {dt_str}", color=_tc)
 
             divider = make_axes_locatable(ax)
@@ -226,7 +258,7 @@ for label, folder_path in SCENARIOS.items():
 
         # --- Assemble GIF ---
         if frame_paths:
-            gif_path = output_dir / f"waterdepth_{label}_{folder_name}.gif"
+            gif_path = output_dir / f"{VARIABLE_TO_ANALYZE}_{label}_{folder_name}.gif"
             frames = [Image.open(fp) for fp in frame_paths]
             frames[0].save(
                 gif_path,
