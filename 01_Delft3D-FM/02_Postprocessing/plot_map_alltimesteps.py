@@ -74,7 +74,7 @@ _tc = plt.rcParams['text.color']
 
 # Vector display settings (only used when VARIABLE_TO_ANALYZE == 'velocity')
 QUIVER_STRIDE = 10       # plot every Nth wet cell — increase to reduce clutter
-QUIVER_SCALE  = 50       # higher = shorter arrows, lower = longer
+QUIVER_SCALE  = 60       # higher = shorter arrows, lower = longer
 QUIVER_COLOR  = 'white'
 QUIVER_WET_THRESHOLD = 0.01   # m/s — cells below this are treated as dry
 
@@ -102,9 +102,9 @@ elif VARIABLE_TO_ANALYZE == 'velocity':
     LOAD_VARS  = ['mesh2d_ucmag', 'mesh2d_ucx', 'mesh2d_ucy']   # all three needed
 
 elif VARIABLE_TO_ANALYZE == 'sediment transport':
-    VAR_NAME   = 'mesh2d_smag'          # synthetic name — we'll compute this
+    VAR_NAME   = 'mesh2d_sxtot'   # exists in ds → passes the guard; colour fill uses smag_da instead
     VAR_LABEL  = 'sed. transport [m²/s]'
-    VMIN, VMAX = 0, 0.01                # tune to your model output range
+    VMIN, VMAX = 0, 1e-05
     cmap       = plt.cm.hot_r
     LOAD_VARS  = ['mesh2d_sxtot', 'mesh2d_sytot']
 
@@ -141,7 +141,7 @@ for label, folder_path in SCENARIOS.items():
         cache_dir=assessment_dir,
         folder_name=folder_name,
         run_paths=run_paths,
-        var_names=LOAD_VARS,          # ← was [VAR_NAME]
+        var_names=LOAD_VARS,
         bbox=CACHE_BBOX,
         append_time=APPEND_TIMESTEPS,
         append_vars=APPEND_VARIABLES,
@@ -165,18 +165,9 @@ for label, folder_path in SCENARIOS.items():
         print(f"  Timesteps: {len(time_values)}  ({time_values[0]} → {time_values[-1]})")
 
         # --- Pre-extract face coordinates once (needed for quiver) ---
-        if VARIABLE_TO_ANALYZE == 'velocity':
+        if VARIABLE_TO_ANALYZE in ('velocity', 'sediment transport'):
             face_x = ds.grid.face_coordinates[:, 0]
             face_y = ds.grid.face_coordinates[:, 1]
-
-        if VARIABLE_TO_ANALYZE == 'sediment transport':
-            sx   = ds['mesh2d_sxtot'].values.sum(axis=1)   # (time, nFaces)
-            sy   = ds['mesh2d_sytot'].values.sum(axis=1)
-            smag = np.sqrt(sx**2 + sy**2)
-
-            # Store as a plain (time, nFaces) UgridDataArray — same topology as ucmag
-            ds['mesh2d_smag'] = ds['mesh2d_ucmag'].copy(data=smag) if 'mesh2d_ucmag' in ds \
-                                else ds['mesh2d_sxtot'].isel(nSedTot=0).copy(data=smag)
 
         frame_paths = []
 
@@ -190,53 +181,67 @@ for label, folder_path in SCENARIOS.items():
 
             fig, ax = plt.subplots(figsize=(12, 4))
 
-            # --- Colour fill ---
-            pc = data_t[VAR_NAME].ugrid.plot(
-                ax=ax,
-                cmap=cmap,
-                add_colorbar=False,
-                edgecolors='none',
-                vmin=VMIN,
-                vmax=VMAX,
-            )
-            ax.set_aspect('equal')
-            if ZOOM:
-                ax.set_xlim(ZOOM_XLIM)
-                ax.set_ylim(ZOOM_YLIM)
+            # --- Colour fill + vectors ---
+            if VARIABLE_TO_ANALYZE == 'sediment transport':
+                sx_t   = data_t['mesh2d_sxtot'].values.sum(axis=0)   # (nFaces,)
+                sy_t   = data_t['mesh2d_sytot'].values.sum(axis=0)
+                smag_t = np.sqrt(sx_t**2 + sy_t**2)
 
-            # --- Velocity vectors (only for 'velocity' mode) ---
-            if VARIABLE_TO_ANALYZE == 'velocity':
-                ucx = data_t['mesh2d_ucx'].values
-                ucy = data_t['mesh2d_ucy'].values
-                mag = data_t['mesh2d_ucmag'].values
+                smag_da = data_t['mesh2d_sxtot'].isel(nSedTot=0).copy(data=smag_t)
+                pc = smag_da.ugrid.plot(
+                    ax=ax,
+                    cmap=cmap,
+                    add_colorbar=False,
+                    edgecolors='none',
+                    vmin=VMIN,
+                    vmax=VMAX,
+                )
 
-                # Mask dry/negligible cells, then stride to avoid clutter
-                wet      = mag > QUIVER_WET_THRESHOLD                        # m/s threshold — tune as needed
+                wet      = smag_t > 1e-6
                 idx_plot = np.where(wet)[0][::QUIVER_STRIDE]
-
+                norm_t = np.where(smag_t[idx_plot] > 1e-10, smag_t[idx_plot], 1)   # avoid div/0
                 ax.quiver(
-                    face_x[idx_plot], face_y[idx_plot],
-                    ucx[idx_plot],    ucy[idx_plot],
-                    scale=QUIVER_SCALE,
-                    color=QUIVER_COLOR,
+                    face_x[idx_plot],          face_y[idx_plot],
+                    sx_t[idx_plot] / norm_t,   sy_t[idx_plot] / norm_t,
+                    scale=QUIVER_SCALE,       
+                    color='lightgrey',
                     width=0.002,
                     headwidth=4,
                     zorder=5,
                 )
 
-            elif VARIABLE_TO_ANALYZE == 'sediment transport':
-                sx   = data_t['mesh2d_sxtot'].values.sum(axis=0)   # (nFaces,)
-                sy   = data_t['mesh2d_sytot'].values.sum(axis=0)
-                smag = data_t[VAR_NAME].values
-
-                wet      = smag > 1e-6
-                idx_plot = np.where(wet)[0][::QUIVER_STRIDE]
-                ax.quiver(
-                    face_x[idx_plot], face_y[idx_plot],
-                    sx[idx_plot],     sy[idx_plot],
-                    scale=QUIVER_SCALE, color=QUIVER_COLOR,
-                    width=0.002, headwidth=4, zorder=5,
+            else:
+                # Generic colour fill for water depth, shear stress, velocity
+                pc = data_t[VAR_NAME].ugrid.plot(
+                    ax=ax,
+                    cmap=cmap,
+                    add_colorbar=False,
+                    edgecolors='none',
+                    vmin=VMIN,
+                    vmax=VMAX,
                 )
+
+                if VARIABLE_TO_ANALYZE == 'velocity':
+                    ucx = data_t['mesh2d_ucx'].values
+                    ucy = data_t['mesh2d_ucy'].values
+                    mag = data_t['mesh2d_ucmag'].values
+
+                    wet      = mag > QUIVER_WET_THRESHOLD
+                    idx_plot = np.where(wet)[0][::QUIVER_STRIDE]
+                    ax.quiver(
+                        face_x[idx_plot], face_y[idx_plot],
+                        ucx[idx_plot],    ucy[idx_plot],
+                        scale=QUIVER_SCALE,
+                        color=QUIVER_COLOR,
+                        width=0.002,
+                        headwidth=4,
+                        zorder=5,
+                    )
+
+            ax.set_aspect('equal')
+            if ZOOM:
+                ax.set_xlim(ZOOM_XLIM)
+                ax.set_ylim(ZOOM_YLIM)
 
             ax.set_title(f"{VAR_LABEL} | {label} | {dt_str}", color=_tc)
 
