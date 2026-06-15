@@ -8,7 +8,7 @@ for three specific detailed-hydro-run scenarios:
 # %% Imports
 import sys
 from pathlib import Path
-
+import cmocean
 import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -30,13 +30,13 @@ SCENARIOS = {
     'mean_flow': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_12_Qr500_pm5_n4_meanflow.9728503")
 }
 
-VARIABLE_TO_ANALYZE = 'sediment transport'    
+VARIABLE_TO_ANALYZE = 'water level'    
                     # options are 
                     # 'water depth'            (mesh2d_waterdepth)
                     # 'shear stress'           (mesh2d_taus)
                     # 'velocity'               (mesh2d_ucmag + quiver of mesh2d_ucx/ucy)
                     # 'sediment transport'     (mesh2d_sxtot/sytot combined magnitude + quiver)
-
+                    # 'water level'            (mesh2d_s1)
 
 # Spatial zoom (model coordinates [m])
 ZOOM     = True
@@ -107,6 +107,13 @@ elif VARIABLE_TO_ANALYZE == 'sediment transport':
     VMIN, VMAX = 0, 1e-05
     cmap       = plt.cm.hot_r
     LOAD_VARS  = ['mesh2d_sxtot', 'mesh2d_sytot']
+
+elif VARIABLE_TO_ANALYZE == 'water level':
+    VAR_NAME   = 'mesh2d_s1'
+    VAR_LABEL  = 'water level [m]'
+    VMIN, VMAX = -3, 3
+    cmap       = cmocean.cm.deep
+    LOAD_VARS  = [VAR_NAME]
 
 # %% --- PROCESSING ---
 

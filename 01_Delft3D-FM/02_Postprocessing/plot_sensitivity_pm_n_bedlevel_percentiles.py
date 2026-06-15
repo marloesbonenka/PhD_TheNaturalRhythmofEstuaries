@@ -46,7 +46,7 @@ base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVari
 config = f'Model_Output/Q{DISCHARGE}'
 
 depth_percentile = 5
-COMPUTE_MEAN = False  # True → width-averaged mean; False → p{depth_percentile} within frozen channel mask
+COMPUTE_MEAN = True  # True → width-averaged mean; False → p{depth_percentile} within frozen channel mask
 bed_threshold = 6
 CHANNEL_INIT_THRESHOLD = 2.2  # defines the channel footprint from t=0
 channel_masks = {}  # {folder_str: {bin_idx: boolean array}}
