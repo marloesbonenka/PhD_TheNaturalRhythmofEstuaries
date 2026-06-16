@@ -11,6 +11,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
+import matplotlib.dates as mdates
 
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
 
@@ -38,16 +39,36 @@ SCENARIO_COLORS = {
     'mean flow': '#4393C3',
     'peak flow': '#084594',
 }
+
+PARAMETER_META = {
+    'cross_section_discharge': {
+        'ylabel':      'tidal discharge [m³/s]',
+        'title':       'tidal discharge at estuary mouth — flood (+) / ebb (-)',
+        'compute_prism': True,
+        'prism_unit':  'Mm³',
+        'prism_scale': 1e6,
+        'subtract_river': True,
+    },
+    'cross_section_velocity': {
+        'ylabel':      'cross-sectional velocity [m/s]',
+        'title':       'tidal velocity at estuary mouth — flood (+) / ebb (-)',
+        'compute_prism': False,
+        'subtract_river': False,
+    },
+    'cross_section_sand': {
+        'ylabel':      'sand transport [kg/s]',
+        'title':       'sand transport at estuary mouth',
+        'compute_prism': False,
+        'subtract_river': False,
+    },
+}
 #%%
 # ---------------------------------------------------------------------------
 # HELPERS
 # ---------------------------------------------------------------------------
 
-def load_his_tidal_discharge(his_paths, t_start, t_end, xs_keywords, upstream_xs_keywords):
-    """
-    Open HIS dataset, slice to [t_start, t_end], locate the mouth cross-section,
-    and return time_seconds (relative to t_start) and q_tidal (mean-removed discharge).
-    """
+def load_his_tidal_signal(his_paths, t_start, t_end, xs_keywords, upstream_xs_keywords,
+                           parameter, subtract_river=True):
     ds_his       = xr.open_mfdataset(his_paths, coords="minimal", compat="override")
     ds_his_slice = ds_his.sel(time=slice(t_start, t_end))
 
@@ -55,47 +76,40 @@ def load_his_tidal_discharge(his_paths, t_start, t_end, xs_keywords, upstream_xs
         name.decode('utf-8').strip() if isinstance(name, bytes) else str(name).strip()
         for name in ds_his_slice['cross_section_name'].values
     ]
-    # --- Mouth cross-section (km 20) ---
+
     try:
-        xs_idx_mouth = next(
-            i for i, name in enumerate(xs_names)
-            if any(k in name for k in xs_keywords)
-        )
+        xs_idx_mouth = next(i for i, name in enumerate(xs_names)
+                            if any(k in name for k in xs_keywords))
     except StopIteration:
-        print(f"  [WARNING] Mouth keywords {xs_keywords} not found. Defaulting to index 0.")
+        print(f"  [WARNING] Mouth keywords not found. Defaulting to index 0.")
         xs_idx_mouth = 0
 
-    # --- Upstream cross-section (km 44) ---
-    try:
-        xs_idx_river = next(
-            i for i, name in enumerate(xs_names)
-            if any(k in name for k in upstream_xs_keywords)
-        )
-    except StopIteration:
-        print(f"  [WARNING] Upstream keywords {upstream_xs_keywords} not found. Falling back to mean subtraction.")
-        xs_idx_river = None
+    xs_idx_river = None
+    if subtract_river:
+        try:
+            xs_idx_river = next(i for i, name in enumerate(xs_names)
+                                if any(k in name for k in upstream_xs_keywords))
+        except StopIteration:
+            print(f"  [WARNING] Upstream keywords not found. Falling back to mean subtraction.")
 
     print(f"  [XS] Mouth   : '{xs_names[xs_idx_mouth]}'")
     if xs_idx_river is not None:
         print(f"  [XS] Upstream: '{xs_names[xs_idx_river]}'")
-    else:
-        print(f"  [XS] Upstream: not found — using mean subtraction as fallback.")
 
-    # --- Extract discharge arrays ---
     time_values  = ds_his_slice.time.values
     time_seconds = (time_values - time_values[0]) / np.timedelta64(1, 's')
 
-    q_mouth = ds_his_slice['cross_section_discharge'].values[:, xs_idx_mouth]
+    q_mouth = ds_his_slice[parameter].values[:, xs_idx_mouth]
 
-    if xs_idx_river is not None:
-        q_river = ds_his_slice['cross_section_discharge'].values[:, xs_idx_river]
+    if subtract_river:
+        q_river = (ds_his_slice[parameter].values[:, xs_idx_river]
+                   if xs_idx_river is not None else np.mean(q_mouth))
+        signal = -(q_mouth - q_river)
     else:
-        q_river = np.mean(q_mouth)
-
-    q_tidal = -(q_mouth - q_river)
+        signal = q_mouth
 
     ds_his.close()
-    return time_seconds, q_tidal, time_values
+    return time_seconds, signal, time_values
 
 def get_last_n_days_window(his_paths, n_days):
     """Return (t_start, t_end) covering the last n_days of the HIS dataset."""
@@ -105,6 +119,7 @@ def get_last_n_days_window(his_paths, n_days):
     ds.close()
     return t_start, t_end
 #%%
+meta = PARAMETER_META[PARAMETER_TO_ANALYZE]
 prism_results = {}
 fig, ax = plt.subplots(figsize=(9, 4.5))
 
@@ -125,50 +140,50 @@ for label, folder_path in SCENARIOS.items():
     if not his_paths:
         print("  [SKIP] No HIS data found.")
         continue
-    
-    # Tidal prism 
-    t_prism_start, t_prism_end = get_last_n_days_window(his_paths, PLOT_WINDOW_DAYS)
-    print(f"  [INFO] Prism cycle window:  {t_prism_start} → {t_prism_end}")
 
-    time_s_prism, q_tidal_prism, time_values_prism = load_his_tidal_discharge(
-        his_paths, t_prism_start, t_prism_end,
-        MOUTH_CROSS_SECTION_KEYWORDS, UPSTREAM_CROSS_SECTION_KEYWORDS
+    t_start, t_end = get_last_n_days_window(his_paths, PLOT_WINDOW_DAYS)
+    print(f"  [INFO] Window: {t_start} → {t_end}")
+
+    time_s, signal, time_dt = load_his_tidal_signal(
+        his_paths, t_start, t_end,
+        MOUTH_CROSS_SECTION_KEYWORDS, UPSTREAM_CROSS_SECTION_KEYWORDS,
+        parameter=PARAMETER_TO_ANALYZE,
+        subtract_river=meta['subtract_river'],
     )
-    dt = np.median(np.diff(time_s_prism))
 
-    total_volume_m3 = np.sum(np.abs(q_tidal_prism)) * dt
-    tidal_prism_m3  = total_volume_m3 / 2
-    tidal_prism_Mm3 = tidal_prism_m3 / 1e6
+    # --- Tidal prism (discharge only) ---
+    legend_suffix = ''
+    if meta['compute_prism']:
+        dt              = np.median(np.diff(time_s))
+        prism           = np.sum(np.abs(signal)) * dt / 2 / meta['prism_scale']
+        prism_results[label] = prism
+        legend_suffix   = f"  (prism: {prism:.2f} {meta['prism_unit']})"
+        print(f"  [RESULT] Tidal prism: {prism:.3f} {meta['prism_unit']}")
 
-    prism_results[label] = tidal_prism_Mm3
-    print(f"  [RESULT] Tidal prism: {tidal_prism_Mm3:.3f} Mm³")
-
-    color       = SCENARIO_COLORS.get(label, 'black')
-
-    ax.fill_between(time_values_prism, q_tidal_prism, 0,
-                    where=(q_tidal_prism >= 0),
-                    color=color, alpha=0.25, linewidth=0)
-    ax.fill_between(time_values_prism, q_tidal_prism, 0,
-                    where=(q_tidal_prism < 0),
-                    color=color, alpha=0.25, linewidth=0)
-    ax.plot(time_values_prism, q_tidal_prism,
-            color=color, lw=1.8,
-            label=f"{label}  (prism: {tidal_prism_Mm3:.2f} Mm³)")
+    color = SCENARIO_COLORS.get(label, 'black')
+    ax.fill_between(time_dt, signal, 0, where=(signal >= 0), color=color, alpha=0.25, linewidth=0)
+    ax.fill_between(time_dt, signal, 0, where=(signal < 0),  color=color, alpha=0.25, linewidth=0)
+    ax.plot(time_dt, signal, color=color, lw=1.8, label=f"{label}{legend_suffix}")
 
 # ---------------------------------------------------------------------------
 # PRINT SUMMARY & FINALISE PLOT
 # ---------------------------------------------------------------------------
-print(f"\n{'='*45}")
-print(" TIDAL PRISM RESULTS (FINAL CYCLE)")
-print(f"{'='*45}")
-for scenario, prism in prism_results.items():
-    print(f"  {scenario.ljust(12)} : {prism:.3f} Mm³")
-print('='*45)
+if meta['compute_prism']:
+    print(f"\n{'='*45}")
+    print(f" TIDAL PRISM RESULTS  [{meta['prism_unit']}]")
+    print(f"{'='*45}")
+    for scenario, prism in prism_results.items():
+        print(f"  {scenario.ljust(12)} : {prism:.3f} {meta['prism_unit']}")
+    print('='*45)
+
 
 ax.axhline(0, color='k', lw=0.8, ls='--')
-ax.set_xlabel('time since start of two-cycle window [hours]')
-ax.set_ylabel('tidal discharge [m³/s]')
-ax.set_title('tidal discharge at estuary mouth — flood (+) / ebb (-)', fontweight='bold')
+ax.set_xlabel('time [UTC]')
+ax.set_ylabel(meta['ylabel'])
+ax.set_title(meta['title'], fontweight='bold')
+ax.xaxis.set_major_formatter(mdates.DateFormatter('%d-%b %H:%M'))
+ax.xaxis.set_major_locator(mdates.HourLocator(interval=3))
+# fig.autofmt_xdate(rotation=90)
 ax.legend(title='scenario', frameon=True, fontsize=9)
 ax.grid(True, lw=0.4, alpha=0.5)
 fig.tight_layout()
