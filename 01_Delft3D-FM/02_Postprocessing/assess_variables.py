@@ -1,12 +1,10 @@
 """"
-Assess Delft3D-FM his file variables for observation points and cross-sections.
+Assess Delft3D-FM his + map file variables for observation points, cross-sections, 2D mesh variables.
 
 """
 
 #%%
-import os
 import dfm_tools as dfmt
-import xarray as xr
 import sys
 from pathlib import Path
 #%%
@@ -21,7 +19,7 @@ map_file_pattern = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVa
 print(f"Opening history file: {his_file_path.name}")
 
 # Since it's not partitioned, we use xr.open_dataset or dfmt.open_dataset
-ds_his = dfmt.open_dataset(his_file_path)
+ds_his = dfmt.open_partitioned_dataset(his_file_path)
 
 print("\n" + "="*50)
 print("HISTORY FILE INSPECTION")
