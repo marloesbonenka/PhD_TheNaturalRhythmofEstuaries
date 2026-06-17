@@ -262,4 +262,3 @@ for folder in model_folders:
 print("\n" + "="*30)
 print("BATCH PLOTTING COMPLETE")
 print("="*30)
-
