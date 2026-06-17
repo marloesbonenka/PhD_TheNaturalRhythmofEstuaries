@@ -1,3 +1,7 @@
+"""Compare bed level percentiles along the estuary for the same amount of sediment import,
+but either by a large peak or frequent small peaks in river discharge.
+The comparison is made for a specific snapshot in time, and the bed level is binned along the estuary."""
+
 #%% IMPORTS
 from pathlib import Path
 import re
