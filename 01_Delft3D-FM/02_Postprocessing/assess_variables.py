@@ -13,19 +13,15 @@ from pathlib import Path
 # Add your custom functions path
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\Delft3D-FM\Postprocessing")
 from FUNCTIONS.F_general import *
-from FUNCTIONS.F_cache import DatasetCache
 
 # --- SETTINGS ---
-# Point this to your specific MF50 his file example
 his_file_path = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Output\Q500\1_Q500_rst.9093769\output\FlowFM_0000_his.nc")
 map_file_pattern = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Output\Q500\1_Q500_rst.9093769\output\*_map.nc")
 
 print(f"Opening history file: {his_file_path.name}")
 
-dataset_cache = DatasetCache()
-
 # Since it's not partitioned, we use xr.open_dataset or dfmt.open_dataset
-ds_his = dataset_cache.get_xr(his_file_path)
+ds_his = dfmt.open_dataset(his_file_path)
 
 print("\n" + "="*50)
 print("HISTORY FILE INSPECTION")
@@ -58,9 +54,8 @@ print("\n[i] Available Data Variables in HIS file:")
 for var in ds_his.data_vars:
     dims = ds_his[var].dims
     attrs = ds_his[var].attrs.get('long_name', 'No description')
-    print(f"  - {var:25} dims: {str(dims):20} | {attrs}")
-
-dataset_cache.close_all()
+    units = ds_his[var].attrs.get('units', 'No units')
+    print(f"  - {var:25} dims: {str(dims):20} | {attrs} | units: {units}")
 
 #%% --- MAP FILE INSPECTION ---
 print("\n" + "="*50)
@@ -97,6 +92,7 @@ print(f"\n[i] Available Data Variables in MAP file:")
 for var in ds_map.data_vars:
     dims = ds_map[var].dims
     attrs = ds_map[var].attrs.get('long_name', 'No description')
-    print(f"  - {var:40} dims: {str(dims):35} | {attrs}")
+    units = ds_map[var].attrs.get('units', 'No units')
+    print(f"  - {var:40} dims: {str(dims):35} | {attrs} | units: {units}")
 
 ds_map.close()
