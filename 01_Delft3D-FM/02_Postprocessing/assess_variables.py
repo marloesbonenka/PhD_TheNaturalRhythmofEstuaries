@@ -7,6 +7,7 @@ Assess Delft3D-FM his + map file variables for observation points, cross-section
 import dfm_tools as dfmt
 import sys
 from pathlib import Path
+import xarray as xr
 #%%
 # Add your custom functions path
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\Delft3D-FM\Postprocessing")
@@ -19,7 +20,7 @@ map_file_pattern = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVa
 print(f"Opening history file: {his_file_path.name}")
 
 # Since it's not partitioned, we use xr.open_dataset or dfmt.open_dataset
-ds_his = dfmt.open_partitioned_dataset(his_file_path)
+ds_his = xr.open_mfdataset(his_file_path)
 
 print("\n" + "="*50)
 print("HISTORY FILE INSPECTION")
