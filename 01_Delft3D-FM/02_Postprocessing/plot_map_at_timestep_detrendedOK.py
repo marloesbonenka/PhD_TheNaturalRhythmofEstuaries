@@ -42,10 +42,10 @@ _tc = plt.rcParams['text.color']
 
 # --- Variable selection ---
 var_names = ['mesh2d_mor_bl']#, 'mesh2d_s1', 'mesh2d_taus']  # e.g. ['mesh2d_mor_bl'] or all three
-target_hydrodynamic_date = '2025-01-01' #'2055-12-31' # e.g. '2055-12-31'; when set, nearest timestep is used per run
+target_hydrodynamic_date = '2031-01-01' #'2055-12-31' # e.g. '2055-12-31'; when set, nearest timestep is used per run
 
 # Detrending settings (applies to bed level variable only)
-apply_detrending = False
+apply_detrending = True
 reference_time_idx = 0
 detrend_land_threshold = 6.0
 
@@ -215,8 +215,8 @@ for folder in model_folders:
             print(f"Skipping {folder.name}: no time dimension found.")
             continue
 
-        time_values = np.asarray(ds.time.values).astype('datetime64[ns]')
-        print(f"  Found {len(time_values)} timestep(s): {time_values[0]} -> {time_values[-1]}")
+        time_values_full = np.asarray(ds.time.values).astype('datetime64[ns]')
+        print(f"  Found {len(time_values_full)} timestep(s): {time_values_full[0]} -> {time_values_full[-1]}")
 
         # --- Build the t=0 centerline reference profile (once per folder) ---
         # This replaces the old single-scalar baseline with a profile that
@@ -225,10 +225,10 @@ for folder in model_folders:
         if apply_detrending and 'mesh2d_mor_bl' in ds:
             if 'time' not in ds['mesh2d_mor_bl'].dims:
                 print("  [WARNING] Cannot detrend mesh2d_mor_bl: no time dimension found.")
-            elif reference_time_idx >= len(time_values):
+            elif reference_time_idx >= len(time_values_full):
                 print(
                     f"  [WARNING] reference_time_idx={reference_time_idx} out of range "
-                    f"for {len(time_values)} timestep(s); skipping detrending."
+                    f"for {len(time_values_full)} timestep(s); skipping detrending."
                 )
             else:
                 try:
@@ -242,13 +242,24 @@ for folder in model_folders:
                     reference_per_face = None
 
         # --- Loop over all timesteps ---
-        for idx in range(len(time_values)):
-            actual_dt = np.datetime64(time_values[idx], 'ns')
+
+        if target_hydrodynamic_date is not None:
+            target_dt = np.datetime64(target_hydrodynamic_date, 'ns')
+            time_diffs = np.abs(time_values_full - target_dt)
+            nearest_idx = np.argmin(time_diffs)
+            selected_indices = [nearest_idx]
+            print(f"  Target date {target_hydrodynamic_date} → using nearest timestep: {time_values_full[nearest_idx]}")
+        else:
+            selected_indices = list(range(len(time_values_full)))
+
+        for idx in range(len(selected_indices)):
+            real_idx = selected_indices[idx]
+            actual_dt = np.datetime64(time_values_full[real_idx], 'ns')
             actual_label = str(np.datetime_as_string(actual_dt, unit='s')).replace('T', ' ')
             actual_tag = str(np.datetime_as_string(actual_dt, unit='D'))
-            print(f"  Plotting timestep {idx+1}/{len(time_values)}: {actual_label}")
+            print(f"  Plotting timestep {idx+1}/{len(selected_indices)}: {actual_label}")
 
-            ds_t = ds.isel(time=idx)
+            ds_t = ds.isel(time=real_idx[idx])
 
             # --- Loop over all variables ---
             for var_name in var_names:
@@ -302,8 +313,7 @@ for folder in model_folders:
                 if ZOOM:
                     ax.set_xlim(ZOOM_XLIM)
                     ax.set_ylim(ZOOM_YLIM)
-                ax.set_title(f"{current_cfg['label']}{detrend_suffix} | {folder.name} | {actual_label}",
-                             color=_tc)
+                # ax.set_title(f"{current_cfg['label']}{detrend_suffix} | {folder.name} | {actual_label}", color=_tc)
 
                 divider = make_axes_locatable(ax)
                 cax = divider.append_axes("right", size="3%", pad=0.1)
@@ -313,8 +323,8 @@ for folder in model_folders:
                 plt.setp(cbar.ax.yaxis.get_ticklabels(), color=_tc)
 
                 plt.tight_layout()
-                is_final_timestep = (idx == len(time_values) - 1)
-                _zoom_tag = f"_zoom_x{ZOOM_XLIM[0]}-{ZOOM_XLIM[1]}_y{ZOOM_YLIM[0]}-{ZOOM_YLIM[1]}" if ZOOM else ""
+                is_final_timestep = (idx == len(selected_indices) - 1)
+                _zoom_tag = f"_zoom" if ZOOM else ""
                 save_name = f"{STYLE}_{current_cfg['file_tag']}{file_detrend_tag}{_zoom_tag}_{actual_tag}_{folder.name}.png"
                 save_path = output_plots_dir / save_name
                 plt.savefig(save_path, dpi=300, bbox_inches='tight', transparent=True)
