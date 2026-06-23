@@ -140,8 +140,7 @@ def _cache_has_target_dates(cache_paths: list[Path], target_dates) -> bool:
         finally:
             ds_cache.close()
     return True
-
-
+     
 def load_or_update_map_cache_multi(
     cache_dir: Path,
     folder_name: str,

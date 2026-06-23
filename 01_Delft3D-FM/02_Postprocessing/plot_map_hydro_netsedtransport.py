@@ -1,30 +1,20 @@
 """Plot net (flood- vs ebb-dominant) sediment transport over one tidal cycle,
 taken from the last 24h of the simulation (≈ 2 M2 cycles, averaged to 1 cycle),
-for the detailed-hydro-run scenarios:
-  - constant flow
-  - low flow
-  - peak flow
-  - mean flow
+for the detailed-hydro-run scenarios
 
-Sign convention:
-  Transport aligned with the LOCAL flow direction when that flow is landward
-  (ucx > 0 component dominating) = FLOOD-directed transport = BLUE (+)
-  Transport aligned with locally seaward flow                = EBB-directed  = RED (-)
+Sign convention (landward = +x, towards the river; seaward = -x, towards the
+mouth — see SCENARIOS paths, mouth at low x, river at high x):
+  FLOOD-directed transport = BLUE (+)   — occurring while local flow is landward
+  EBB-directed transport   = RED  (-)   — occurring while local flow is seaward
 
-Unlike a simple sign(sx) approach, this projects the full transport vector
-(sx, sy) onto the LOCAL depth-averaged velocity direction (ucx, ucy) at each
-cell and timestep:
+Computed in two steps, at each cell and timestep:
+  1. transport_mag_along_flow = (sx*ucx + sy*ucy) / |u|, clipped to >= 0.
+     This is the magnitude of sediment transport aligned with the local flow
+     direction
+  2. flood_ebb_sign = sign(ucx) — whether the flow itself is landward (+) or
+     seaward (-) at the snapshot moment
+  s_along = transport_mag_along_flow * flood_ebb_sign
 
-    s_along = (sx*ucx + sy*ucy) / |u|
-
-This captures the full magnitude of transport in meandering/angled channel
-reaches (where sx alone would truncate the signal to its x-component and
-under-represent transport that's locally flood-directed but not x-aligned),
-while still giving a physically meaningful flood(+)/ebb(-) sign based on
-which way the water is actually moving at that location and instant.
-
-This mirrors Figure 8 of the reference (net sediment transport, blue = import/
-flood, red = export/ebb).
 """
 
 # %% Imports
@@ -67,7 +57,7 @@ WINDOW_HOURS = 24.0
 
 # Spatial zoom (model coordinates [m]) — same as your GIF script
 ZOOM      = True
-ZOOM_XLIM = (19000, 45000)
+ZOOM_XLIM = (20000, 45000)
 ZOOM_YLIM = (5000, 10000)
 
 # Cache settings (must match what's already cached, or it will be extended/rebuilt)
@@ -81,7 +71,7 @@ APPEND_VARIABLES  = True
 # magnitudes well below the instantaneous VMAX you use for raw sed. transport snapshots
 # (e.g. your snapshot script uses up to 1e-5; net flux here will typically be smaller).
 # Start with a smaller VMAX and adjust per scenario/inspection.
-VMAX = 2e-6
+VMAX = 1e-6
 VMIN = -VMAX
 CMAP = plt.cm.RdBu   # red = negative (ebb/seaward), blue = positive (flood/landward)
 VAR_LABEL = 'net along-flow sediment transport [m²/s]\n(+landward/flood, -seaward/ebb)'
@@ -182,7 +172,7 @@ for label, folder_path in SCENARIOS.items():
 
         ds_window = ds.isel(time=np.where(window_mask)[0])
 
-        # --- Project transport onto local flow direction, then time-integrate ---
+        # --- Compute flood/ebb-signed transport magnitude, then time-integrate ---
         # sxtot/sytot have shape (time, nSedTot, nFaces) → sum over sediment fractions first
         sx = ds_window['mesh2d_sxtot'].sum(dim='nSedTot').values   # (n_window, nFaces)
         sy = ds_window['mesh2d_sytot'].sum(dim='nSedTot').values   # (n_window, nFaces)
@@ -191,19 +181,21 @@ for label, folder_path in SCENARIOS.items():
 
         u_mag = np.sqrt(ucx**2 + ucy**2)
 
-        # s_along: signed transport magnitude aligned with the LOCAL flow direction at
-        # each cell and timestep. Positive where transport moves the same way the water
-        # is currently flowing AND that flow is landward-dominant; this is handled
-        # implicitly since the projection (sx*ucx + sy*ucy) is positive when transport
-        # and velocity point the same way, and ucx/ucy itself carries the landward(+x)/
-        # seaward(-x) sense of the local flow (curved channels included, since ucy
-        # contributes too).
+        # STEP 1 — transport magnitude aligned with the LOCAL flow direction.
         with np.errstate(invalid='ignore', divide='ignore'):
-            s_along = np.where(
+            transport_mag_along_flow = np.where(
                 u_mag > MIN_VELOCITY_FOR_PROJECTION,
                 (sx * ucx + sy * ucy) / np.where(u_mag > 0, u_mag, 1),
                 0.0,
             )
+        
+        transport_mag_along_flow = np.clip(transport_mag_along_flow, 0.0, None)
+
+        # STEP 2 — assign flood(+)/ebb(-) sign based on whether the flow is
+        # landward or seaward at that instant. 
+        flood_ebb_sign = np.sign(ucx)
+
+        s_along = transport_mag_along_flow * flood_ebb_sign
 
         # Time coordinate in seconds, for proper (non-uniform-safe) trapezoidal integration
         t_seconds = (ds_window['time'].values - ds_window['time'].values[0]) / np.timedelta64(1, 's')
@@ -289,6 +281,7 @@ for label, folder_path in SCENARIOS.items():
 print("\n" + "=" * 60)
 print("DONE")
 print("=" * 60)
+
 # %%
 
 # """Plot net (flood- vs ebb-dominant) sediment transport over one tidal cycle,

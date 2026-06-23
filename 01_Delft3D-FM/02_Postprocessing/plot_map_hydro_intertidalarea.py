@@ -31,7 +31,6 @@ from FUNCTIONS.F_map_cache import cache_tag_from_bbox, load_or_update_map_cache_
 from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
 # %% --- CONFIGURATION ---
-
 SCENARIOS = {
     'constant':  Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_01_Qr500_pm1_n0.9724783"),
     'low_flow':  Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_12_Qr500_pm5_n4_lowflow.9728497"),
@@ -41,17 +40,17 @@ SCENARIOS = {
 
 LOAD_VARS = ['mesh2d_waterdepth', 'mesh2d_flowelem_ba']
 
-WET_THRESHOLD  = 0.01    # [m] — depths above this are "wet"
+WET_THRESHOLD  = 0.001    # [m] — depths above this are "wet"
 WINDOW_HOURS   = 12.0    # fixed window length, taken from the end of each run
 
 # Spatial zoom (model coordinates [m]) — same as your other scripts
 ZOOM      = True
-ZOOM_XLIM = (19000, 45000)
+ZOOM_XLIM = (20000, 45000)
 ZOOM_YLIM = (5000, 10000)
 
 # Cache settings
 CACHE_BBOX        = [1, 1, 45000, 15000]
-CACHE_TAG         = None
+CACHE_TAG         = 'intertidals'
 APPEND_TIMESTEPS  = True
 APPEND_VARIABLES  = True
 
@@ -64,9 +63,9 @@ COLOR_WET = '#3b6fa0'
 COLOR_DRY = '#d9c9a5'
 
 # Static intertidal-zone overlay style (drawn the same on every frame)
+# Static intertidal-zone overlay style (drawn the same on every frame)
 INTERTIDAL_OUTLINE_COLOR = 'red'
-INTERTIDAL_OUTLINE_WIDTH = 0.8
-INTERTIDAL_HATCH         = '///'   # set to None to disable hatching, keep outline only
+INTERTIDAL_OUTLINE_WIDTH = 0.3      # was 0.8 — thinner edges so they don't visually merge
 
 STYLE = 'default'
 plt.rcParams.update(plt.rcParamsDefault)
@@ -167,6 +166,31 @@ for label, folder_path in SCENARIOS.items():
         n_faces = wet_mask_t.shape[1]
         print(f"  Faces: {n_faces}  | always wet: {always_wet.sum()}  "
               f"| always dry: {always_dry.sum()}  | intertidal: {intertidal.sum()}")
+        
+        print(f"  Always wet: {always_wet.sum()} ({100*always_wet.sum()/n_faces:.1f}%)")
+        print(f"  Always dry: {always_dry.sum()} ({100*always_dry.sum()/n_faces:.1f}%)")
+        print(f"  Intertidal: {intertidal.sum()} ({100*intertidal.sum()/n_faces:.1f}%)")
+
+        # Check noise floor on cells that are dry almost always
+        near_threshold = depth_vals[:, always_dry]
+        if near_threshold.size:
+            print(f"  Max depth among 'always dry' cells: {np.nanmax(near_threshold):.4f} m")
+
+        # Distribution of max depth reached by 'intertidal' cells
+        max_depth_intertidal = depth_vals[:, intertidal].max(axis=0)
+        print(f"  Intertidal cells max-depth distribution: "
+            f"min={max_depth_intertidal.min():.3f}, "
+            f"p50={np.percentile(max_depth_intertidal,50):.3f}, "
+            f"p95={np.percentile(max_depth_intertidal,95):.3f}, "
+            f"max={max_depth_intertidal.max():.3f}")
+
+        # Distribution of min depth reached by 'intertidal' cells (should dip below threshold)
+        min_depth_intertidal = depth_vals[:, intertidal].min(axis=0)
+        print(f"  Intertidal cells min-depth distribution: "
+            f"min={min_depth_intertidal.min():.3f}, "
+            f"p50={np.percentile(min_depth_intertidal,50):.3f}, "
+            f"p95={np.percentile(min_depth_intertidal,95):.3f}, "
+            f"max={min_depth_intertidal.max():.3f}")
 
         # --- Area calculation ---
         # mesh2d_flowelem_ba should be static (no time dim) — take first timestep's values
@@ -223,12 +247,11 @@ for label, folder_path in SCENARIOS.items():
             try:
                 intertidal_da.ugrid.plot(
                     ax=ax,
-                    cmap=mcolors.ListedColormap(['none', 'none']),
+                    cmap=mcolors.ListedColormap(['none', 'red']),
                     norm=wetdry_norm,
                     add_colorbar=False,
-                    edgecolors=INTERTIDAL_OUTLINE_COLOR,
-                    linewidths=INTERTIDAL_OUTLINE_WIDTH,
-                    hatch=INTERTIDAL_HATCH,
+                    edgecolors='none',
+                    alpha=0.35,   # transparent fill so wet/dry base layer still shows through
                 )
             except TypeError:
                 # Some xugrid/matplotlib versions don't accept hatch via ugrid.plot kwargs —
@@ -288,7 +311,7 @@ for label, folder_path in SCENARIOS.items():
                 duration=int(1000 / GIF_FPS),
                 loop=0,
             )
-            for f in frames:
+            for f in frames: 
                 f.close()
             print(f"\n  GIF saved: {gif_path}")
 

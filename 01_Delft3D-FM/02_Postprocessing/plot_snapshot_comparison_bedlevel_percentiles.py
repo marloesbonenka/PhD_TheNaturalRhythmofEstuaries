@@ -34,6 +34,11 @@ X_RANGE = (20000, 44000)
 Y_RANGE = (5000, 10000)
 CHANNEL_INIT_THRESHOLD = 2.2
 
+# Output
+OUTPUT_DIR = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\output_plots\comparison_amplitude_frequency_same_Vsed")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_FILENAME   = "comparison_amplitude_frequency_same_Vsed.png"
+
 # Paths defined by you
 MODEL_PATHS = {
     'pm3_n5': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\03_Qr500_pm3_n5.9600329"),
@@ -116,4 +121,7 @@ ax.set_title(f'Snapshot Comparison: {TARGET_DATE}')
 ax.legend()
 ax.grid(True, linestyle='--', alpha=0.5)
 plt.tight_layout()
+plt.savefig(OUTPUT_DIR / OUTPUT_FILENAME, dpi=300)
+print(f"Plot saved to: {OUTPUT_DIR / OUTPUT_FILENAME}")
 plt.show()
+# %%
