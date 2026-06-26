@@ -6,6 +6,13 @@ from pathlib import Path
 from matplotlib.colors import LinearSegmentedColormap
 
 #%%
+def _parse_pm_n(label_str):
+    """Extract (pm, n) ints from a label like 'pm3_n5' or 'pm1_n0 (constant)'."""
+    m = re.match(r'pm(\d+)_n(\d+)', label_str.strip())
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    return None, None
+
 # --- CHECK VARIABLES IN DELFT3D OUTPUT ---
 def check_available_variables_xarray(ds):
     """Updated for xarray/dfm_tools datasets"""

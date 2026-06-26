@@ -32,6 +32,8 @@ git merge --abort
 If you fixed merging issues, don't forget to add the correct file to git before merging:
 git add <file_location_wrt_maingitfile>
 
+--- 
+
 Git Reconnection & Sync Guide
 Phase 1: Setup & Authorization
 - Open Folder: In VS Code, open the root folder of your project.

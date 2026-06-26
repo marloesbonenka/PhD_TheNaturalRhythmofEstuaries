@@ -13,7 +13,7 @@ from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 #%% --- 1. SETTINGS ---
 # Which scenarios to process (set to None or empty list for all)
 SCENARIOS_TO_PROCESS = None #['1', '2', '3', '4']  # Use all scenarios
-DISCHARGE = 250
+DISCHARGE = 500
 
 # --- Figure style ---
 STYLE = 'default'   # 'default'  →  white background, black text/ticks/labels
@@ -42,7 +42,7 @@ _tc = plt.rcParams['text.color']
 
 # --- Variable selection ---
 var_names = ['mesh2d_mor_bl']#, 'mesh2d_s1', 'mesh2d_taus']  # e.g. ['mesh2d_mor_bl'] or all three
-target_hydrodynamic_date = '2055-01-01' #'2055-12-31' # e.g. '2055-12-31'; when set, nearest timestep is used per run
+target_hydrodynamic_date = '2031-01-01' #'2055-12-31' # e.g. '2055-12-31'; when set, nearest timestep is used per run
 
 # Detrending settings (applies to bed level variable only)
 apply_detrending = True
@@ -71,7 +71,7 @@ APPEND_VARIABLES = True
 #%%
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian")
 config = f"Model_Output/Q{DISCHARGE}"
-base_path = Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Output\Q500\0_Noise_Q500") #base_directory / config
+base_path = base_directory / config #Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Output\Q500\0_Noise_Q500") 
 
 assessment_dir = base_path / 'cached_data'
 

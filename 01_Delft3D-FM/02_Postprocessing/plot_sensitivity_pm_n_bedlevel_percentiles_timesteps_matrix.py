@@ -22,6 +22,7 @@ from FUNCTIONS.F_general import (
     _date_to_filename_tag,
     _date_to_label,
     _scenario_label,
+    _parse_pm_n,
     get_variability_map,
     find_variability_model_folders,
     get_target_snapshot_dates,
@@ -365,16 +366,6 @@ if SHOW_NOISY_ENVELOPE:
                         np.vstack(_noisy_init_profiles[pct]), axis=0
                     )
         print(f"Noisy envelope ready for {len(noisy_envelope_data)} snapshots.")
-
-
-#%% --- HELPERS ---
-def _parse_pm_n(label_str):
-    """Extract (pm, n) ints from a label like 'pm3_n5' or 'pm1_n0 (constant)'."""
-    m = re.match(r'pm(\d+)_n(\d+)', label_str.strip())
-    if m:
-        return int(m.group(1)), int(m.group(2))
-    return None, None
-
 
 #%% --- BUILD SCENARIO STRUCTURE ---
 # Group data per snapshot into scenario groups
