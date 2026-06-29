@@ -47,7 +47,7 @@ from FUNCTIONS.F_map_cache import cache_tag_from_bbox, load_or_update_map_cache_
 from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
 # %% --- CONFIGURATION ---
-NORMALIZE = True   # if True, also produce a version normalized to each discharge's n=0 (constant) run
+NORMALIZE = False   # if True, also produce a version normalized to each discharge's n=0 (constant) run
 
 BASE_DIR = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output")
 
