@@ -32,26 +32,43 @@ from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 from FUNCTIONS.F_general import _parse_pm_n
 
 # %% --- CONFIGURATION ---
+DISCHARGE = 1000  # m3/s
 
 # Scenarios: label → full path to the run folder
-SCENARIOS = {
-    # Q = 250 m3/s
-    'constant':  Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q250\detailed-hydro-run\dhr_01_Qr250_pm1_n0_mean.10280149"),
-    'mean_flow1': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q250\detailed-hydro-run\dhr_06_Qr250_pm4_n3_mean.10280150"),
-    'mean_flow2': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q250\detailed-hydro-run\dhr_09_Qr250_pm5_n3_mean.10280151"),
-    'mean_flow3': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q250\detailed-hydro-run\dhr_10_Qr250_pm3_n3_mean.10280152"),
-    'mean_flow4': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q250\detailed-hydro-run\dhr_11_Qr250_pm2_n3_mean.10280153"),
-
+if DISCHARGE == 250:
+    SCENARIOS = {
+        # Q = 250 m3/s
+        'constant':  Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q250\detailed-hydro-run\dhr_01_Qr250_pm1_n0.10280149"),
+        'mean_flow1': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q250\detailed-hydro-run\dhr_06_Qr250_pm4_n3_mean.10280150"),
+        'mean_flow2': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q250\detailed-hydro-run\dhr_09_Qr250_pm5_n3_mean.10280151"),
+        'mean_flow3': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q250\detailed-hydro-run\dhr_10_Qr250_pm3_n3_mean.10280152"),
+        'mean_flow4': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q250\detailed-hydro-run\dhr_11_Qr250_pm2_n3_mean.10280153"),
+    }
+elif DISCHARGE == 500:
+    SCENARIOS = {
     # Q = 500 m3/s
-    # 'constant':  Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_01_Qr500_pm1_n0.9724783"),
-    # 'low_flow':  Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_12_Qr500_pm5_n4_lowflow.9728497"),
-    # 'peak_flow':  Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_12_Qr500_pm5_n4_peakflow"),
-    # 'mean_flow1': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_06_Qr500_pm4_n3_mean.10280084"),
-    # 'mean_flow2': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_09_Qr500_pm5_n3_mean.10280083"),
-    # 'mean_flow3': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_10_Qr500_pm3_n3_mean.10280082"),
-    # 'mean_flow4': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_11_Qr500_pm2_n3_mean.10280081"),
-    # 'mean_flow5': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_12_Qr500_pm5_n4_meanflow.9728503")
-}
+    'constant':  Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_01_Qr500_pm1_n0.9724783"),
+    'low_flow':  Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_12_Qr500_pm5_n4_lowflow.9728497"),
+    'peak_flow':  Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_12_Qr500_pm5_n4_peakflow"),
+    'mean_flow1': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_06_Qr500_pm4_n3_mean.10280084"),
+    'mean_flow2': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_09_Qr500_pm5_n3_mean.10280083"),
+    'mean_flow3': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_10_Qr500_pm3_n3_mean.10280082"),
+    'mean_flow4': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_11_Qr500_pm2_n3_mean.10280081"),
+    'mean_flow5': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_12_Qr500_pm5_n4_meanflow.9728503")
+    }
+
+elif DISCHARGE == 1000:
+    SCENARIOS = {
+        # Q = 1000 m3/s
+        # 'constant':  Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q1000\detailed-hydro-run\dhr_01_Qr1000_pm1_n0.10302507"),
+        # 'mean_flow1': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q1000\detailed-hydro-run\dhr_06_Qr1000_pm4_n3_mean.10302537"),
+        'mean_flow2': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q1000\detailed-hydro-run\dhr_09_Qr1000_pm5_n3_mean.10302529"),
+        # 'mean_flow3': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q1000\detailed-hydro-run\dhr_10_Qr1000_pm3_n3_mean.10302530"),
+        # 'mean_flow4': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q1000\detailed-hydro-run\dhr_11_Qr1000_pm2_n3_mean.10302531"),
+    }
+
+else: 
+    raise ValueError(f"Unsupported discharge: {DISCHARGE}")
 
 LOAD_VARS = ['mesh2d_sxtot', 'mesh2d_sytot', 'mesh2d_ucx', 'mesh2d_ucy'] # load sediment transport and velocity components
 
