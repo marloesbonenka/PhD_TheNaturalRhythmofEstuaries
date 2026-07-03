@@ -1,13 +1,6 @@
 """Extract the intertidal area (area that falls wet AND dry at least once during
 one tidal cycle) for each scenario, across all three discharge magnitudes
-(Q = 250 / 500 / 1000 m3/s), restricted to runs 01, 06, 09, 10, 11 -- then plot
-intertidal area as a function of discharge peak amplitude (R_peak / pm), coloured
-by mean discharge.
-
-This is the intertidal-area analogue of plot_max_tidal_intrusion_allQ.py: same
-scenario discovery, same combined-across-Q plotting convention, but the per-run
-metric is the intertidal area (from plot_intertidal_area_tidal_cycle.py's wet/dry
-classification) instead of the limit of tidal intrusion.
+(Q = 250 / 500 / 1000 m3/s), then plot intertidal area as a function of discharge peak amplitude
 
 Definitions (same as plot_intertidal_area_tidal_cycle.py):
   wet         : mesh2d_waterdepth > WET_THRESHOLD            (per timestep)
@@ -15,22 +8,6 @@ Definitions (same as plot_intertidal_area_tidal_cycle.py):
   always dry  : dry at every timestep in the window            -> SUPRATIDAL/land (excluded)
   intertidal  : wet at >=1 timestep AND dry at >=1 timestep    -> INTERTIDAL (included)
 
-Area is computed from mesh2d_flowelem_ba (per-face surface area, m^2), summed only
-over cells classified as intertidal, using the last WINDOW_HOURS (~1 tidal cycle)
-of each run.
-
-Scenario folders are discovered automatically per discharge. Expected
-folder name pattern: dhr_{run_id}_Qr{Q}_pm{pm}_n{n}[_mean].{runid}
-e.g.  dhr_01_Qr500_pm1_n0.9724783
-      dhr_06_Qr250_pm4_n3_mean.10280150
-Only run_id in {01, 06, 09, 10, 11} are included -- this deliberately
-skips other one-off runs sitting in the same detailed-hydro-run folder
-(e.g. the Q500 dhr_12_..._lowflow / _peakflow / _meanflow set).
-
-Note: unlike plot_intertidal_area_tidal_cycle.py, this script does NOT render
-per-frame wet/dry GIFs -- it only needs the scalar intertidal area per scenario.
-If you want the animation for a specific scenario, run that script directly on
-the relevant folder.
 """
 
 # %% Imports
@@ -61,12 +38,18 @@ _FOLDER_RE = re.compile(r'^dhr_(\d{2})_Qr(\d+)_pm(\d+)_n(\d+)(?:_mean)?\.\d+$')
 
 LOAD_VARS = ['mesh2d_waterdepth', 'mesh2d_flowelem_ba']
 
-WET_THRESHOLD  = 0.001   # [m] -- depths above this are "wet"
+FACE_X_VAR = 'mesh2d_face_x'   # mesh coordinate, already present in ds -- not cached separately
+
+WET_THRESHOLD  = 0.0001   # [m] -- depths above this are "wet", same as Epshu in Delft3D-FM
 WINDOW_HOURS   = 12.0    # fixed window length (~1 tidal cycle), taken from the end of each run
 
 # Cache settings
 CACHE_BBOX = [1, 1, 45000, 15000]
 CACHE_TAG  = None
+
+# --- tidal-zone restriction in x (same window as the bed-level comparison script) ---
+X_MIN = 20000.0   # [m]
+X_MAX = 45000.0   # [m]  (all y included)
 
 # Colour per discharge value (same palette as the LTI / min-depth plots)
 DISCHARGE_COLORS = {250: '#3B6064', 500: '#87BBA2', 1000: '#C9E4CA'}
@@ -117,14 +100,21 @@ def get_last_n_hours_window(time_values, n_hours):
 
 
 def compute_intertidal_area(ds_window):
-    """Wet/dry classification over the time window -> intertidal area [m^2].
-    Mirrors the logic in plot_intertidal_area_tidal_cycle.py."""
+    """Wet/dry classification over the time window, restricted to the tidal
+    zone in x, -> intertidal area [m^2]. Mirrors the logic in
+    plot_intertidal_area_tidal_cycle.py, plus the x-restriction also used in
+    plot_intertidal_area_bedlevel_allQ.py."""
     depth_vals = ds_window['mesh2d_waterdepth'].values   # (n_window, nFaces)
     wet_mask_t = depth_vals > WET_THRESHOLD                # (n_window, nFaces), bool
 
     always_wet = wet_mask_t.all(axis=0)
     always_dry = (~wet_mask_t).all(axis=0)
     intertidal = ~always_wet & ~always_dry
+
+    x_vals = (ds_window.coords[FACE_X_VAR].values if FACE_X_VAR in ds_window.coords
+              else ds_window[FACE_X_VAR].values)
+    in_tidal_zone_x = (x_vals >= X_MIN) & (x_vals <= X_MAX)
+    intertidal = intertidal & in_tidal_zone_x
 
     ba_da = ds_window['mesh2d_flowelem_ba']
     ba_vals = ba_da.isel(time=0).values if 'time' in ba_da.dims else ba_da.values
@@ -170,6 +160,11 @@ for discharge in DISCHARGES:
             print(f"    [SKIP] missing data for {label}")
             if ds is not None:
                 ds.close()
+            continue
+
+        if FACE_X_VAR not in ds.coords and FACE_X_VAR not in ds:
+            print(f"    [SKIP] missing {FACE_X_VAR} for {label}")
+            ds.close()
             continue
 
         time_values = np.asarray(ds.time.values).astype('datetime64[ns]')
