@@ -15,5 +15,9 @@ dependencies:
   - cmocean
   - cartopy
   - pip
+  - earthengine-api
+  - geemap
+  - xee
+  - geopandas
   - pip:
       - dfm_tools
