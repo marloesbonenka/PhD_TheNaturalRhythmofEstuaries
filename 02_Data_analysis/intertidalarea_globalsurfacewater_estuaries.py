@@ -1,12 +1,17 @@
 """
-gee_westernscheldt_analysis.py
+gee_intertidal_analysis.py
 
-JRC Global Surface Water (Pekel et al., 2016) analysis for the Western
-Scheldt:
+JRC Global Surface Water (Pekel et al., 2016) analysis for multiple estuaries:
   1. Time series of intertidal ("seasonal water") and channel/subtidal
      ("permanent water") area, 1984-2024 (v1.4 + v1.5 merged).
-  2. A spatial map of the same classification, clipped to an OSM-derived
-     estuary boundary.
+  2. A spatial map of the water classification, seasonality and recurrence,
+     clipped to a manually drawn estuary boundary (shapefile from QGIS).
+
+Workflow:
+  1. Draw the estuary boundary polygon in QGIS.
+  2. Export as a shapefile to  boundaries/<slug>.shp
+     (slug = estuary name lowercased, spaces -> underscores).
+  3. Set ACTIVE_ESTUARY below and run.
 
 Run as VS Code interactive cells (#%%) or top to bottom as a plain script.
 """
@@ -26,56 +31,100 @@ from matplotlib.patches import Patch
 # CONFIGURATION
 # =============================================================================
 GCP_PROJECT = "ee-marloesbonenkamp"
-SCALE = 30  # m, native Landsat/GSW resolution
-
-# --- time series ---
-AOI_BBOX = [3.35, 51.20, 4.28, 51.50]  # [minLon, minLat, maxLon, maxLat] -- rough, replace with a real polygon
-TILE_SCALE = 4                          # bump up if reduceRegion times out
-EXPORT_MODE = "interactive"             # "interactive" or "drive"
-OUT_CSV = "westernscheldt_intertidal_timeseries.csv"
-
-# --- map ---
-BOUNDARY_CACHE = Path("westerschelde_osm.geojson")
+SCALE = 30          # m, native Landsat/GSW resolution
+TILE_SCALE = 4      # bump up if reduceRegion times out
+EXPORT_MODE = "interactive"   # "interactive" or "drive"
 CLASSIFICATION_YEARS = [2020, 2021, 2022, 2023, 2024]
-MAP_CRS = "EPSG:32631"  # UTM 31N, covers the Western Scheldt
+
+# Single shapefile containing all estuary polygons (drawn in QGIS, WGS84).
+BOUNDARIES_SHP = Path(r"C:\Users\marloesbonenka\Nextcloud\GlobalData_Estuaries\Estuaries_GlobalWaterSurface\estuary_polygons.shp")
+
+# Column in the shapefile that holds the estuary name.
+# Used to select the correct polygon for ACTIVE_ESTUARY.
+# Run `gdf.columns.tolist()` on the shapefile to find the right column name.
+NAME_COLUMN = "Name"   # <-- adjust if your shapefile uses a different column
+
+# Per-estuary configuration.
+# 'mouth':    (lat, lon) of the estuary mouth -- used to auto-select UTM zone.
+# 'shp_name': name as it appears in NAME_COLUMN (only needed if it differs
+#             from the key used here).
+ESTUARIES = {
+    'Western Scheldt': dict(mouth=(51.42,   3.57)),
+    # 'Yangon':          dict(mouth=(16.52,  96.29)),
+    # 'Chao Phraya':     dict(mouth=(13.55, 100.59)),
+    'Gironde':         dict(mouth=(45.58,  -1.05)),
+    # 'Humber':          dict(mouth=(53.62,  -0.11)),
+    # 'Fly':             dict(mouth=(-8.62, 143.70)),
+    # 'Ord':             dict(mouth=(-15.5,  128.35)),
+    # 'Demerara':        dict(mouth=( 6.79,  -58.18)),
+    'Suriname':        dict(mouth=( 5.84,  -55.11)),
+    # 'Guayas':          dict(mouth=(-2.55,  -79.88)),
+    # 'Purna':           dict(mouth=(20.91,   72.78)),
+    # 'Tapi':            dict(mouth=(21.15,   72.75)),
+    # add more as you digitise them in QGIS
+}
+
+# --- SELECT WHICH ESTUARY TO RUN ---
+ACTIVE_ESTUARY = 'Suriname'
 
 ee.Initialize(project=GCP_PROJECT)
+
+#%%
+# =============================================================================
+# DERIVED SETTINGS  (do not edit below unless needed)
+# =============================================================================
+
+def utm_epsg_from_lonlat(lat, lon):
+    """Return the EPSG code for the UTM zone covering (lat, lon)."""
+    zone = int((lon + 180) / 6) + 1
+    hemisphere = 326 if lat >= 0 else 327   # 326xx = North, 327xx = South
+    return hemisphere * 100 + zone
+
+
+def estuary_slug(name):
+    """Convert an estuary name to a filesystem-safe slug."""
+    return name.lower().replace(' ', '_').replace('(', '').replace(')', '').replace('/', '_')
+
+
+_cfg        = ESTUARIES[ACTIVE_ESTUARY]
+MOUTH_LAT, MOUTH_LON = _cfg['mouth']
+SHP_NAME    = _cfg.get('shp_name', ACTIVE_ESTUARY)  # name to match in NAME_COLUMN
+MAP_CRS     = f"EPSG:{utm_epsg_from_lonlat(MOUTH_LAT, MOUTH_LON)}"
+SLUG        = estuary_slug(ACTIVE_ESTUARY)
+OUT_CSV     = Path("cache") / f"{SLUG}_intertidal_timeseries.csv"
+Path("cache").mkdir(exist_ok=True)
+
+print(f"Estuary  : {ACTIVE_ESTUARY}")
+print(f"Shapefile: {BOUNDARIES_SHP}  (feature: '{SHP_NAME}' in column '{NAME_COLUMN}')")
+print(f"Map CRS  : {MAP_CRS}")
+print(f"CSV out  : {OUT_CSV}")
 
 #%%
 # =============================================================================
 # SHARED HELPERS
 # =============================================================================
 
-def load_aoi_from_bbox(bbox):
-    return ee.Geometry.Rectangle(bbox)
-
-
-def load_aoi_from_shapefile(path_to_shp):
+def load_aoi_from_shapefile(path, name_col=None, name_filter=None):
     """
-    Preferred over the bounding box: use your own estuary polygon (e.g. the
-    outline you use to bound the Delft3D-FM domain, or an OSM/Rijkswaterstaat
-    water polygon clipped to the estuary).
+    Load an estuary boundary polygon from a shapefile (WGS84 or any CRS).
+    If name_col and name_filter are given, selects only the matching feature.
+    Returns (gdf, ee_geometry) so the GeoDataFrame is available for plotting.
     """
-    gdf = gpd.read_file(path_to_shp).to_crs(epsg=4326)
-    return geemap.geopandas_to_ee(gdf).geometry()
-
-
-def get_estuary_boundary():
-    """
-    Fetch the Westerschelde water-body polygon from OpenStreetMap (cached
-    locally after the first call so you're not hitting Nominatim/Overpass
-    every run). Always eyeball the result once -- OSM place geocoding can
-    occasionally return a larger or offset feature than you expect.
-    """
-    if BOUNDARY_CACHE.exists():
-        gdf = gpd.read_file(BOUNDARY_CACHE)
-    else:
-        import osmnx as ox
-        gdf = ox.geocode_to_gdf("Westerschelde, Netherlands")
-        gdf = gdf.to_crs(epsg=4326)
-        gdf.to_file(BOUNDARY_CACHE, driver="GeoJSON")
-        print(f"Saved boundary to {BOUNDARY_CACHE} -- check it in QGIS/geojson.io before trusting it.")
-    return gdf
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Shapefile not found: {path}"
+        )
+    gdf = gpd.read_file(path).to_crs(epsg=4326)  # no-op if already WGS84
+    if name_col and name_filter:
+        gdf = gdf[gdf[name_col] == name_filter].copy()
+        if gdf.empty:
+            available = gpd.read_file(path)[name_col].tolist()
+            raise ValueError(
+                f"No feature with {name_col}='{name_filter}' found in {path}.\n"
+                f"Available values: {available}"
+            )
+    return gdf, geemap.geopandas_to_ee(gdf).geometry()
 
 
 def build_yearly_collection():
@@ -122,16 +171,15 @@ def compute_areas_for_image(img, aoi):
 # =============================================================================
 # PART 1: INTERTIDAL / CHANNEL AREA TIME SERIES
 # =============================================================================
-aoi_ts = load_aoi_from_bbox(AOI_BBOX)
-# aoi_ts = load_aoi_from_shapefile("path/to/western_scheldt.shp")   # <- preferred
+gdf, aoi = load_aoi_from_shapefile(BOUNDARIES_SHP, name_col=NAME_COLUMN, name_filter=SHP_NAME)
 
-yearly = build_yearly_collection().filterBounds(aoi_ts)
+yearly = build_yearly_collection().filterBounds(aoi)
 fc = ee.FeatureCollection(
-    yearly.map(lambda img: compute_areas_for_image(img, aoi_ts))
+    yearly.map(lambda img: compute_areas_for_image(img, aoi))
 )
 
 if EXPORT_MODE == "interactive":
-    result = fc.getInfo()
+    result  = fc.getInfo()
     records = [f["properties"] for f in result["features"]]
     df = pd.DataFrame(records).sort_values("year").reset_index(drop=True)
     df.to_csv(OUT_CSV, index=False)
@@ -141,7 +189,7 @@ else:
     # batch task instead of the ~5 min interactive compute limit.
     task = ee.batch.Export.table.toDrive(
         collection=fc,
-        description="westernscheldt_intertidal_timeseries",
+        description=f"{SLUG}_intertidal_timeseries",
         fileFormat="CSV",
     )
     task.start()
@@ -152,9 +200,9 @@ fig, ax = plt.subplots(2, 1, figsize=(8, 4.5))
 fig.supylabel("Area [km$^2$]")
 
 ax[0].plot(df["year"], df["intertidal_km2"], marker="o", label="Intertidal (seasonal water)")
-ax[1].plot(df["year"], df["permanent_km2"], marker="o", label="Channel (permanent water)")
+ax[1].plot(df["year"], df["permanent_km2"],  marker="o", label="Channel (permanent water)")
 ax[0].set_title(
-    "Western Scheldt water-class area, JRC Global Surface Water\n"
+    f"{ACTIVE_ESTUARY} water-class area, JRC Global Surface Water\n"
     "(Pekel et al., 2016; v1.4 + v1.5)"
 )
 ax[0].legend()
@@ -164,7 +212,7 @@ ax[1].legend()
 ax[1].grid(alpha=0.3)
 
 fig.tight_layout()
-fig.savefig("westernscheldt_intertidal_timeseries.png", dpi=200)
+fig.savefig(f"cache/{SLUG}_intertidal_timeseries.png", dpi=200)
 plt.show()
 
 
@@ -188,8 +236,7 @@ plt.show()
 # tidal flat flooded every summer) or permanent-but-episodic (standing water
 # only in wet years).
 
-gdf = get_estuary_boundary()
-aoi_map = geemap.geopandas_to_ee(gdf).geometry()
+aoi_map = aoi  # already loaded from the QGIS shapefile above
 
 yearly_map = build_yearly_collection().filter(
     ee.Filter.inList("year", CLASSIFICATION_YEARS)
@@ -254,14 +301,16 @@ rec_map  = _fetch_gsw_band("recurrence")    # 0–100 %
 import matplotlib.colors as mcolors
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
+epsg_code = int(MAP_CRS.split(":")[1])
+gdf_utm = gdf.to_crs(epsg=epsg_code)
+
 fig, axes = plt.subplots(3, 1, figsize=(20, 12))
 fig.suptitle(
-    "Western Scheldt · JRC Global Surface Water (Pekel et al., 2016)\n"
+    f"{ACTIVE_ESTUARY} · JRC Global Surface Water (Pekel et al., 2016)\n"
     "Three complementary surface-water descriptors",
     fontsize=11,
 )
-extent  = [xmin, xmax, ymin, ymax]
-gdf_utm = gdf.to_crs(epsg=32631)
+extent = [xmin, xmax, ymin, ymax]
 
 # ── panel 1 · YearlyHistory mode classification ────────────────────────────
 cmap_cls = ListedColormap(["white", "#e8e4d8", "#8B5A2B", "#1f77b4"])
@@ -322,9 +371,6 @@ im_rec = axes[2].imshow(
 )
 gdf_utm.boundary.plot(ax=axes[2], edgecolor="black", linewidth=0.8)
 
-im_rec = axes[2].imshow(rec_masked, cmap=cmap_rec, vmin=1, vmax=100, extent=extent, origin="upper")
-gdf_utm.boundary.plot(ax=axes[2], edgecolor="black", linewidth=0.8)
-
 divider3 = make_axes_locatable(axes[2])
 cax3 = divider3.append_axes("right", size="3%", pad=0.1)
 cb3 = fig.colorbar(im_rec, cax=cax3) # Attach to cax3, NOT axes[2]
@@ -339,10 +385,10 @@ axes[2].set_title(
 )
 
 for ax in axes:
-    ax.set_xlabel("east [m], UTM 31N", fontsize=8)
-axes[0].set_ylabel("north [m], UTM 31N", fontsize=8)
+    ax.set_xlabel(f"East [m], {MAP_CRS}", fontsize=8)
+axes[0].set_ylabel(f"North [m], {MAP_CRS}", fontsize=8)
 
 fig.tight_layout()
-fig.savefig("westernscheldt_seasonality_recurrence_map.png", dpi=250, bbox_inches="tight")
+fig.savefig(f"cache/{SLUG}_seasonality_recurrence_map.png", dpi=250, bbox_inches="tight")
 plt.show()
 # %%
