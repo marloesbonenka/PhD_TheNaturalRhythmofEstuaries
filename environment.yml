@@ -19,5 +19,6 @@ dependencies:
   - geemap
   - xee
   - geopandas
+  - osmnx
   - pip:
       - dfm_tools
