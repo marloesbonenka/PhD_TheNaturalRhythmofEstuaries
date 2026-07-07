@@ -1,11 +1,11 @@
 # Managing the `estuary-env` Python environment
 
 This file documents how to add/update packages in the `estuary-env` conda
-environment used for Delft3D-FM post-processing. `environment.yml` is the
-**single source of truth** — it should always reflect exactly what's
-installed. Don't `pip install` or `conda install` something one-off without
-also adding it here, or the environment becomes undocumented and
-unreproducible.
+environment used for Delft3D-FM post-processing + global data analysis. 
+`environment.yml` is the **single source of truth**: it should always reflect 
+exactly what's installed. Don't `pip install` or `conda install` something 
+one-off without also adding it here, or the environment becomes undocumented 
+and unreproducible.
 
 ## Setup (for reference)
 - Installer: **Miniforge** (not Anaconda Navigator, keeps things minimal)
