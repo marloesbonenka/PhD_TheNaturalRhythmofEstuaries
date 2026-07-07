@@ -30,11 +30,15 @@ from matplotlib.patches import Patch
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
+# --- SELECT WHICH ESTUARY TO RUN ---
+ACTIVE_ESTUARY = 'Suriname'
+
 GCP_PROJECT = "ee-marloesbonenkamp"
 SCALE = 30          # m, native Landsat/GSW resolution
 TILE_SCALE = 4      # bump up if reduceRegion times out
 EXPORT_MODE = "interactive"   # "interactive" or "drive"
 CLASSIFICATION_YEARS = [2020, 2021, 2022, 2023, 2024]
+OUT_DIR = Path(r"u:\PhDNaturalRhythmEstuaries\Data\02_Estuaries_GlobalSurfaceWater")
 
 # Single shapefile containing all estuary polygons (drawn in QGIS, WGS84).
 BOUNDARIES_SHP = Path(r"C:\Users\marloesbonenka\Nextcloud\GlobalData_Estuaries\Estuaries_GlobalWaterSurface\estuary_polygons.shp")
@@ -64,9 +68,6 @@ ESTUARIES = {
     # add more as you digitise them in QGIS
 }
 
-# --- SELECT WHICH ESTUARY TO RUN ---
-ACTIVE_ESTUARY = 'Suriname'
-
 ee.Initialize(project=GCP_PROJECT)
 
 #%%
@@ -91,8 +92,8 @@ MOUTH_LAT, MOUTH_LON = _cfg['mouth']
 SHP_NAME    = _cfg.get('shp_name', ACTIVE_ESTUARY)  # name to match in NAME_COLUMN
 MAP_CRS     = f"EPSG:{utm_epsg_from_lonlat(MOUTH_LAT, MOUTH_LON)}"
 SLUG        = estuary_slug(ACTIVE_ESTUARY)
-OUT_CSV     = Path("cache") / f"{SLUG}_intertidal_timeseries.csv"
-Path("cache").mkdir(exist_ok=True)
+OUT_CSV     = OUT_DIR / f"{SLUG}_intertidal_timeseries.csv"
+Path(OUT_DIR).mkdir(exist_ok=True)
 
 print(f"Estuary  : {ACTIVE_ESTUARY}")
 print(f"Shapefile: {BOUNDARIES_SHP}  (feature: '{SHP_NAME}' in column '{NAME_COLUMN}')")
@@ -212,7 +213,7 @@ ax[1].legend()
 ax[1].grid(alpha=0.3)
 
 fig.tight_layout()
-fig.savefig(f"cache/{SLUG}_intertidal_timeseries.png", dpi=200)
+fig.savefig(f"{OUT_DIR}/{SLUG}_intertidal_timeseries.png", dpi=200)
 plt.show()
 
 
@@ -230,6 +231,7 @@ plt.show()
 #     one year to another, expressed as a percentage (0–100 %).  Low values
 #     (orange) mark episodic inundation; high values (light-blue) mark regularly
 #     and predictably inundated surfaces.
+#   
 #
 # Seasonality describes variability *within* a year; recurrence describes
 # variability *across* years.  A pixel can be seasonal-but-regular (e.g. a
@@ -294,8 +296,10 @@ def _fetch_gsw_band(band_name):
     return ee.data.computePixels(p)[band_name]
 
 
-seas_map = _fetch_gsw_band("seasonality")   # 0–12 months/year
-rec_map  = _fetch_gsw_band("recurrence")    # 0–100 %
+seas_map    = _fetch_gsw_band("seasonality")   # 0–12 months/year
+rec_map     = _fetch_gsw_band("recurrence")    # 0–100 %
+change_map  = _fetch_gsw_band("change_abs")    # -100 to 100 %
+max_ext_map = _fetch_gsw_band("max_extent")    # 0/1: water ever detected
 
 # %%
 import matplotlib.colors as mcolors
@@ -304,10 +308,10 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 epsg_code = int(MAP_CRS.split(":")[1])
 gdf_utm = gdf.to_crs(epsg=epsg_code)
 
-fig, axes = plt.subplots(3, 1, figsize=(20, 12))
+fig, axes = plt.subplots(4, 1, figsize=(20, 16))
 fig.suptitle(
     f"{ACTIVE_ESTUARY} · JRC Global Surface Water (Pekel et al., 2016)\n"
-    "Three complementary surface-water descriptors",
+    "Four complementary surface-water descriptors",
     fontsize=11,
 )
 extent = [xmin, xmax, ymin, ymax]
@@ -316,7 +320,7 @@ extent = [xmin, xmax, ymin, ymax]
 cmap_cls = ListedColormap(["white", "#e8e4d8", "#8B5A2B", "#1f77b4"])
 norm_cls = BoundaryNorm([-0.5, 0.5, 1.5, 2.5, 3.5], cmap_cls.N)
 axes[0].imshow(wc_map, cmap=cmap_cls, norm=norm_cls, extent=extent, origin="upper")
-gdf_utm.boundary.plot(ax=axes[0], edgecolor="black", linewidth=0.8)
+# gdf_utm.boundary.plot(ax=axes[0], edgecolor="black", linewidth=0.8) # Plot polygon from ARCgis
 axes[0].legend(
     handles=[
         Patch(facecolor="#8B5A2B", edgecolor="k", label="Seasonal water"),
@@ -339,7 +343,7 @@ im_seas = axes[1].imshow(
     seas_masked, cmap="Blues", vmin=1, vmax=12,
     extent=extent, origin="upper",
 )
-gdf_utm.boundary.plot(ax=axes[1], edgecolor="black", linewidth=0.8)
+#gdf_utm.boundary.plot(ax=axes[1], edgecolor="black", linewidth=0.8) # Plot polygon from ARCgis
 
 # Use make_axes_locatable correctly:
 divider2 = make_axes_locatable(axes[1])
@@ -369,7 +373,7 @@ im_rec = axes[2].imshow(
     rec_masked, cmap=cmap_rec, vmin=1, vmax=100,
     extent=extent, origin="upper",
 )
-gdf_utm.boundary.plot(ax=axes[2], edgecolor="black", linewidth=0.8)
+#gdf_utm.boundary.plot(ax=axes[2], edgecolor="black", linewidth=0.8) # Plot polygon from ARCgis
 
 divider3 = make_axes_locatable(axes[2])
 cax3 = divider3.append_axes("right", size="3%", pad=0.1)
@@ -384,11 +388,35 @@ axes[2].set_title(
     fontsize=9,
 )
 
+# ── panel 4 · Water Occurrence Change Intensity ─────────────────────────────
+# change_abs = occurrence(1984–1999) minus occurrence(2000–2021) [%]
+# Positive (blue)  → more water in the recent epoch.
+# Negative (red)   → less water / more land in the recent epoch.
+# White            → no change.  Only shown where water was ever detected.
+change_masked = np.ma.masked_where(max_ext_map == 0, change_map.astype(float))
+im_chg = axes[3].imshow(
+    change_masked, cmap="RdBu", vmin=-100, vmax=100,
+    extent=extent, origin="upper",
+)
+divider4 = make_axes_locatable(axes[3])
+cax4 = divider4.append_axes("right", size="3%", pad=0.1)
+cb4 = fig.colorbar(im_chg, cax=cax4)
+cb4.set_label("Change in occurrence [%]", fontsize=8)
+cb4.set_ticks([-100, -50, 0, 50, 100])
+cb4.set_ticklabels(
+    ["-100%\n(more land)", "-50%", "0\n(no change)", "+50%", "+100%\n(more water)"],
+    fontsize=7,
+)
+axes[3].set_title(
+    "Water Occurrence Change Intensity  [1984–1999 → 2000–2021]",
+    fontsize=9,
+)
+
 for ax in axes:
     ax.set_xlabel(f"East [m], {MAP_CRS}", fontsize=8)
 axes[0].set_ylabel(f"North [m], {MAP_CRS}", fontsize=8)
 
 fig.tight_layout()
-fig.savefig(f"cache/{SLUG}_seasonality_recurrence_map.png", dpi=250, bbox_inches="tight")
+fig.savefig(f"{OUT_DIR}/{SLUG}_seasonality_recurrence_map.png", dpi=250, bbox_inches="tight")
 plt.show()
 # %%
