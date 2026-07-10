@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import numpy as np
+
 #%%
 estuary_coords = {
     # 'Mississippi': (29.15, -89.25),  # USA, for validation
@@ -55,57 +56,123 @@ label_priority = {
     'Bian': -10
 }
 # %% --- SETTINGS: toggle style and dot color here ---
-STYLE = 'transparent'   # 'default'      →  white background, black outlines, no land fill
+STYLE = 'AGU'        # 'default'      →  white background, black outlines, no land fill
                      # 'whitefig'     →  transparent background, white outlines, no land fill, white globe outline
                      # 'transparent'  →  transparent background, black outlines, white land fill, no globe outline
 dot_color = '#023653'
 
+# --- AGU figure sizing (figures must be 50–170 mm wide) ---
+MM_TO_IN = 1 / 25.4
+FIGURE_WIDTH_MM = 170   # full-width figure; use ~84 for a single-column figure
+CBAR_WIDTH_FRACTION = 0.85  # fraction of total width reserved for the map itself (rest = colorbar + label)
+
 # -------------------------------------------------------------------------
+_AGU_RCPARAMS = {
+    # --- Typography ---
+    'font.size': 8,
+    'font.family': 'sans-serif',
+    'font.sans-serif': ['Arial', 'Helvetica', 'DejaVu Sans'],  # fallback if Arial unavailable
+    'axes.labelsize': 8,
+    'axes.titlesize': 8,
+    'xtick.labelsize': 8,
+    'ytick.labelsize': 8,
+    'legend.fontsize': 8,
+    'figure.titlesize': 8,
+    'mathtext.fontset': 'custom',
+    'mathtext.rm': 'Arial',
+    'mathtext.it': 'Arial:italic',
+    'mathtext.bf': 'Arial:bold',
+
+    # --- Line weights: avoid hairlines (AGU rejects anything under 0.5pt) ---
+    'axes.linewidth': 0.5,
+    'lines.linewidth': 0.75,
+    'grid.linewidth': 0.4,
+    'xtick.major.width': 0.5,
+    'ytick.major.width': 0.5,
+    'xtick.minor.width': 0.35,
+    'ytick.minor.width': 0.35,
+
+    # --- Keep text as editable text in vector exports (not outlined paths) ---
+    'pdf.fonttype': 42,
+    'ps.fonttype': 42,
+    'svg.fonttype': 'none',
+
+    # --- Resolution / export ---
+    'figure.dpi': 150,          # screen preview only
+    'savefig.dpi': 300,         # within AGU's 300-600 ppi raster range
+    'savefig.bbox': 'tight',
+    'savefig.pad_inches': 0.02,
+}
+
 STYLES = {
-    'default': dict(
-        fig_facecolor='white',
-        ax_facecolor='white',
-        transparent_save=False,
-        land_facecolor='none',
-        land_edge='black',
-        coast_edge='black',
-        border_edge='black',
-        grid_color='grey',
-        label_color='black',
-        spine_visible=True,
-        spine_color='black',
-        savename='worldmap_estuary_locations.png',
-    ),
-    'whitefig': dict(
-        fig_facecolor='none',
-        ax_facecolor='none',
-        transparent_save=True,
-        land_facecolor='none',
-        land_edge='white',
-        coast_edge='white',
-        border_edge='white',
-        grid_color='white',
-        label_color='white',
-        spine_visible=True,
-        spine_color='white',
-        savename='worldmap_estuary_locations_whitefig.png',
-    ),
-    'transparent': dict(
-        fig_facecolor='none',
-        ax_facecolor='none',
-        transparent_save=True,
-        land_facecolor='#c3e4e9',
-        land_edge='black',
-        coast_edge='black',
-        border_edge='black',
-        grid_color='grey',
-        label_color='black',
-        spine_visible=True,
-        spine_color='black',
-        savename='worldmap_estuary_locations_transparent.png',
-    ),
+    'default': {
+        **_AGU_RCPARAMS,
+        'figsize': (14, 7),
+        'fig_facecolor': 'white',
+        'ax_facecolor': 'white',
+        'transparent_save': False,
+        'land_facecolor': 'none',
+        'land_edge': 'black',
+        'coast_edge': 'black',
+        'border_edge': 'black',
+        'grid_color': 'grey',
+        'label_color': 'black',
+        'spine_visible': True,
+        'spine_color': 'black',
+        'savename': 'worldmap_estuary_locations.png',
+    },
+    'whitefig': {
+        **_AGU_RCPARAMS,
+        'figsize': (14, 7),
+        'fig_facecolor': 'none',
+        'ax_facecolor': 'none',
+        'transparent_save': True,
+        'land_facecolor': 'none',
+        'land_edge': 'white',
+        'coast_edge': 'white',
+        'border_edge': 'white',
+        'grid_color': 'white',
+        'label_color': 'white',
+        'spine_visible': True,
+        'spine_color': 'white',
+        'savename': 'worldmap_estuary_locations_whitefig.png',
+    },
+    'transparent': {
+        **_AGU_RCPARAMS,
+        'figsize': (14, 7),
+        'fig_facecolor': 'none',
+        'ax_facecolor': 'none',
+        'transparent_save': True,
+        'land_facecolor': '#c3e4e9',
+        'land_edge': 'black',
+        'coast_edge': 'black',
+        'border_edge': 'black',
+        'grid_color': 'grey',
+        'label_color': 'black',
+        'spine_visible': True,
+        'spine_color': 'black',
+        'savename': 'worldmap_estuary_locations_transparent.png',
+    },
+    'AGU': {
+        **_AGU_RCPARAMS,
+        # --- AGU figure size (50–170 mm wide) ---
+        'figsize': (FIGURE_WIDTH_MM * MM_TO_IN, FIGURE_WIDTH_MM * MM_TO_IN * 0.5),
+        'fig_facecolor': 'white',
+        'ax_facecolor': 'white',
+        'transparent_save': False,
+        'land_facecolor': 'none',
+        'land_edge': 'black',
+        'coast_edge': 'black',
+        'border_edge': 'black',
+        'grid_color': 'grey',
+        'label_color': 'black',
+        'spine_visible': True,
+        'spine_color': 'black',
+        'savename': 'worldmap_estuary_locations_AGU.png',
+    },
 }
 cfg = STYLES[STYLE]
+plt.rcParams.update({k: v for k, v in cfg.items() if '.' in k})
 # -------------------------------------------------------------------------
 
 #%%
@@ -113,7 +180,7 @@ lats = [v[0] for v in estuary_coords.values()]
 lons = [v[1] for v in estuary_coords.values()]
 
 # Figure
-fig = plt.figure(figsize=(14, 7))
+fig = plt.figure(figsize=cfg['figsize'])
 fig.patch.set_facecolor(cfg['fig_facecolor'])
 if cfg['fig_facecolor'] == 'none':
     fig.patch.set_alpha(0)

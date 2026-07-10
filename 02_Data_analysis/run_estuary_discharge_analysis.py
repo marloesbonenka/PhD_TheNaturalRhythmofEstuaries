@@ -35,47 +35,127 @@ from FUNCTIONS.FUNCS_discharge_timeseries_WBMsed import (
     validate_estuary_location
 )
 
-#%% --- FIGURE STYLE ---
-STYLE = 'whitefig'   # 'default'  →  standard white background
-                    # 'whitefig' →  transparent background, all axes/labels/text white, lines still colored
-
-# --- Font sizes ---
-FONTSIZE_TITLE  = 20
-FONTSIZE_LABELS = 16   # axis labels
-FONTSIZE_TICKS  = 14   # tick numbers
-
+# %% --- SETTINGS: toggle style and dot color here ---
 # --- Line colors ---
 COLOR_DISCHARGE  = '#044457'   # discharge time series line
 COLOR_SEDIMENT   = 'tab:green' # sediment time series line
 COLOR_MOVING_AVG = 'tab:blue'  # moving average line
 
-STYLES = {
-    'default': {},   # use matplotlib defaults
-    'whitefig': {
-        'figure.facecolor':     'none',
-        'axes.facecolor':       'white',
-        'axes.edgecolor':       'white',
-        'axes.labelcolor':      'white',
-        'xtick.color':          'white',
-        'ytick.color':          'white',
-        'text.color':           'white',
-        'grid.color':           '#cccccc',
-        'legend.facecolor':     'none',
-        'legend.edgecolor':     'white',
-        'savefig.transparent':  False,
-    },
+STYLE = 'AGU'        # 'default'      →  white background, black outlines, no land fill
+                     # 'whitefig'     →  transparent background, white outlines, no land fill, white globe outline
+                     # 'transparent'  →  transparent background, black outlines, white land fill, no globe outline
+# -------------------------------------------------------------------------
+# --- AGU figure sizing (figures must be 50–170 mm wide) ---
+MM_TO_IN = 1 / 25.4
+FIGURE_WIDTH_MM = 170   # full-width figure; use ~84 for a single-column figure
+CBAR_WIDTH_FRACTION = 0.85  # fraction of total width reserved for the map itself (rest = colorbar + label)
+
+_AGU_RCPARAMS = {
+    # --- Typography ---
+    'font.size': 8,
+    'font.family': 'sans-serif',
+    'font.sans-serif': ['Arial', 'Helvetica', 'DejaVu Sans'],  # fallback if Arial unavailable
+    'axes.labelsize': 8,
+    'axes.titlesize': 8,
+    'xtick.labelsize': 8,
+    'ytick.labelsize': 8,
+    'legend.fontsize': 8,
+    'figure.titlesize': 8,
+    'mathtext.fontset': 'custom',
+    'mathtext.rm': 'Arial',
+    'mathtext.it': 'Arial:italic',
+    'mathtext.bf': 'Arial:bold',
+
+    # --- Line weights: avoid hairlines (AGU rejects anything under 0.5pt) ---
+    'axes.linewidth': 0.5,
+    'lines.linewidth': 0.75,
+    'grid.linewidth': 0.4,
+    'xtick.major.width': 0.5,
+    'ytick.major.width': 0.5,
+    'xtick.minor.width': 0.35,
+    'ytick.minor.width': 0.35,
+
+    # --- Keep text as editable text in vector exports (not outlined paths) ---
+    'pdf.fonttype': 42,
+    'ps.fonttype': 42,
+    'svg.fonttype': 'none',
+
+    # --- Resolution / export ---
+    'figure.dpi': 150,          # screen preview only
+    'savefig.dpi': 300,         # within AGU's 300-600 ppi raster range
+    'savefig.bbox': 'tight',
+    'savefig.pad_inches': 0.02,
 }
 
-plt.rcParams.update(plt.rcParamsDefault)   # reset first
-plt.rcParams.update(STYLES[STYLE])
-plt.rcParams.update({
-    'axes.titlesize':  FONTSIZE_TITLE,
-    'axes.labelsize':  FONTSIZE_LABELS,
-    'xtick.labelsize': FONTSIZE_TICKS,
-    'ytick.labelsize': FONTSIZE_TICKS,
-})
-_tc = plt.rcParams['text.color']                        # convenience: text/title color
-_tr = plt.rcParams.get('savefig.transparent', False)    # convenience: transparent flag for savefig
+STYLES = {
+    'default': {
+        **_AGU_RCPARAMS,
+        'figsize': (14, 7),
+        'fig_facecolor': 'white',
+        'ax_facecolor': 'white',
+        'transparent_save': False,
+        'land_facecolor': 'none',
+        'land_edge': 'black',
+        'coast_edge': 'black',
+        'border_edge': 'black',
+        'grid_color': 'grey',
+        'label_color': 'black',
+        'spine_visible': True,
+        'spine_color': 'black',
+        'savename': 'worldmap_estuary_locations.png',
+    },
+    'whitefig': {
+        **_AGU_RCPARAMS,
+        'figsize': (14, 7),
+        'fig_facecolor': 'none',
+        'ax_facecolor': 'none',
+        'transparent_save': True,
+        'land_facecolor': 'none',
+        'land_edge': 'white',
+        'coast_edge': 'white',
+        'border_edge': 'white',
+        'grid_color': 'white',
+        'label_color': 'white',
+        'spine_visible': True,
+        'spine_color': 'white',
+        'savename': 'worldmap_estuary_locations_whitefig.png',
+    },
+    'transparent': {
+        **_AGU_RCPARAMS,
+        'figsize': (14, 7),
+        'fig_facecolor': 'none',
+        'ax_facecolor': 'none',
+        'transparent_save': True,
+        'land_facecolor': '#c3e4e9',
+        'land_edge': 'black',
+        'coast_edge': 'black',
+        'border_edge': 'black',
+        'grid_color': 'grey',
+        'label_color': 'black',
+        'spine_visible': True,
+        'spine_color': 'black',
+        'savename': 'worldmap_estuary_locations_transparent.png',
+    },
+    'AGU': {
+        **_AGU_RCPARAMS,
+        # --- AGU figure size (50–170 mm wide) ---
+        'figsize': (FIGURE_WIDTH_MM * MM_TO_IN, FIGURE_WIDTH_MM * MM_TO_IN * 0.5),
+        'fig_facecolor': 'white',
+        'ax_facecolor': 'white',
+        'transparent_save': False,
+        'land_facecolor': 'none',
+        'land_edge': 'black',
+        'coast_edge': 'black',
+        'border_edge': 'black',
+        'grid_color': 'grey',
+        'label_color': 'black',
+        'spine_visible': True,
+        'spine_color': 'black',
+        'savename': 'worldmap_estuary_locations_AGU.png',
+    },
+}
+cfg = STYLES[STYLE]
+plt.rcParams.update({k: v for k, v in cfg.items() if '.' in k})
 
 #%% --- CONFIGURATION ---
 

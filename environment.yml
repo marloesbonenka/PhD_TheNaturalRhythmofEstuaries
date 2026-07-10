@@ -20,5 +20,6 @@ dependencies:
   - xee
   - geopandas
   - osmnx
+  - seaborn
   - pip:
       - dfm_tools

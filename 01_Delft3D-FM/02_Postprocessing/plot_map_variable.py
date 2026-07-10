@@ -16,8 +16,15 @@ SCENARIOS_TO_PROCESS = None #['1', '2', '3', '4']  # Use all scenarios
 DISCHARGE = 500
 
 # --- Figure style ---
-STYLE = 'default'   # 'default'  →  white background, black text/ticks/labels
+STYLE = 'AGU'   # 'default'  →  white background, black text/ticks/labels
                     # 'whitefig' →  transparent background, white text/ticks/labels
+                    # 'AGU'
+
+# --- AGU figure sizing (figures must be 50–170 mm wide) ---
+MM_TO_IN = 1 / 25.4
+FIGURE_WIDTH_MM = 170   # full-width figure; use ~84 for a single-column figure
+CBAR_WIDTH_FRACTION = 0.85  # fraction of total width reserved for the map itself (rest = colorbar + label)
+
 STYLES = {
     'default': {},   # use matplotlib defaults
     'whitefig': {
@@ -33,6 +40,41 @@ STYLES = {
         'legend.edgecolor':    'white',
         'savefig.transparent': True,
     },
+    'AGU': {
+        'font.size': 8,
+        'font.family': 'sans-serif',
+        'font.sans-serif': ['Arial', 'Helvetica', 'DejaVu Sans'],  # fallback if Arial unavailable
+        'axes.labelsize': 8,
+        'axes.titlesize': 8,
+        'xtick.labelsize': 8,
+        'ytick.labelsize': 8,
+        'legend.fontsize': 8,
+        'figure.titlesize': 8,
+        'mathtext.fontset': 'custom',
+        'mathtext.rm': 'Arial',
+        'mathtext.it': 'Arial:italic',
+        'mathtext.bf': 'Arial:bold',
+
+        # --- Line weights: avoid hairlines (AGU rejects anything under 0.5pt) ---
+        'axes.linewidth': 0.5,
+        'lines.linewidth': 0.75,
+        'grid.linewidth': 0.4,
+        'xtick.major.width': 0.5,
+        'ytick.major.width': 0.5,
+        'xtick.minor.width': 0.35,
+        'ytick.minor.width': 0.35,
+
+        # --- Keep text as editable text in vector exports (not outlined paths) ---
+        'pdf.fonttype': 42,
+        'ps.fonttype': 42,
+        'svg.fonttype': 'none',
+
+        # --- Resolution / export ---
+        'figure.dpi': 150,          # screen preview only
+        'savefig.dpi': 300,         # within AGU's 300-600 ppi raster range
+        'savefig.bbox': 'tight',
+        'savefig.pad_inches': 0.02,
+    }
 }
 plt.rcParams.update(plt.rcParamsDefault)
 plt.rcParams.update(STYLES[STYLE])
@@ -42,10 +84,10 @@ _tc = plt.rcParams['text.color']
 
 # --- Variable selection ---
 var_names = ['mesh2d_mor_bl']#, 'mesh2d_s1', 'mesh2d_taus']  # e.g. ['mesh2d_mor_bl'] or all three
-target_hydrodynamic_date = '2031-01-01' #'2055-12-31' # e.g. '2055-12-31'; when set, nearest timestep is used per run
+target_hydrodynamic_date = '2025-01-01' #'2055-12-31' # e.g. '2055-12-31'; when set, nearest timestep is used per run
 
 # Detrending settings (applies to bed level variable only)
-apply_detrending = True
+apply_detrending = False
 reference_time_idx = 0
 detrend_land_threshold = 6.0
 
@@ -58,7 +100,7 @@ CENTERLINE_XMAX = 45000          # [m] end of x-range for the reference profile
 CENTERLINE_Y = 7500               # [m] exact y-coordinate of the channel centerline
 
 # Zoom settings
-ZOOM = True          # True → crop axes to ZOOM_XLIM / ZOOM_YLIM
+ZOOM = False          # True → crop axes to ZOOM_XLIM / ZOOM_YLIM
 ZOOM_XLIM = (20000, 45000)   # x-range in model coordinates [m]
 ZOOM_YLIM = (5000, 10000)    # y-range in model coordinates [m]
 
@@ -96,21 +138,21 @@ configs = {
         'cmap': create_terrain_colormap(),
         'vmin': -15,
         'vmax': 15,
-        'label': 'Bed Level [m]',
+        'label': 'bed level [m]',
         'file_tag': 'bedlevel_map'
     },
     'mesh2d_s1': {
         'cmap': create_water_colormap(),
         'vmin': -1,   # Adjust based on your tide/datum
         'vmax': 3,
-        'label': 'Water Level [m]',
+        'label': 'water level [m]',
         'file_tag': 'water_level_map'
     },
     'mesh2d_taus': {
         'cmap': create_shear_stress_colormap(),
         'vmin': 0,
         'vmax': 5,    # Adjust based on flow intensity
-        'label': 'Bed Shear Stress [N/m²]',
+        'label': 'bed shear stress [N/m²]',
         'file_tag': 'shear_stress_map'
     }
 }
@@ -171,6 +213,18 @@ def build_centerline_reference(ds, var_name, reference_time_idx, xmin, xmax, cen
     reference_per_face[in_range] = np.interp(x_in, unique_x, centerline_bed)
     return reference_per_face
 
+def compute_map_figsize(xlim, ylim, width_mm=FIGURE_WIDTH_MM, cbar_frac=CBAR_WIDTH_FRACTION):
+    """Derive (width_in, height_in) from data aspect ratio so an equal-aspect
+    map fills the frame at the target AGU print width, with space reserved
+    for the colorbar."""
+    x_span = xlim[1] - xlim[0]
+    y_span = ylim[1] - ylim[0]
+    aspect = y_span / x_span
+
+    fig_width_in = width_mm * MM_TO_IN
+    map_width_in = fig_width_in * cbar_frac
+    fig_height_in = map_width_in * aspect
+    return (fig_width_in, fig_height_in)
 
 #%%
 # =============================================================================
@@ -297,8 +351,13 @@ for folder in model_folders:
                     detrended_limit = max(abs(current_cfg['vmin']), abs(current_cfg['vmax']))
                     vmin_to_use = -detrended_limit
                     vmax_to_use = detrended_limit
+                
+                current_xlim = ZOOM_XLIM if ZOOM else (CACHE_BBOX[0], CACHE_BBOX[2])
+                current_ylim = ZOOM_YLIM if ZOOM else (CACHE_BBOX[1], CACHE_BBOX[3])
+                figsize = compute_map_figsize(current_xlim, current_ylim)
+                fig, ax = plt.subplots(figsize=figsize)
 
-                fig, ax = plt.subplots(figsize=(12, 8))
+                #fig, ax = plt.subplots(figsize=(12, 8))
                 fig.patch.set_alpha(0)
                 ax.patch.set_alpha(0)
                 pc = data_to_plot.ugrid.plot(
