@@ -159,9 +159,8 @@ plt.rcParams.update({k: v for k, v in cfg.items() if '.' in k})
 
 #%% --- CONFIGURATION ---
 
-INPUT_DIR  = r"U:\PhDNaturalRhythmEstuaries\Data\01_Discharge_var_int_flash"
-OUTPUT_DIR = r"U:\PhDNaturalRhythmEstuaries\Data\01_Discharge_var_int_flash\01_Analysis_smallselection_estuaries"
-FIG_DIR    = Path(OUTPUT_DIR) / STYLE if STYLE != 'default' else Path(OUTPUT_DIR)
+INPUT_DIR  = r"U:\PhDNaturalRhythmEstuaries\Data\01_Discharge_variability_WBMsed"
+FIG_DIR    = Path(INPUT_DIR) / STYLE if STYLE != 'default' else Path(INPUT_DIR)
 
 MAT_FILE          = "qs_timeseries_Nienhuis2020.mat"
 TIF_FILE          = r"Nienhuis2020_Scripts\bqart_a.tif"          # relative to INPUT_DIR; set None to skip
@@ -171,13 +170,12 @@ SAVE_FIG  = True
 SAVE_DATA = True
 
 Path(INPUT_DIR).mkdir(parents=True, exist_ok=True)
-Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
 FIG_DIR.mkdir(parents=True, exist_ok=True)
 
 mat_file_path      = Path(INPUT_DIR) / MAT_FILE
 tif_path           = Path(INPUT_DIR) / TIF_FILE          if TIF_FILE          else None
 global_delta_path  = Path(INPUT_DIR) / GLOBAL_DELTA_FILE if GLOBAL_DELTA_FILE else None
-CACHE_FILE         = Path(OUTPUT_DIR) / "estuary_timeseries_cache.xlsx"
+CACHE_FILE         = Path(INPUT_DIR) / "estuary_timeseries_cache.xlsx"
 
 window_ma = 30  # Window size for moving average (in days)
 

@@ -21,5 +21,6 @@ dependencies:
   - geopandas
   - osmnx
   - seaborn
+  - openpyxl
   - pip:
       - dfm_tools

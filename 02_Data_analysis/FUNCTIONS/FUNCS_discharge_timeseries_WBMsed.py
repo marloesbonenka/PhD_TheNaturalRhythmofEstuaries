@@ -12,6 +12,43 @@ import sys
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\02_Data_analysis")
 from FUNCTIONS.FUNCS_utils import transform_coordinates
 
+# -------------------------------------------------------------------------
+# --- AGU figure settings (matches run_estuary_discharge_analysis.py) ---
+_MM_TO_IN = 1 / 25.4
+_FW = 170 * _MM_TO_IN   # full-width figure  ≈ 6.69 in  (AGU: 50–170 mm)
+_CW = 84  * _MM_TO_IN   # single-column      ≈ 3.31 in
+
+_AGU_RCPARAMS = {
+    'font.size': 8,
+    'font.family': 'sans-serif',
+    'font.sans-serif': ['Arial', 'Helvetica', 'DejaVu Sans'],
+    'axes.labelsize': 8,
+    'axes.titlesize': 8,
+    'xtick.labelsize': 8,
+    'ytick.labelsize': 8,
+    'legend.fontsize': 8,
+    'figure.titlesize': 8,
+    'mathtext.fontset': 'custom',
+    'mathtext.rm': 'Arial',
+    'mathtext.it': 'Arial:italic',
+    'mathtext.bf': 'Arial:bold',
+    'axes.linewidth': 0.5,
+    'lines.linewidth': 0.75,
+    'grid.linewidth': 0.4,
+    'xtick.major.width': 0.5,
+    'ytick.major.width': 0.5,
+    'xtick.minor.width': 0.35,
+    'ytick.minor.width': 0.35,
+    'pdf.fonttype': 42,
+    'ps.fonttype': 42,
+    'svg.fonttype': 'none',
+    'figure.dpi': 150,
+    'savefig.dpi': 300,
+    'savefig.bbox': 'tight',
+    'savefig.pad_inches': 0.02,
+}
+plt.rcParams.update(_AGU_RCPARAMS)
+
 #%%
 
 def plot_global_delta_distribution(rm_lon, rm_lat, mean_discharge=None, savefig=False, output_dir=None):
@@ -27,30 +64,30 @@ def plot_global_delta_distribution(rm_lon, rm_lat, mean_discharge=None, savefig=
     """
     outdir = Path(output_dir) if output_dir else None
 
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=(_FW, _FW * 0.5))
     plt.scatter(rm_lon, rm_lat, alpha=0.5, s=5)
     plt.xlabel('Longitude')
     plt.ylabel('Latitude')
     plt.title('Global Distribution of Deltas based on Nienhuis et al. 2020')
     plt.grid(True, alpha=0.3)
     if savefig and outdir:
-        plt.savefig(outdir / 'global_delta_distribution.png', dpi=200, bbox_inches='tight')
+        plt.savefig(outdir / 'global_delta_distribution.png', dpi=300, bbox_inches='tight')
     plt.show()
 
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=(_FW, _FW * 0.5))
     hb = plt.hexbin(rm_lon, rm_lat, gridsize=50, cmap='viridis')
     plt.colorbar(hb, label='Number of Deltas')
     plt.xlabel('Longitude')
     plt.ylabel('Latitude')
     plt.title('Density of Deltas Worldwide based on Nienhuis et al. 2020')
     if savefig and outdir:
-        plt.savefig(outdir / 'delta_density_hexbin.png', dpi=200, bbox_inches='tight')
+        plt.savefig(outdir / 'delta_density_hexbin.png', dpi=300, bbox_inches='tight')
     plt.show()
 
     if mean_discharge is not None:
         vmin = np.percentile(mean_discharge, 5)
         vmax = np.percentile(mean_discharge, 95)
-        plt.figure(figsize=(12, 8))
+        plt.figure(figsize=(_FW, _FW * 0.5))
         scatter = plt.scatter(rm_lon, rm_lat, c=mean_discharge, cmap='viridis',
                               alpha=0.7, s=10, edgecolors='none', vmin=vmin, vmax=vmax)
         plt.colorbar(scatter, label='Average Discharge')
@@ -60,7 +97,7 @@ def plot_global_delta_distribution(rm_lon, rm_lat, mean_discharge=None, savefig=
         plt.grid(True, alpha=0.3)
         if savefig and outdir:
             outdir.mkdir(parents=True, exist_ok=True)
-            plt.savefig(outdir / 'delta_discharge_distribution.png', dpi=200, bbox_inches='tight')
+            plt.savefig(outdir / 'delta_discharge_distribution.png', dpi=300, bbox_inches='tight')
         plt.show()
 
 
@@ -232,7 +269,7 @@ def validate_estuary_location(estuary_name, original_coords, grid_coords, savefi
     lon_grid = (rm_lon / 10) - 180
     lat_grid = (rm_lat / 10) - 90
     
-    fig = plt.figure(figsize=(8, 8))
+    fig = plt.figure(figsize=(_CW, _CW))
     ax = plt.axes(projection=ccrs.PlateCarree())
     extent = [lon - 5, lon + 5, lat - 5, lat + 5]
     ax.set_extent(extent)
@@ -250,7 +287,7 @@ def validate_estuary_location(estuary_name, original_coords, grid_coords, savefi
     if savefig and outdir:
         save_path_l = outdir / '00_Estuary_location_validation'
         save_path_l.mkdir(parents=True, exist_ok=True)
-        plt.savefig(save_path_l / f'Location_check_{estuary_name}.png', dpi=200, bbox_inches='tight')
+        plt.savefig(save_path_l / f'Location_check_{estuary_name}.png', dpi=300, bbox_inches='tight')
     plt.show()
 
 
@@ -275,7 +312,7 @@ def plot_estuary_timeseries(estuary_name, discharge_series, sed_series, datetime
     mean_sediment  = np.mean(sed_series)
     fac_label = f"  [fac={scaling_factor:.3f}]" if scaling_factor != 1.0 else ""
 
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(_FW, _FW * 0.4))
     plt.plot(datetimes, discharge_series, label=estuary_name, color=color_discharge)
     # plt.axhline(mean_discharge, linestyle='dashed', color='orange',
                 # label=f'mean = {mean_discharge:.2f}')
@@ -290,12 +327,12 @@ def plot_estuary_timeseries(estuary_name, discharge_series, sed_series, datetime
     if savefig and outdir:
         save_path = outdir / '01_River_discharge_Qriver_per_estuary'
         save_path.mkdir(parents=True, exist_ok=True)
-        plt.savefig(save_path / f'Q_{estuary_name}.png', dpi=200, bbox_inches='tight')
+        plt.savefig(save_path / f'Q_{estuary_name}.png', dpi=300, bbox_inches='tight')
         plt.savefig(save_path / f'Q_{estuary_name}.pdf', bbox_inches='tight')
     plt.show()
 
     # --- Sediment plot ---
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(_FW, _FW * 0.4))
     plt.plot(datetimes, sed_series, label='Sediment', color=color_sediment)
     plt.axhline(mean_sediment, linestyle='dashed', color='red',
                 label=f'mean = {mean_sediment:.2f}')
@@ -308,12 +345,12 @@ def plot_estuary_timeseries(estuary_name, discharge_series, sed_series, datetime
     if savefig and outdir:
         save_path_s = outdir / '02_Sediment_load_per_estuary'
         save_path_s.mkdir(parents=True, exist_ok=True)
-        plt.savefig(save_path_s / f'Sediment_{estuary_name}.png', dpi=200, bbox_inches='tight')
+        plt.savefig(save_path_s / f'Sediment_{estuary_name}.png', dpi=300, bbox_inches='tight')
         plt.savefig(save_path_s / f'Sediment_{estuary_name}.pdf', bbox_inches='tight')
     plt.show()
 
     # --- Combined plot ---
-    fig, ax1 = plt.subplots(figsize=(10, 6))
+    fig, ax1 = plt.subplots(figsize=(_FW, _FW * 0.45))
     ax1.set_xlabel('Time')
     ax1.set_ylabel('River Discharge $Q_{river}$ [m³/s]', color=color_discharge)
     ax1.plot(datetimes, discharge_series, label='Discharge', color=color_discharge)
@@ -343,7 +380,7 @@ def plot_estuary_timeseries(estuary_name, discharge_series, sed_series, datetime
     if savefig and outdir:
         save_path_combined = outdir / '03_Combined_Qriver_qs'
         save_path_combined.mkdir(parents=True, exist_ok=True)
-        plt.savefig(save_path_combined / f'Combined_{estuary_name}.png', dpi=200, bbox_inches='tight')
+        plt.savefig(save_path_combined / f'Combined_{estuary_name}.png', dpi=300, bbox_inches='tight')
         plt.savefig(save_path_combined / f'Combined_{estuary_name}.pdf', bbox_inches='tight')
     plt.show()
 
@@ -351,7 +388,7 @@ def plot_estuary_timeseries(estuary_name, discharge_series, sed_series, datetime
     q_df = pd.Series(discharge_series, index=datetimes)
     moving_avg = q_df.rolling(window=window_ma, center=True).mean()
 
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(_FW, _FW * 0.4))
     plt.plot(datetimes, discharge_series, color='lightgrey', alpha=0.5, label='Daily Discharge')
     plt.plot(datetimes, moving_avg, color=color_moving_avg, linewidth=2, label=f'{window_ma}-day Moving Average')
     plt.axhline(mean_discharge, linestyle='dashed', color='orange',
@@ -365,7 +402,7 @@ def plot_estuary_timeseries(estuary_name, discharge_series, sed_series, datetime
     if savefig and outdir:
         save_path_ma = outdir / '05_Moving_Average_Discharge'
         save_path_ma.mkdir(parents=True, exist_ok=True)
-        plt.savefig(save_path_ma / f'Trend_{estuary_name}_MA{window_ma}.png', dpi=200, bbox_inches='tight')
+        plt.savefig(save_path_ma / f'Trend_{estuary_name}_MA{window_ma}.png', dpi=300, bbox_inches='tight')
         plt.savefig(save_path_ma / f'Trend_{estuary_name}_MA{window_ma}.pdf', bbox_inches='tight')
     
     plt.show()
