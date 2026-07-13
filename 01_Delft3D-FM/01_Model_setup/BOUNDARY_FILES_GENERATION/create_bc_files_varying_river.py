@@ -26,7 +26,7 @@ from FUNCTIONS.FUNCS_plot_discharge_scenarios import (
 )
 
  #%% Configuration settings
-total_discharge = 250                   # Total river discharge in m³/s
+total_discharge = 1000                   # Total river discharge in m³/s
 nyears = 52
 duration_min    = 365.25 * 24 * 60 * nyears               # Total simulation duration in minutes;  525600 = 1 year;     2629440 = 5 years
 time_step_rcel  = 1440                                  # Time step for variations over consecutive river cells in minutes, to force bar formation      
@@ -69,6 +69,7 @@ scenarios_old = [
 
 # --- New scenarios – Gaussian variability (peak_ratio × n_peaks) ---
 # S1: constant (n_peaks=0); S5–S10: spanned peak/mean × frequency space
+#CAMILLE
 scenarios_new = [
     {"name": f"01_Qr{total_discharge}_pm1_n0",  "peak_ratio": 1.0, "n_peaks": 0},
     {"name": f"02_Qr{total_discharge}_pm2_n1",  "peak_ratio": 2,   "n_peaks": 1},
