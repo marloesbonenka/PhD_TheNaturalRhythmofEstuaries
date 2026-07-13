@@ -167,6 +167,7 @@ def generate_river_discharges_fm_gaussian(grid_info, params, output_dir, start_d
     peak_ratio       = params['peak_ratio']
     n_peaks          = params['n_peaks']
     Q_base_fraction  = params.get('Q_base_fraction', 0.8)
+    cycle_days       = params.get('cycle_days', 365)   # length of one repeating pattern [days]
     num_cells        = len(grid_info['river_cells'])
 
     # ------------------------------------------------------------------
@@ -180,10 +181,10 @@ def generate_river_discharges_fm_gaussian(grid_info, params, output_dir, start_d
     timestamps = [start_dt + timedelta(minutes=int(m)) for m in time_minutes]
 
     # ------------------------------------------------------------------
-    # 2. Build the 1-year Gaussian pattern (daily resolution, 365 days)
+    # 2. Build the Gaussian pattern (daily resolution, cycle_days long)
     # ------------------------------------------------------------------
-    days_year = 365
-    t_year    = np.arange(days_year, dtype=float)  # day index 0 … 364
+    days_year = cycle_days
+    t_year    = np.arange(days_year, dtype=float)  # day index 0 … (cycle_days-1)
     Q_base    = Q_base_fraction * total_q
 
     if n_peaks == 0:
@@ -197,7 +198,11 @@ def generate_river_discharges_fm_gaussian(grid_info, params, output_dir, start_d
         sigma          = V_event / (A * np.sqrt(2.0 * np.pi))    # width that gives correct area
 
         segment        = days_year / n_peaks
-        event_centers  = np.linspace(segment / 2.0, days_year - segment / 2.0, n_peaks)
+        # Snap centers to integer days so each peak falls exactly on a sample
+        # point → sampled Q_peak = peak_ratio * total_q regardless of cycle_days.
+        # (Poisson summation guarantees discrete Gaussian sum ≈ continuous
+        # integral, so volume conservation is unaffected.)
+        event_centers  = (np.round(np.linspace(segment / 2.0, days_year - segment / 2.0, n_peaks)).astype(int) % days_year)
 
         q_year = np.full(days_year, Q_base)
         for t0 in event_centers:
@@ -251,8 +256,8 @@ def generate_river_discharges_fm_gaussian(grid_info, params, output_dir, start_d
         pd.DataFrame({'timestamp': timestamps, 'discharge_m3s': section_q}).to_csv(
             os.path.join(output_dir, f'river_section_{i+1}.csv'), index=False)
 
-    print(f"Scenario {params.get('name', '')} (Gaussian, peak_ratio={peak_ratio}, n_peaks={n_peaks}): "
-          f"Successfully saved {num_cells + 1} CSVs.")
+    print(f"Scenario {params.get('name', '')} (Gaussian, peak_ratio={peak_ratio}, n_peaks={n_peaks}, "
+          f"cycle_days={cycle_days}): Successfully saved {num_cells + 1} CSVs.")
 
 
 def generate_river_discharges_fm_gaussian_phased(grid_info, params, output_dir, start_date_str='2024-01-01 00:00:00'):
@@ -313,7 +318,8 @@ def generate_river_discharges_fm_gaussian_phased(grid_info, params, output_dir, 
         else:
             t0_first = float(first_peak_day)
 
-        event_centers = [(t0_first + i * segment) % days_year for i in range(n_peaks)]
+        # Snap centers to integer days (same reason as in generate_river_discharges_fm_gaussian)
+        event_centers = [int(round((t0_first + i * segment) % days_year)) for i in range(n_peaks)]
 
         q_year = np.full(days_year, Q_base)
         for t0 in event_centers:

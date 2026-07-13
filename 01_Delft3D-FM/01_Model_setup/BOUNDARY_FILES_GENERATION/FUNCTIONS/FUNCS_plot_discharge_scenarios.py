@@ -125,8 +125,9 @@ def plot_discharge_scenarios_first_year(
     plt.figure(figsize=(10,6))
     for idx, (scenario_name, df_year) in enumerate(series_data):
         cv_value = compute_CV(df_year)
-        compute_p95_mean_value = compute_p95_mean(df_year)
-        label_name = f"{get_scenario_label(scenario_name)}\n$R_{{\\mathrm{{peak}}}}$={compute_p95_mean_value:.1f}, CV={cv_value:.2f}"
+        mean_q = df_year["discharge_m3s"].mean()
+        annualmax_mean_value = df_year["discharge_m3s"].max() / mean_q if mean_q != 0 else float('nan')
+        label_name = f"{get_scenario_label(scenario_name)}\n$R_{{\\mathrm{{peak}}}}$={annualmax_mean_value:.1f}, CV={cv_value:.2f}"
         color = get_scenario_color(scenario_name)
         plt.plot(
             df_year["timestamp"],
