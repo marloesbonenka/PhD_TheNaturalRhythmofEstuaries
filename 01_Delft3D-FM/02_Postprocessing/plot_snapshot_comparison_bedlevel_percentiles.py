@@ -25,7 +25,6 @@ from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 # --- CONFIGURATION ---
 DISCHARGE = 500
 TARGET_DATE = np.datetime64('2031-01-01')
-DEPTH_PERCENTILE = 95
 CACHE_BBOX = [1, 1, 45000, 15000]
 CACHE_TAG = None
 APPEND_TIMESTEPS = True
@@ -101,25 +100,68 @@ for label, folder_path in MODEL_PATHS.items():
     x_bins = np.arange(X_RANGE[0], X_RANGE[1] + dx, dx)
     x_centers = (x_bins[:-1] + x_bins[1:]) / 2
     
-    profile = []
+    p5_profile   = []
+    mean_profile = []
+    p95_profile  = []
     for k in range(len(x_bins) - 1):
         b_mask = mask & (face_x >= x_bins[k]) & (face_x < x_bins[k + 1])
         vals = bedlev[b_mask]
-        profile.append(np.percentile(vals[~np.isnan(vals)], DEPTH_PERCENTILE) if len(vals) > 0 else np.nan)
-    
-    results[label] = (x_centers / 1000, np.array(profile))
+        vals = vals[~np.isnan(vals)]
+        if len(vals) > 0:
+            p5_profile.append(np.percentile(vals, 5))
+            mean_profile.append(np.mean(vals))
+            p95_profile.append(np.percentile(vals, 95))
+        else:
+            p5_profile.append(np.nan)
+            mean_profile.append(np.nan)
+            p95_profile.append(np.nan)
+
+    results[label] = {
+        'x':    x_centers / 1000,
+        'p5':   np.array(p5_profile),
+        'mean': np.array(mean_profile),
+        'p95':  np.array(p95_profile),
+    }
     ds.close()
 
-# --- PLOTTING ---
-fig, ax = plt.subplots(figsize=(7, 4))
-for label, (x, y) in results.items():
-    ax.plot(x, y, label=label, linewidth=2)
+#%% --- PLOTTING ---
+COLORS = plt.rcParams['axes.prop_cycle'].by_key()['color']
+
+fig, ax = plt.subplots(figsize=(8, 6))
+
+legend_handles = []
+for i, (label, data) in enumerate(results.items()):
+    color = COLORS[i % len(COLORS)]
+    x = data['x']
+
+    # Shaded band: p5 (channel) to p95 (bar)
+    ax.fill_between(x, data['p5'], data['p95'], color=color, alpha=0.18, zorder=1)
+
+    # p5 and p95 dashed lines
+    ax.plot(x, data['p95'], color=color, linewidth=1.2, linestyle='--', zorder=2)
+    ax.plot(x, data['p5'],  color=color, linewidth=1.2, linestyle=':',  zorder=2)
+
+    # Mean as solid line
+    ax.plot(x, data['mean'], color=color, linewidth=2.0, linestyle='-', zorder=3)
+
+    # Legend entry per scenario
+    legend_handles.append(
+        mlines.Line2D([], [], color=color, linewidth=2.0, linestyle='-', label=label)
+    )
+
+# Shared line-style legend entries
+legend_handles += [
+    mlines.Line2D([], [], color='0.3', linewidth=1.5, linestyle='-',  label='mean'),
+    mlines.Line2D([], [], color='0.3', linewidth=1.2, linestyle=':',  label='p5 (channel)'),
+    mlines.Line2D([], [], color='0.3', linewidth=1.2, linestyle='--', label='p95 (bar)'),
+    mpatches.Patch(facecolor='0.55', alpha=0.3,                        label='p5 – p95 range'),
+]
 
 ax.set_xlabel('Distance along estuary [km]')
-ax.set_ylabel(f'p{DEPTH_PERCENTILE} Bed Level [m]')
-ax.set_title(f'Snapshot Comparison: {TARGET_DATE}')
-ax.legend()
-ax.grid(True, linestyle='--', alpha=0.5)
+ax.set_ylabel('Bed level [m]')
+ax.set_title(f'Snapshot comparison: {TARGET_DATE},  Q = {DISCHARGE} m³/s')
+ax.legend(handles=legend_handles, fontsize=9, frameon=True)
+ax.grid(True, linestyle='--', alpha=0.4)
 plt.tight_layout()
 plt.savefig(OUTPUT_DIR / OUTPUT_FILENAME, dpi=300)
 print(f"Plot saved to: {OUTPUT_DIR / OUTPUT_FILENAME}")
