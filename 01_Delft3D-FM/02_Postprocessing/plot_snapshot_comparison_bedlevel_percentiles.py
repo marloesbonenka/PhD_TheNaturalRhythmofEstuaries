@@ -8,8 +8,6 @@ import re
 
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.lines as mlines
-import matplotlib.patches as mpatches
 import sys
 
 sys.path.append(r"c:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing")
@@ -129,7 +127,6 @@ COLORS = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
 fig, ax = plt.subplots(figsize=(8, 6))
 
-legend_handles = []
 for i, (label, data) in enumerate(results.items()):
     color = COLORS[i % len(COLORS)]
     x = data['x']
@@ -144,26 +141,31 @@ for i, (label, data) in enumerate(results.items()):
     # Mean as solid line
     ax.plot(x, data['mean'], color=color, linewidth=2.0, linestyle='-', zorder=3)
 
-    # Legend entry per scenario
-    legend_handles.append(
-        mlines.Line2D([], [], color=color, linewidth=2.0, linestyle='-', label=label)
-    )
+    # --- Direct annotations at right end of each line ---
+    def _right_label(profile, text, color, dy=0):
+        valid = ~np.isnan(np.array(profile))
+        if not valid.any():
+            return
+        x_end = x[valid][-1]
+        y_end = np.array(profile)[valid][-1]
+        ax.annotate(text,
+                    xy=(x_end, y_end), xycoords='data',
+                    xytext=(4, dy), textcoords='offset points',
+                    va='center', ha='left', fontsize=8, color=color,
+                    annotation_clip=False)
 
-# Shared line-style legend entries
-legend_handles += [
-    mlines.Line2D([], [], color='0.3', linewidth=1.5, linestyle='-',  label='mean'),
-    mlines.Line2D([], [], color='0.3', linewidth=1.2, linestyle=':',  label='p5 (channel)'),
-    mlines.Line2D([], [], color='0.3', linewidth=1.2, linestyle='--', label='p95 (bar)'),
-    mpatches.Patch(facecolor='0.55', alpha=0.3,                        label='p5 – p95 range'),
-]
+    # Scenario name + line type on every line, for every scenario
+    _right_label(data['mean'], f'{label} (mean)', color)
+    _right_label(data['p95'],  'p95 (bar)',        color)
+    _right_label(data['p5'],   'p5 (channel)',     color)
 
 ax.set_xlabel('Distance along estuary [km]')
 ax.set_ylabel('Bed level [m]')
 ax.set_title(f'Snapshot comparison: {TARGET_DATE},  Q = {DISCHARGE} m³/s')
-ax.legend(handles=legend_handles, fontsize=9, frameon=True)
 ax.grid(True, linestyle='--', alpha=0.4)
 plt.tight_layout()
-plt.savefig(OUTPUT_DIR / OUTPUT_FILENAME, dpi=300)
+plt.subplots_adjust(right=0.75)
+plt.savefig(OUTPUT_DIR / OUTPUT_FILENAME, dpi=300, bbox_inches='tight')
 print(f"Plot saved to: {OUTPUT_DIR / OUTPUT_FILENAME}")
 plt.show()
 # %%

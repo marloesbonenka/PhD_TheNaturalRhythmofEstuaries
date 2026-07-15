@@ -426,3 +426,88 @@ def plot_estuary_timeseries(estuary_name, discharge_series, sed_series, datetime
     plt.show()
 
     return mean_discharge, mean_sediment, moving_avg
+
+
+def plot_annual_max_peaks(estuary_name, discharge_series, datetimes,
+                          savefig=False, output_dir=None,
+                          color_discharge='#044457', color_annual_max='tab:orange'):
+    """
+    Plot the discharge time series with annual maximum peaks highlighted as dots
+    and dashed lines at the mean discharge and mean annual maximum, to visualise
+    how R_peak is derived. Lines are labelled directly on the right-hand side.
+
+    Parameters:
+        estuary_name (str): Name of the estuary.
+        discharge_series (np.ndarray): Daily discharge time series.
+        datetimes (list): List of datetime objects matching discharge_series.
+        savefig (bool): Whether to save the figure.
+        output_dir (str or Path, optional): Base directory; plot is saved in the
+            subfolder ``01_River_discharge_Qriver_per_estuary/annual_max_peaks/``.
+        color_discharge (str): Colour for the time series line and mean-Q dashed line.
+        color_annual_max (str): Colour for the annual-max dots and mean-annual-max dashed line.
+    """
+    datetime_index = pd.DatetimeIndex(datetimes)
+    q_series = pd.Series(
+        np.array(discharge_series, dtype=float),
+        index=datetime_index[:len(discharge_series)]
+    ).dropna()
+
+    # Date of annual maximum (one per calendar year)
+    peak_dates = q_series.resample('YE').apply(
+        lambda x: x.idxmax() if len(x) > 0 else pd.NaT
+    ).dropna()
+    peak_values = q_series[peak_dates]
+    mean_annual_max = peak_values.mean()
+    mean_q = q_series.mean()
+    r_peak = mean_annual_max / mean_q if mean_q != 0 else np.nan
+
+    def _style_ax(ax):
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.xaxis.set_major_locator(mdates.YearLocator(4))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y'))
+        ax.xaxis.set_minor_locator(mdates.YearLocator(1))
+
+    fig, ax = plt.subplots(figsize=(_FW, _FW * 0.4))
+    ax.plot(q_series.index, q_series.values,
+            color=color_discharge, linewidth=0.75)
+    ax.scatter(peak_dates, peak_values,
+               color=color_annual_max, s=20, zorder=5)
+    ax.axhline(mean_q, linestyle='--', linewidth=0.75, color=color_discharge)
+    ax.axhline(mean_annual_max, linestyle='--', linewidth=0.75, color=color_annual_max)
+    ax.set_xlabel('Time')
+    ax.set_ylabel('$Q_{river}$ [m³/s]')
+    ax.set_title(f'{estuary_name}')
+    ax.grid(True, alpha=0.2, linewidth=0.4)
+    _style_ax(ax)
+
+    # --- Right-side inline labels ---
+    # Shrink axes to leave room for labels on the right
+    fig.tight_layout()
+    fig.subplots_adjust(right=0.68)
+
+    x_label = q_series.index[-1]
+    font_size = plt.rcParams.get('axes.labelsize', 8)
+
+    ax.annotate('Daily $Q_{river}$',
+                xy=(x_label, q_series.iloc[-1]), xycoords='data',
+                xytext=(4, 5), textcoords='offset points',
+                va='bottom', ha='left', fontsize=font_size, color=color_discharge,
+                annotation_clip=False)
+    ax.annotate(f'Mean $Q$ = {mean_q:.0f} m\u00b3/s',
+                xy=(x_label, mean_q), xycoords='data',
+                xytext=(4, 5), textcoords='offset points',
+                va='bottom', ha='left', fontsize=font_size, color=color_discharge,
+                annotation_clip=False)
+    ax.annotate(f'Mean annual max ($R_{{peak}}$ = {r_peak:.2f})',
+                xy=(x_label, mean_annual_max), xycoords='data',
+                xytext=(4, 5), textcoords='offset points',
+                va='bottom', ha='left', fontsize=font_size, color=color_annual_max,
+                annotation_clip=False)
+
+    if savefig and output_dir:
+        save_path = Path(output_dir) / '01_River_discharge_Qriver_per_estuary' / 'annual_max_peaks'
+        save_path.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path / f'Q_annualmax_{estuary_name}.png')
+        fig.savefig(save_path / f'Q_annualmax_{estuary_name}.pdf')
+    plt.show()

@@ -56,10 +56,10 @@ label_priority = {
     'Bian': -10
 }
 # %% --- SETTINGS: toggle style and dot color here ---
-STYLE = 'AGU'        # 'default'      →  white background, black outlines, no land fill
+STYLE = 'transparent'        # 'default'      →  white background, black outlines, no land fill
                      # 'whitefig'     →  transparent background, white outlines, no land fill, white globe outline
                      # 'transparent'  →  transparent background, black outlines, white land fill, no globe outline
-dot_color = '#023653'
+dot_color = '#BE5A38'#023653'
 
 # --- AGU figure sizing (figures must be 50–170 mm wide) ---
 MM_TO_IN = 1 / 25.4
@@ -143,9 +143,9 @@ STYLES = {
         'fig_facecolor': 'none',
         'ax_facecolor': 'none',
         'transparent_save': True,
-        'land_facecolor': '#c3e4e9',
+        'land_facecolor': '#EEF0F2', #'#c3c3c3',  # '#c3e4e9',
         'land_edge': 'black',
-        'coast_edge': 'black',
+        'coast_edge': 'black', 
         'border_edge': 'black',
         'grid_color': 'grey',
         'label_color': 'black',

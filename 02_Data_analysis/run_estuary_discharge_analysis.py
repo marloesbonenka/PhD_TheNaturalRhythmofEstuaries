@@ -32,14 +32,16 @@ from FUNCTIONS.FUNCS_discharge_timeseries_WBMsed import (
     plot_estuary_timeseries,
     plot_global_delta_distribution,
     extract_discharge_timeseries,
-    validate_estuary_location
+    validate_estuary_location,
+    plot_annual_max_peaks
 )
 
 # %% --- SETTINGS: toggle style and dot color here ---
 # --- Line colors ---
-COLOR_DISCHARGE  = '#044457'   # discharge time series line
-COLOR_SEDIMENT   = 'tab:green' # sediment time series line
-COLOR_MOVING_AVG = 'tab:blue'  # moving average line
+COLOR_DISCHARGE   = '#363732'    # discharge time series line (+ mean-Q dashed line)
+COLOR_SEDIMENT    = 'tab:green'  # sediment time series line
+COLOR_MOVING_AVG  = 'tab:blue'   # moving average line
+COLOR_ANNUAL_MAX  = '#BE5A38' # annual-max dots + mean-annual-max dashed line
 
 STYLE = 'AGU'        # 'default'      →  white background, black outlines, no land fill
                      # 'whitefig'     →  transparent background, white outlines, no land fill, white globe outline
@@ -395,5 +397,17 @@ visualize_discharge_metrics_annualmax(df_metrics_annualmax, metrics_output_dir)
 if SAVE_DATA:
     df_metrics_annualmax.to_excel(
         FIG_DIR / 'fluvial_sediment_flux_Qriver_metrics_annualmax.xlsx', index=False)
+
+#%% --- ANNUAL MAX PEAK VISUALISATION ---
+for estuary in estuary_coords:
+    plot_annual_max_peaks(
+        estuary,
+        estuary_discharge_data[estuary],
+        datetimes,
+        savefig=SAVE_FIG,
+        output_dir=FIG_DIR,
+        color_discharge=COLOR_DISCHARGE,
+        color_annual_max=COLOR_ANNUAL_MAX,
+    )
 
 # %%
