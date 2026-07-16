@@ -499,7 +499,7 @@ def plot_annual_max_peaks(estuary_name, discharge_series, datetimes,
                 xytext=(4, 5), textcoords='offset points',
                 va='bottom', ha='left', fontsize=font_size, color=color_discharge,
                 annotation_clip=False)
-    ax.annotate(f'Mean annual max ($R_{{peak}}$ = {r_peak:.2f})',
+    ax.annotate(f'Mean annual max \n ($R_{{peak}}$ = {r_peak:.1f})',
                 xy=(x_label, mean_annual_max), xycoords='data',
                 xytext=(4, 5), textcoords='offset points',
                 va='bottom', ha='left', fontsize=font_size, color=color_annual_max,
