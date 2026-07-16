@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+import cmocean
 
 from FUNCTIONS.F_general import create_bedlevel_colormap, create_terrain_colormap, create_water_colormap, create_shear_stress_colormap
 from FUNCTIONS.F_general import get_variability_map, find_variability_model_folders
@@ -13,7 +14,9 @@ from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 #%% --- 1. SETTINGS ---
 # Which scenarios to process (set to None or empty list for all)
 SCENARIOS_TO_PROCESS = None #['1', '2', '3', '4']  # Use all scenarios
-DISCHARGE = 500
+DISCHARGE = 1000
+apply_detrending = True
+ZOOM = True          # True → crop axes to ZOOM_XLIM / ZOOM_YLIM
 
 # --- Figure style ---
 STYLE = 'AGU'   # 'default'  →  white background, black text/ticks/labels
@@ -22,7 +25,7 @@ STYLE = 'AGU'   # 'default'  →  white background, black text/ticks/labels
 
 # --- AGU figure sizing (figures must be 50–170 mm wide) ---
 MM_TO_IN = 1 / 25.4
-FIGURE_WIDTH_MM = 170   # full-width figure; use ~84 for a single-column figure
+FIGURE_WIDTH_MM = 0.5*170   # full-width figure; use ~84 for a single-column figure
 CBAR_WIDTH_FRACTION = 0.85  # fraction of total width reserved for the map itself (rest = colorbar + label)
 
 STYLES = {
@@ -43,7 +46,7 @@ STYLES = {
     'AGU': {
         'font.size': 8,
         'font.family': 'sans-serif',
-        'font.sans-serif': ['Arial', 'Helvetica', 'DejaVu Sans'],  # fallback if Arial unavailable
+        'font.sans-serif': ['Calibri', 'Helvetica', 'DejaVu Sans'],  # fallback if Arial unavailable
         'axes.labelsize': 8,
         'axes.titlesize': 8,
         'xtick.labelsize': 8,
@@ -51,9 +54,9 @@ STYLES = {
         'legend.fontsize': 8,
         'figure.titlesize': 8,
         'mathtext.fontset': 'custom',
-        'mathtext.rm': 'Arial',
-        'mathtext.it': 'Arial:italic',
-        'mathtext.bf': 'Arial:bold',
+        'mathtext.rm': 'Calibri',
+        'mathtext.it': 'Calibri:italic',
+        'mathtext.bf': 'Calibri:bold',
 
         # --- Line weights: avoid hairlines (AGU rejects anything under 0.5pt) ---
         'axes.linewidth': 0.5,
@@ -84,10 +87,9 @@ _tc = plt.rcParams['text.color']
 
 # --- Variable selection ---
 var_names = ['mesh2d_mor_bl']#, 'mesh2d_s1', 'mesh2d_taus']  # e.g. ['mesh2d_mor_bl'] or all three
-target_hydrodynamic_date = '2025-01-01' #'2055-12-31' # e.g. '2055-12-31'; when set, nearest timestep is used per run
+target_hydrodynamic_date = '2031-01-01' #'2055-12-31' # e.g. '2055-12-31'; when set, nearest timestep is used per run
 
 # Detrending settings (applies to bed level variable only)
-apply_detrending = False
 reference_time_idx = 0
 detrend_land_threshold = 6.0
 
@@ -100,7 +102,6 @@ CENTERLINE_XMAX = 45000          # [m] end of x-range for the reference profile
 CENTERLINE_Y = 7500               # [m] exact y-coordinate of the channel centerline
 
 # Zoom settings
-ZOOM = False          # True → crop axes to ZOOM_XLIM / ZOOM_YLIM
 ZOOM_XLIM = (20000, 45000)   # x-range in model coordinates [m]
 ZOOM_YLIM = (5000, 10000)    # y-range in model coordinates [m]
 
@@ -135,9 +136,9 @@ model_folders = find_variability_model_folders(
 
 configs = {
     'mesh2d_mor_bl': {
-        'cmap': create_terrain_colormap(),
-        'vmin': -15,
-        'vmax': 15,
+        'cmap': cmocean.cm.delta, #create_terrain_colormap(),
+        'vmin': -5,
+        'vmax': 5,
         'label': 'bed level [m]',
         'file_tag': 'bedlevel_map'
     },
@@ -369,6 +370,8 @@ for folder in model_folders:
                     vmax=vmax_to_use
                 )
                 ax.set_aspect('equal')
+                ax.set_xlabel('x [m]')
+                ax.set_ylabel('y [m]')
                 if ZOOM:
                     ax.set_xlim(ZOOM_XLIM)
                     ax.set_ylim(ZOOM_YLIM)
