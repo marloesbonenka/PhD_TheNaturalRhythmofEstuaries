@@ -81,8 +81,10 @@ plt.rcParams.update(AGU_RC)
 
 # Margins in inches (space outside the panels), same convention as the
 # 15-panel sensitivity plot, but with a single row of panels here.
-TOP_MARGIN_IN = 0.55       # space above the panels for the figure suptitle + subplot titles
-BOTTOM_MARGIN_IN = 0.8      # space below the panels for x tick labels + legend
+TOP_MARGIN_IN = 0.4        # space above the panels for the figure suptitle + subplot titles
+BOTTOM_MARGIN_IN = 1.0      # space below the panels for x tick labels + supxlabel + legend
+LEGEND_Y_IN = 0.05           # legend baseline, measured up from the figure's bottom edge
+SUPXLABEL_Y_IN = 0.45        # supxlabel baseline, measured up from the figure's bottom edge (above the legend)
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -209,7 +211,7 @@ for ci, n_peaks in enumerate(all_n_peaks):
                 label=f"$R_{{\\mathrm{{peak}}}}$ = {pr_label}")
     ax.set_ylim(global_ylim)
     ax.grid(True, alpha=0.2, linewidth=0.3)
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%m"))
     ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
     ax.tick_params(axis="x", rotation=40)
     ax.set_title(f"$n_{{\\mathrm{{peaks}}}}$ = {n_peaks}", fontsize=8)
@@ -228,8 +230,9 @@ fig1.legend(
                            + (" (constant)" if (r == 1.0 and min(all_n_peaks) == 0) else ""))
         for r in all_peak_ratios
     ],
-    fontsize=8, loc="lower center", ncol=len(all_peak_ratios), bbox_to_anchor=(0.5, -0.02), frameon=True,
+    fontsize=8, loc="lower center", ncol=len(all_peak_ratios), bbox_to_anchor=(0.5, LEGEND_Y_IN / fig1_height_in), frameon=True,
 )
+fig1.supxlabel("month of year", y=SUPXLABEL_Y_IN / fig1_height_in)
 fig1.suptitle(f"River discharge scenarios ($Q_{{\\mathrm{{mean}}}}$ = {TOTAL_Q} m³/s)", fontsize=8, y=0.99)
 
 fig1.savefig(OUTPUT_DIR / f"scenario_lines_Q{TOTAL_Q}_by_frequency.png", dpi=300, bbox_inches="tight", transparent=True)
@@ -288,9 +291,9 @@ for ci, peak_ratio in enumerate(all_peak_ratios):
                 label=f"$n_{{\\mathrm{{peaks}}}}$ = {n_peaks}")
     ax.set_ylim(global_ylim)
     ax.grid(True, alpha=0.2, linewidth=0.3)
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%m"))
     ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
-    ax.tick_params(axis="x", rotation=40)
+    ax.tick_params(axis="x")
     pr_label = f"{int(peak_ratio)}" if peak_ratio == int(peak_ratio) else f"{peak_ratio}"
     ax.set_title(f"$R_{{\\mathrm{{peak}}}}$ = {pr_label}", fontsize=8)
     if ci == 0:
@@ -307,8 +310,9 @@ fig2.legend(
                            + (" (constant)" if (r == 1.0 and n == 0) else ""))
         for r in [min(all_peak_ratios)] for n in all_n_peaks
     ],
-    fontsize=8, loc="lower center", ncol=len(all_n_peaks), bbox_to_anchor=(0.5, -0.02), frameon=True,
+    fontsize=8, loc="lower center", ncol=len(all_n_peaks), bbox_to_anchor=(0.5, LEGEND_Y_IN / fig2_height_in), frameon=True,
 )
+fig2.supxlabel("month of year", y=SUPXLABEL_Y_IN / fig2_height_in)
 fig2.suptitle(f"River discharge scenarios ($Q_{{\\mathrm{{mean}}}}$ = {TOTAL_Q} m³/s)", fontsize=8, y=0.99)
 
 fig2.savefig(OUTPUT_DIR / f"scenario_lines_Q{TOTAL_Q}_by_amplitude.png", dpi=300, bbox_inches="tight", transparent=True)
