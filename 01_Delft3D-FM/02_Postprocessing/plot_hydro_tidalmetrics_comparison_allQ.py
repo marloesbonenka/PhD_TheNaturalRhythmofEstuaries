@@ -48,13 +48,13 @@ DISCHARGE_COLORS   = {250: '#3B6064', 500: '#87BBA2', 1000: '#C9E4CA'}
 DISCHARGE_MARKERS  = {250: '^',       500: 'o',       1000: 's'}       # triangle, circle, square
 
 # Combined output directory
-OUTPUT_DIR = BASE_DIR / 'output_plots_combined' / 'hydro_metrics_comparison'
+OUTPUT_DIR = BASE_DIR / 'output_plots_combined' / 'hydro_tidalmetrics_comparison'
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# Figure typography
-FONTSIZE_TITLE  = 18
-FONTSIZE_LABELS = 14
-FONTSIZE_TICKS  = 12
+# Figure typography — AGU standards: Calibri, minimum 8 pt
+FONTSIZE_TITLE  = 10
+FONTSIZE_LABELS = 9
+FONTSIZE_TICKS  = 8
 
 plt.rcParams.update(plt.rcParamsDefault)
 _tr = plt.rcParams.get('savefig.transparent', False)
@@ -503,7 +503,7 @@ tp_summary.to_csv(OUTPUT_DIR / 'tidal_prism_summary.csv', index=False)
 # =============================================================================
 
 def plot_metric(ax, datadict, metric_key, xlabel, normalize=False, add_legend=True,
-                annotate=True):
+                annotate=True, fontsize_labels=None, fontsize_ticks=None):
     """Scatter plot of metric vs pm, coloured+marked by discharge. Adds a
     vertical dashed line for the constant (n=0) scenario per discharge, and
     an optional linear trend line if SHOW_TRENDLINE is True.
@@ -514,10 +514,16 @@ def plot_metric(ax, datadict, metric_key, xlabel, normalize=False, add_legend=Tr
         Draw a legend on this axes.
     annotate : bool
         Annotate each point with its n-value.
+    fontsize_labels : int or None
+        Override FONTSIZE_LABELS (e.g. for AGU-sized subplot).
+    fontsize_ticks : int or None
+        Override FONTSIZE_TICKS (e.g. for AGU-sized subplot).
     """
+    fs_labels = fontsize_labels if fontsize_labels is not None else FONTSIZE_LABELS
+    fs_ticks  = fontsize_ticks  if fontsize_ticks  is not None else FONTSIZE_TICKS
     if not datadict:
         ax.text(0.5, 0.5, 'No data', transform=ax.transAxes,
-                ha='center', va='center', fontsize=FONTSIZE_TICKS)
+                ha='center', va='center', fontsize=fs_ticks)
         return
 
     present_discharges = sorted({v['discharge'] for v in datadict.values()})
@@ -537,25 +543,25 @@ def plot_metric(ax, datadict, metric_key, xlabel, normalize=False, add_legend=Tr
             if len(const_vals) > 0:
                 metric_arr = metric_arr / const_vals[0]
 
-        # Dashed vertical line at the constant (n=0) scenario value
+        # Dashed vertical line at the constant (n=0) scenario value (no per-line legend entry)
         const_mask = n_arr == 0
         if const_mask.any():
             const_x = metric_arr[const_mask][0]
             ax.axvline(
                 const_x, color=color, linestyle='--', linewidth=1.4,
                 alpha=0.75, zorder=2,
-                label=f'Q={discharge} constant (n=0)',
+                label='_nolegend_',
             )
 
         label_q = f'Q\u200a=\u200a{discharge} m\u00b3/s'
         ax.scatter(metric_arr, pm_arr, color=color, marker=marker,
-                   zorder=4, s=80, label=label_q)
+                   zorder=4, s=30, label=label_q)
 
         if annotate:
             for x_, y_, n_ in zip(metric_arr, pm_arr, n_arr):
                 ax.annotate(
                     f'n{int(n_)}', (x_, y_), textcoords='offset points',
-                    xytext=(4, 4), fontsize=FONTSIZE_TICKS, color=color,
+                    xytext=(4, 4), fontsize=fs_ticks, color=color,
                 )
 
         # Optional linear trend line per discharge
@@ -568,12 +574,16 @@ def plot_metric(ax, datadict, metric_key, xlabel, normalize=False, add_legend=Tr
                 alpha=0.85, zorder=3,
             )
 
-    ax.set_xlabel(xlabel, fontsize=FONTSIZE_LABELS)
-    ax.set_ylabel('discharge amplitude $R_{\\mathrm{peak}}$', fontsize=FONTSIZE_LABELS)
+    # Single legend entry for all dashed constant-discharge lines
+    ax.plot([], [], color='gray', linestyle='--', linewidth=1.4, alpha=0.75,
+            label='constant discharge (n\u200a=\u200a0)')
+
+    ax.set_xlabel(xlabel, fontsize=fs_labels)
+    ax.set_ylabel('discharge amplitude $R_{\\mathrm{peak}}$', fontsize=fs_labels)
     ax.grid(True, alpha=0.3)
-    ax.tick_params(labelsize=FONTSIZE_TICKS)
+    ax.tick_params(labelsize=fs_ticks)
     if add_legend:
-        ax.legend(fontsize=FONTSIZE_TICKS - 1, loc='center left', bbox_to_anchor=(1.0, 0.5))
+        ax.legend(fontsize=fs_ticks - 1, loc='center left', bbox_to_anchor=(1.0, 0.5))
 
 
 # =============================================================================
@@ -659,6 +669,17 @@ print(f'\nAll outputs written to: {OUTPUT_DIR.resolve()}')
 # =============================================================================
 # One row, three columns, shared y-axis, single legend.
 
+_AGU_RC = {
+    'font.family':     'sans-serif',
+    'font.sans-serif': ['Calibri', 'Helvetica', 'DejaVu Sans'],
+    'font.size':        FONTSIZE_TICKS,
+    'axes.labelsize':   FONTSIZE_LABELS,
+    'xtick.labelsize':  FONTSIZE_TICKS,
+    'ytick.labelsize':  FONTSIZE_TICKS,
+    'legend.fontsize':  FONTSIZE_TICKS,
+    'axes.titlesize':   FONTSIZE_LABELS,
+}
+
 _panels = [
     (
         ia_datadict,
@@ -677,43 +698,46 @@ _panels = [
     ),
 ]
 
+import matplotlib as _mpl
 if any(d for d, *_ in _panels):
-    fig, axes = plt.subplots(
-        1, 3,
-        figsize=(18, 6),
-        sharey=True,
-        constrained_layout=True,
-    )
-
-    for ax, (datadict, metric_key, xlabel) in zip(axes, _panels):
-        # Only draw the legend in the last panel; suppress y-label on panels 2 & 3
-        plot_metric(
-            ax, datadict, metric_key, xlabel,
-            normalize=NORMALIZE,
-            add_legend=False,   # legend handled separately below
-            annotate=True,
+    with _mpl.rc_context(_AGU_RC):
+        fig, axes = plt.subplots(
+            1, 3,
+            figsize=(7.5, 2.5),   # AGU full-page width = 7.5 in
+            sharey=True,
+            constrained_layout=True,
         )
 
-    # Remove duplicate y-label on panels 2 and 3
-    for ax in axes[1:]:
-        ax.set_ylabel('')
+        for ax, (datadict, metric_key, xlabel) in zip(axes, _panels):
+            plot_metric(
+                ax, datadict, metric_key, xlabel,
+                normalize=NORMALIZE,
+                add_legend=False,
+                annotate=True,
+            )
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
 
-    # Build a single combined legend from the last panel's artists
-    handles, labels = axes[-1].get_legend_handles_labels()
-    fig.legend(
-        handles, labels,
-        fontsize=FONTSIZE_TICKS - 1,
-        loc='center left',
-        bbox_to_anchor=(1.0, 0.5),
-        frameon=True,
-    )
+        # Remove duplicate y-label on panels 2 and 3
+        for ax in axes[1:]:
+            ax.set_ylabel('')
 
-    fname_sub = 'hydro_metrics_combined_subplot' + ('_normalized' if NORMALIZE else '')
-    fig.savefig(OUTPUT_DIR / f'{fname_sub}.png', dpi=200, bbox_inches='tight', transparent=_tr)
-    fig.savefig(OUTPUT_DIR / f'{fname_sub}.pdf', bbox_inches='tight', transparent=_tr)
-    plt.show()
-    plt.close(fig)
-    print(f'Saved: {OUTPUT_DIR / f"{fname_sub}.png"}')
+        # Single legend assembled from the rightmost panel's handles
+        handles, labels = axes[-1].get_legend_handles_labels()
+        fig.legend(
+            handles, labels,
+            fontsize=FONTSIZE_TICKS,
+            loc='upper right',
+            bbox_to_anchor=(0, 0.5),
+            frameon=True,
+        )
+
+        fname_sub = 'hydro_metrics_combined_subplot' + ('_normalized' if NORMALIZE else '')
+        fig.savefig(OUTPUT_DIR / f'{fname_sub}.png', dpi=300, bbox_inches='tight', transparent=_tr)
+        fig.savefig(OUTPUT_DIR / f'{fname_sub}.pdf', bbox_inches='tight', transparent=_tr)
+        plt.show()
+        plt.close(fig)
+        print(f'Saved: {OUTPUT_DIR / f"{fname_sub}.png"}')
 else:
     print('[SKIP PLOT] No data available for combined subplot figure.')
 
