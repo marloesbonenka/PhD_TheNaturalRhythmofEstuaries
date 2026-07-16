@@ -1,6 +1,5 @@
 """
 Analyze bed level and braiding index at cross-sections from Delft3D-FM .his/map output
-Robust version: Handles restarts with mesh changes and optimizes U-drive access.
 """
 
 #%% IMPORTS

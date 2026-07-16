@@ -295,7 +295,7 @@ for r, c, q, pm, n, title in panel_defs:
     ax.set_xlabel('')
     ax.set_ylabel('')
 
-    if r != 0:
+    if r != 2:
         ax.tick_params(labelbottom=False)
     if c != 0:
         ax.tick_params(labelleft=False)

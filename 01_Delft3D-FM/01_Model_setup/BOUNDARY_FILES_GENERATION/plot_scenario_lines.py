@@ -8,6 +8,11 @@ peak / mean ratios are overlaid, each with a consistent color.
 
 Input   : u:/…/Q500/  (scans sub-folders automatically)
 Output  : u:/…/Q500/plots_river_bct/scenario_lines_Q500.png
+
+Style mirrors plot_sensitivity_pm_n_bedlevel_15panel.py: AGU rcParams
+(Calibri, 8pt), gridspec-based spacing with inch-based margins, and a
+single shared legend at the bottom of the figure. Only one row of panels
+is used here (one panel per n_peaks / per peak_ratio).
 """
 #%%
 import re
@@ -17,15 +22,12 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import matplotlib.gridspec as gridspec
 import matplotlib.lines as mlines
 
 # ============================================================================
 # Configuration
 # ============================================================================
-# --- Figure style ---
-STYLE = 'whitefig'   # 'default'   →  white background, black text
-                    # 'whitefig'  →  transparent figure, white axes background, white text
-                    
 TOTAL_Q    = 500          # m³/s  – used only for labels and output filename
 BASE_DIR   = Path(
     r"u:\PhDNaturalRhythmEstuaries\Models"
@@ -34,55 +36,55 @@ BASE_DIR   = Path(
 )
 OUTPUT_DIR  = BASE_DIR / "plots_river_bct"
 
-OUTPUT_FILE = OUTPUT_DIR / f"scenario_lines_Q{TOTAL_Q}_{STYLE}.png"  # base; overridden per plot
-
-STYLES = {
-    'default': {},
-    'whitefig': {
-        'figure.facecolor':    'none',
-        'axes.facecolor':      'white',
-        'axes.edgecolor':      'white',
-        'axes.labelcolor':     'white',
-        'xtick.color':         'white',
-        'ytick.color':         'white',
-        'text.color':          'white',
-        'grid.color':          '#cccccc',
-        'legend.facecolor':    'none',
-        'legend.edgecolor':    'white',
-        'savefig.transparent': False,
-    },
-}
-
-
-# --- Line width ---
-LINE_WIDTH = 1.8   # width of scenario lines in the plots
-
 # --- Constant scenario colour ---
 GREY_CONST = "#7f7f7f"   # grey for the constant (pm1_n0) reference line
 
-# --- Font sizes ---
-FONTSIZE_TITLE  = 20
-FONTSIZE_LABELS = 16   # axis labels
-FONTSIZE_TICKS  = 14   # tick numbers
+# --- AGU figure sizing (figures must be 50-170 mm wide) ---
+MM_TO_IN = 1 / 25.4
+FIGURE_WIDTH_MM = 170          # AGU full-page width
 
+AGU_RC = {
+    'font.size': 8,
+    'font.family': 'sans-serif',
+    'font.sans-serif': ['Calibri', 'Helvetica', 'DejaVu Sans'],
+    'axes.labelsize': 8,
+    'axes.titlesize': 8,
+    'xtick.labelsize': 8,
+    'ytick.labelsize': 8,
+    'legend.fontsize': 8,
+    'figure.titlesize': 9,
+    'mathtext.fontset': 'custom',
+    'mathtext.rm': 'Calibri',
+    'mathtext.it': 'Calibri:italic',
+    'mathtext.bf': 'Calibri:bold',
+
+    # --- Line weights: avoid hairlines (AGU rejects anything under 0.5pt) ---
+    'axes.linewidth': 0.5,
+    'lines.linewidth': 0.75,
+    'grid.linewidth': 0.4,
+    'xtick.major.width': 0.5,
+    'ytick.major.width': 0.5,
+    'xtick.minor.width': 0.35,
+    'ytick.minor.width': 0.35,
+
+    # --- Keep text as editable text in vector exports (not outlined paths) ---
+    'pdf.fonttype': 42,
+    'ps.fonttype': 42,
+    'svg.fonttype': 'none',
+
+    # --- Resolution / export ---
+    'figure.dpi': 150,          # screen preview only
+    'savefig.dpi': 300,         # within AGU's 300-600 ppi raster range
+}
 plt.rcParams.update(plt.rcParamsDefault)
-plt.rcParams.update(STYLES[STYLE])
-plt.rcParams.update({
-    'axes.titlesize':  FONTSIZE_TITLE,
-    'axes.labelsize':  FONTSIZE_LABELS,
-    'xtick.labelsize': FONTSIZE_TICKS,
-    'ytick.labelsize': FONTSIZE_TICKS,
-})
-_tc = plt.rcParams['text.color']   # convenience shorthand
+plt.rcParams.update(AGU_RC)
 
-# --- Fixed axes dimensions (same as sensitivity plots, for cross-figure alignment) ---
-AX_W, AX_H = 3.5, 3.0   # axes width / height in inches (not panel/figure size)
-# Margins in inches (space outside the axes area):
-_LEFT   = 1.10  # left:   y-label "Q [m³/s]" (16pt) + ticks (14pt)
-_RIGHT  = 0.25  # right:  small buffer
-_TOP    = 0.90  # top:    subplot title (fontsize 20) + gap + suptitle (fontsize 20)
-_BOT    = 1.50  # bottom: rotated month labels (14pt) + legend
-_WSPACE = 0.10  # gap between panels in inches (small; sharey=True)
+# Margins in inches (space outside the panels), same convention as the
+# 15-panel sensitivity plot, but with a single row of panels here.
+TOP_MARGIN_IN = 0.55       # space above the panels for the figure suptitle + subplot titles
+BOTTOM_MARGIN_IN = 0.8      # space below the panels for x tick labels + legend
+
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
 # Discover scenario folders and parse peak_ratio / n_peaks
@@ -164,13 +166,29 @@ global_ylim = (global_ymin - ypad, global_ymax + ypad)
 # ============================================================================
 # Plot 1 – one panel per n_peaks, lines colored by peak_ratio
 # ============================================================================
-_n1 = len(all_n_peaks)
-_fig1_w = _LEFT + _n1 * AX_W + (_n1 - 1) * _WSPACE + _RIGHT
-_fig1_h = _BOT + AX_H + _TOP
-fig1, axes1 = plt.subplots(1, _n1, figsize=(_fig1_w, _fig1_h),
-                            sharey=True, sharex=False)
-if len(all_n_peaks) == 1:
-    axes1 = [axes1]
+n_cols1 = len(all_n_peaks)
+
+panel_width_in = FIGURE_WIDTH_MM * MM_TO_IN / n_cols1
+panel_height_in = 0.8 * panel_width_in
+
+fig1_width_in = panel_width_in * n_cols1
+fig1_height_in = panel_height_in + TOP_MARGIN_IN + BOTTOM_MARGIN_IN
+
+fig1 = plt.figure(figsize=(fig1_width_in, fig1_height_in))
+gs1 = gridspec.GridSpec(
+    1, n_cols1, figure=fig1,
+    wspace=0.08,
+    top=1 - TOP_MARGIN_IN / fig1_height_in,
+    bottom=BOTTOM_MARGIN_IN / fig1_height_in,
+)
+
+axes1 = np.empty(n_cols1, dtype=object)
+ax_ref1 = None
+for c in range(n_cols1):
+    ax = fig1.add_subplot(gs1[0, c], sharey=ax_ref1)
+    if ax_ref1 is None:
+        ax_ref1 = ax
+    axes1[c] = ax
 
 for ci, n_peaks in enumerate(all_n_peaks):
     ax = axes1[ci]
@@ -185,49 +203,39 @@ for ci, n_peaks in enumerate(all_n_peaks):
         is_const = (peak_ratio == 1.0 and n_peaks == 0)
         ax.plot(df_yr["timestamp"], df_yr["discharge_m3s"],
                 color=GREY_CONST if is_const else RATIO_COLOR[peak_ratio],
-                linewidth=LINE_WIDTH,
+                linewidth=0.9 if is_const else 1.0,
                 linestyle='--' if is_const else '-',
+                zorder=2 if is_const else 3,
                 label=f"$R_{{\\mathrm{{peak}}}}$ = {pr_label}")
     ax.set_ylim(global_ylim)
-    ax.grid(True, alpha=0.6, linewidth=0.5)
+    ax.grid(True, alpha=0.2, linewidth=0.3)
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
     ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
-    ax.tick_params(axis="x", labelsize=FONTSIZE_TICKS, rotation=40)
-    ax.set_title(f"$n_{{\\mathrm{{peaks}}}}$ = {n_peaks}",
-                 fontsize=FONTSIZE_TITLE, fontweight="bold", pad=5, color=_tc)
+    ax.tick_params(axis="x", rotation=40)
+    ax.set_title(f"$n_{{\\mathrm{{peaks}}}}$ = {n_peaks}", fontsize=8)
     if ci == 0:
-        ax.set_ylabel("Q [m³/s]", fontsize=FONTSIZE_LABELS, labelpad=4)
-        ax.tick_params(axis="y", labelsize=FONTSIZE_TICKS)
+        ax.set_ylabel("Q [m³/s]", fontsize=8)
+    else:
+        ax.tick_params(labelleft=False)
 
 fig1.legend(
     handles=[
         mlines.Line2D([], [], color=GREY_CONST if (r == 1.0 and min(all_n_peaks) == 0) else RATIO_COLOR[r],
-                      linewidth=LINE_WIDTH,
+                      linewidth=0.9 if (r == 1.0 and min(all_n_peaks) == 0) else 1.2,
                       linestyle='--' if (r == 1.0 and min(all_n_peaks) == 0) else '-',
                       label=(f"$R_{{\\mathrm{{peak}}}}$ = {int(r)}"
                              if r == int(r) else f"$R_{{\\mathrm{{peak}}}}$ = {r}")
                            + (" (constant)" if (r == 1.0 and min(all_n_peaks) == 0) else ""))
         for r in all_peak_ratios
     ],
-    # title="$R_{\\mathrm{peak}}$", title_fontsize=FONTSIZE_TICKS, fontsize=FONTSIZE_TICKS,
-    loc="lower center", ncol=len(all_peak_ratios), bbox_to_anchor=(0.5, 0.0), frameon=True,
+    fontsize=8, loc="lower center", ncol=len(all_peak_ratios), bbox_to_anchor=(0.5, -0.02), frameon=True,
 )
-fig1.suptitle(f"River discharge scenarios  ($Q_{{\\mathrm{{mean}}}}$ = {TOTAL_Q} m³/s)",
-              fontsize=FONTSIZE_TITLE, fontweight="bold", y=0.99, color=_tc)
-fig1.subplots_adjust(
-    left=_LEFT / _fig1_w,
-    right=1 - _RIGHT / _fig1_w,
-    bottom=_BOT / _fig1_h,
-    top=1 - _TOP / _fig1_h,
-    wspace=_WSPACE / AX_W,
-)
+fig1.suptitle(f"River discharge scenarios ($Q_{{\\mathrm{{mean}}}}$ = {TOTAL_Q} m³/s)", fontsize=8, y=0.99)
 
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-_tr = plt.rcParams.get('savefig.transparent', False)
-fig1.savefig(OUTPUT_DIR / f"scenario_lines_Q{TOTAL_Q}_{STYLE}_by_frequency.png", dpi=200, bbox_inches="tight", transparent=_tr)
-fig1.savefig(OUTPUT_DIR / f"scenario_lines_Q{TOTAL_Q}_{STYLE}_by_frequency.pdf", bbox_inches="tight", transparent=_tr)
+fig1.savefig(OUTPUT_DIR / f"scenario_lines_Q{TOTAL_Q}_by_frequency.png", dpi=300, bbox_inches="tight", transparent=True)
+fig1.savefig(OUTPUT_DIR / f"scenario_lines_Q{TOTAL_Q}_by_frequency.pdf", bbox_inches="tight", transparent=True)
 plt.show(fig1)
-print(f"Saved: scenario_lines_Q{TOTAL_Q}_{STYLE}_by_frequency (.png/.pdf)")
+print(f"Saved: scenario_lines_Q{TOTAL_Q}_by_frequency (.png/.pdf)")
 
 # ============================================================================
 # Plot 2 – one panel per peak_ratio, lines colored by n_peaks
@@ -238,13 +246,29 @@ NPEAK_COLOR: dict[int, str] = {
     for i, n in enumerate(all_n_peaks)
 }
 
-_n2 = len(all_peak_ratios)
-_fig2_w = _LEFT + _n2 * AX_W + (_n2 - 1) * _WSPACE + _RIGHT
-_fig2_h = _BOT + AX_H + _TOP
-fig2, axes2 = plt.subplots(1, _n2, figsize=(_fig2_w, _fig2_h),
-                            sharey=True, sharex=False)
-if len(all_peak_ratios) == 1:
-    axes2 = [axes2]
+n_cols2 = len(all_peak_ratios)
+
+panel_width_in2 = FIGURE_WIDTH_MM * MM_TO_IN / n_cols2
+panel_height_in2 = 0.8 * panel_width_in2
+
+fig2_width_in = panel_width_in2 * n_cols2
+fig2_height_in = panel_height_in2 + TOP_MARGIN_IN + BOTTOM_MARGIN_IN
+
+fig2 = plt.figure(figsize=(fig2_width_in, fig2_height_in))
+gs2 = gridspec.GridSpec(
+    1, n_cols2, figure=fig2,
+    wspace=0.08,
+    top=1 - TOP_MARGIN_IN / fig2_height_in,
+    bottom=BOTTOM_MARGIN_IN / fig2_height_in,
+)
+
+axes2 = np.empty(n_cols2, dtype=object)
+ax_ref2 = None
+for c in range(n_cols2):
+    ax = fig2.add_subplot(gs2[0, c], sharey=ax_ref2)
+    if ax_ref2 is None:
+        ax_ref2 = ax
+    axes2[c] = ax
 
 for ci, peak_ratio in enumerate(all_peak_ratios):
     ax = axes2[ci]
@@ -258,45 +282,37 @@ for ci, peak_ratio in enumerate(all_peak_ratios):
         is_const = (peak_ratio == 1.0 and n_peaks == 0)
         ax.plot(df_yr["timestamp"], df_yr["discharge_m3s"],
                 color=GREY_CONST if is_const else NPEAK_COLOR[n_peaks],
-                linewidth=LINE_WIDTH,
+                linewidth=0.9 if is_const else 1.0,
                 linestyle='--' if is_const else '-',
+                zorder=2 if is_const else 3,
                 label=f"$n_{{\\mathrm{{peaks}}}}$ = {n_peaks}")
     ax.set_ylim(global_ylim)
-    ax.grid(True, alpha=0.6, linewidth=0.5)
+    ax.grid(True, alpha=0.2, linewidth=0.3)
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
     ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
-    ax.tick_params(axis="x", labelsize=FONTSIZE_TICKS, rotation=40)
+    ax.tick_params(axis="x", rotation=40)
     pr_label = f"{int(peak_ratio)}" if peak_ratio == int(peak_ratio) else f"{peak_ratio}"
-    ax.set_title(f"$R_{{\\mathrm{{peak}}}}$ = {pr_label}",
-                 fontsize=FONTSIZE_TITLE, fontweight="bold", pad=5, color=_tc)
+    ax.set_title(f"$R_{{\\mathrm{{peak}}}}$ = {pr_label}", fontsize=8)
     if ci == 0:
-        ax.set_ylabel("Q [m³/s]", fontsize=FONTSIZE_LABELS, labelpad=4)
-        ax.tick_params(axis="y", labelsize=FONTSIZE_TICKS)
+        ax.set_ylabel("Q [m³/s]", fontsize=8)
+    else:
+        ax.tick_params(labelleft=False)
 
 fig2.legend(
     handles=[
         mlines.Line2D([], [], color=GREY_CONST if (r == 1.0 and n == 0) else NPEAK_COLOR[n],
-                      linewidth=LINE_WIDTH,
+                      linewidth=0.9 if (r == 1.0 and n == 0) else 1.2,
                       linestyle='--' if (r == 1.0 and n == 0) else '-',
                       label=f"$n_{{\\mathrm{{peaks}}}}$ = {n}"
                            + (" (constant)" if (r == 1.0 and n == 0) else ""))
         for r in [min(all_peak_ratios)] for n in all_n_peaks
     ],
-    title="peak frequency", title_fontsize=FONTSIZE_TICKS, fontsize=FONTSIZE_TICKS,
-    loc="lower center", ncol=len(all_n_peaks), bbox_to_anchor=(0.5, 0.0), frameon=True,
+    fontsize=8, loc="lower center", ncol=len(all_n_peaks), bbox_to_anchor=(0.5, -0.02), frameon=True,
 )
-fig2.suptitle(f"River discharge scenarios  ($Q_{{\\mathrm{{mean}}}}$ = {TOTAL_Q} m³/s)",
-              fontsize=FONTSIZE_TITLE, fontweight="bold", y=0.99, color=_tc)
-fig2.subplots_adjust(
-    left=_LEFT / _fig2_w,
-    right=1 - _RIGHT / _fig2_w,
-    bottom=_BOT / _fig2_h,
-    top=1 - _TOP / _fig2_h,
-    wspace=_WSPACE / AX_W,
-)
+fig2.suptitle(f"River discharge scenarios ($Q_{{\\mathrm{{mean}}}}$ = {TOTAL_Q} m³/s)", fontsize=8, y=0.99)
 
-fig2.savefig(OUTPUT_DIR / f"scenario_lines_Q{TOTAL_Q}_{STYLE}_by_amplitude.png", dpi=200, bbox_inches="tight", transparent=_tr)
-fig2.savefig(OUTPUT_DIR / f"scenario_lines_Q{TOTAL_Q}_{STYLE}_by_amplitude.pdf", bbox_inches="tight", transparent=_tr)
+fig2.savefig(OUTPUT_DIR / f"scenario_lines_Q{TOTAL_Q}_by_amplitude.png", dpi=300, bbox_inches="tight", transparent=True)
+fig2.savefig(OUTPUT_DIR / f"scenario_lines_Q{TOTAL_Q}_by_amplitude.pdf", bbox_inches="tight", transparent=True)
 plt.show(fig2)
-print(f"Saved: scenario_lines_Q{TOTAL_Q}_{STYLE}_by_amplitude (.png/.pdf)")
+print(f"Saved: scenario_lines_Q{TOTAL_Q}_by_amplitude (.png/.pdf)")
 #%%
