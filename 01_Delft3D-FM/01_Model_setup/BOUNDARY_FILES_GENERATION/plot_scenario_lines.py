@@ -213,7 +213,7 @@ for ci, n_peaks in enumerate(all_n_peaks):
     ax.grid(True, alpha=0.2, linewidth=0.3)
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%m"))
     ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
-    ax.tick_params(axis="x", rotation=40)
+    ax.tick_params(axis="x")
     ax.set_title(f"$n_{{\\mathrm{{peaks}}}}$ = {n_peaks}", fontsize=8)
     if ci == 0:
         ax.set_ylabel("Q [m³/s]", fontsize=8)

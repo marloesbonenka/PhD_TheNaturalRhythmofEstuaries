@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import cmocean
 from scipy import stats
 
 sys.path.append(r"C:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Postprocessing\FUNCTIONS")
@@ -20,6 +21,43 @@ sys.path.append(r"C:\Users\marloesbonenka\Nextcloud\Python\01_Delft3D-FM\02_Post
 from FUNCTIONS.F_loaddata import load_and_cache_scenario
 from FUNCTIONS.F_general import get_variability_map, find_variability_model_folders
 #%%
+
+# --- AGU figure styling (Calibri font, AGU-compliant line weights/export dpi) ---
+AGU_RC = {
+    'font.size': 8,
+    'font.family': 'sans-serif',
+    'font.sans-serif': ['Calibri', 'Helvetica', 'DejaVu Sans'],
+    'axes.labelsize': 8,
+    'axes.titlesize': 8,
+    'xtick.labelsize': 8,
+    'ytick.labelsize': 8,
+    'legend.fontsize': 8,
+    'figure.titlesize': 9,
+    'mathtext.fontset': 'custom',
+    'mathtext.rm': 'Calibri',
+    'mathtext.it': 'Calibri:italic',
+    'mathtext.bf': 'Calibri:bold',
+
+    # --- Line weights: avoid hairlines (AGU rejects anything under 0.5pt) ---
+    'axes.linewidth': 0.5,
+    'lines.linewidth': 0.75,
+    'grid.linewidth': 0.4,
+    'xtick.major.width': 0.5,
+    'ytick.major.width': 0.5,
+    'xtick.minor.width': 0.35,
+    'ytick.minor.width': 0.35,
+
+    # --- Keep text as editable text in vector exports (not outlined paths) ---
+    'pdf.fonttype': 42,
+    'ps.fonttype': 42,
+    'svg.fonttype': 'none',
+
+    # --- Resolution / export ---
+    'figure.dpi': 150,          # screen preview only
+    'savefig.dpi': 300,         # within AGU's 300-600 ppi raster range
+}
+plt.rcParams.update(plt.rcParamsDefault)
+plt.rcParams.update(AGU_RC)
 
 # =========================
 # Configuration
@@ -36,7 +74,7 @@ ANALYZE_NOISY = False
 PLOT_AS_MATRIX = True
 
 # Toggle heatmap and scatter outputs independently
-PLOT_HEATMAPS = False   # set False to skip heatmap panels
+PLOT_HEATMAPS = True   # set False to skip heatmap panels
 PLOT_SCATTER  = True   # set False to skip scatter-correlation plot
 
 SCENARIO_LABELS = None
@@ -353,6 +391,7 @@ if comparison_series:
             1, n_panels,
             figsize=(LPANEL_W * n_panels, LPANEL_H),
             sharey=True, sharex=False,
+            layout="constrained",
         )
         if n_panels == 1:
             axes_l = [axes_l]
@@ -421,7 +460,6 @@ if comparison_series:
             f"($Q_{{\\mathrm{{mean}}}}$ = {DISCHARGE} m³/s)",
             fontsize=12, fontweight="bold", y=1.02,
         )
-        fig_l.tight_layout()
         fig_l_path = OUTPUT_DIR / (
             f"lines_upstream_km{RIVER_KM}_bedload_transport_Q{DISCHARGE}.png"
         )
@@ -473,9 +511,10 @@ if _hm_data and PLOT_HEATMAPS:
         _grid[ri, ci] = s["final_value"]
 
     fig_hm, ax_hm = plt.subplots(figsize=(max(5, len(_hm_n_peaks) * 1.1),
-                                           max(3, len(_hm_peak_ratios) * 0.9)))
+                                           max(3, len(_hm_peak_ratios) * 0.9)),
+                                  layout="constrained")
 
-    im = ax_hm.imshow(_grid, aspect="auto", cmap="YlOrRd",
+    im = ax_hm.imshow(_grid, aspect="auto", cmap=cmocean.cm.turbid,
                       vmin=np.nanmin(_grid), vmax=np.nanmax(_grid))
 
     # Annotate each cell with the value
@@ -504,7 +543,6 @@ if _hm_data and PLOT_HEATMAPS:
     cbar = fig_hm.colorbar(im, ax=ax_hm, pad=0.02)
     cbar.set_label("cumulative sediment transport [kg]", fontsize=9)
 
-    fig_hm.tight_layout()
     fig_hm_path = OUTPUT_DIR / f"heatmap_endvalue_km{RIVER_KM}_bedload_Q{DISCHARGE}.png"
     fig_hm.savefig(fig_hm_path, dpi=200, bbox_inches="tight")
     plt.show()
@@ -527,14 +565,17 @@ if _hm_data and PLOT_HEATMAPS:
         if _ref_val != 0:
             _grid_pct = (_grid - _ref_val) / abs(_ref_val) * 100.0
 
-        # Symmetric colour scale around 0
-        _abs_max = np.nanmax(np.abs(_grid_pct))
+        # All values are positive (sediment supply only increases relative to
+        # the constant scenario), so use a sequential colormap from 0 rather
+        # than a diverging red-blue scale.
+        _pct_max = np.nanmax(_grid_pct)
 
         fig_nm, ax_nm = plt.subplots(figsize=(max(5, len(_hm_n_peaks) * 1.1),
-                                               max(3, len(_hm_peak_ratios) * 0.9)))
+                                               max(3, len(_hm_peak_ratios) * 0.9)),
+                                      layout="constrained")
 
-        im_nm = ax_nm.imshow(_grid_pct, aspect="auto", cmap="RdBu_r",
-                             vmin=-_abs_max, vmax=_abs_max)
+        im_nm = ax_nm.imshow(_grid_pct, aspect="auto", cmap=cmocean.cm.turbid,
+                             vmin=0, vmax=_pct_max)
 
         for ri in range(len(_hm_peak_ratios)):
             for ci in range(len(_hm_n_peaks)):
@@ -542,7 +583,7 @@ if _hm_data and PLOT_HEATMAPS:
                 if not np.isnan(val):
                     ax_nm.text(ci, ri, f"{val:+.1f}%", ha="center", va="center",
                                fontsize=7.5,
-                               color="black" if abs(val) < 0.55 * _abs_max else "white")
+                               color="black" if val < 0.6 * _pct_max else "white")
 
         ax_nm.set_xticks(range(len(_hm_n_peaks)))
         ax_nm.set_xticklabels([str(n) for n in _hm_n_peaks])
@@ -561,14 +602,16 @@ if _hm_data and PLOT_HEATMAPS:
         cbar_nm = fig_nm.colorbar(im_nm, ax=ax_nm, pad=0.02)
         cbar_nm.set_label("change relative to constant scenario [%]", fontsize=9)
 
-        fig_nm.tight_layout()
         fig_nm_path = OUTPUT_DIR / f"heatmap_normalised_km{RIVER_KM}_bedload_Q{DISCHARGE}.png"
         fig_nm.savefig(fig_nm_path, dpi=200, bbox_inches="tight")
         plt.show()
         print(f"Saved normalised heatmap: {fig_nm_path}")
 
 else:
-    print("No parseable scenarios for heatmap.")
+    if not _hm_data:
+        print("No parseable scenarios for heatmap.")
+    else:
+        print("Skipping heatmaps (PLOT_HEATMAPS = False).")
 
 # %%
 # =============================================================================
@@ -605,6 +648,7 @@ if PLOT_SCATTER and _hm_data:
         1, 2,
         figsize=(13, 5),
         sharey=True,
+        layout="constrained",
     )
 
     # ── Left panel: frequency (n_peaks) ──────────────────────────────────────
@@ -671,7 +715,6 @@ if PLOT_SCATTER and _hm_data:
         f"($Q_\\mathrm{{mean}}$ = {DISCHARGE} m³/s)",
         fontsize=13, fontweight="bold", y=1.02,
     )
-    fig_sc.tight_layout()
 
     fig_sc_path = OUTPUT_DIR / f"scatter_2panel_km{RIVER_KM}_bedload_Q{DISCHARGE}.png"
     fig_sc.savefig(fig_sc_path, dpi=200, bbox_inches="tight")
