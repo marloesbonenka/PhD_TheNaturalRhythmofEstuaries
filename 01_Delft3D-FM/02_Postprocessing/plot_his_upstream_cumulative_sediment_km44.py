@@ -22,6 +22,11 @@ from FUNCTIONS.F_loaddata import load_and_cache_scenario
 from FUNCTIONS.F_general import get_variability_map, find_variability_model_folders
 #%%
 
+# --- AGU figure sizing (figures must be 50-170 mm wide) ---
+MM_TO_IN = 1 / 25.4
+FIGURE_WIDTH_MM = 170          # AGU full-page width
+FIGURE_WIDTH_IN = FIGURE_WIDTH_MM * MM_TO_IN
+
 # --- AGU figure styling (Calibri font, AGU-compliant line weights/export dpi) ---
 AGU_RC = {
     'font.size': 8,
@@ -285,7 +290,7 @@ if comparison_series:
             for i, ratio in enumerate(all_peak_ratios)
         }
 
-        PANEL_W, PANEL_H = 3.4, 2.4
+        PANEL_W, PANEL_H = FIGURE_WIDTH_IN / n_cols, 2.4
         fig, axes = plt.subplots(
             n_rows, n_cols,
             figsize=(PANEL_W * n_cols, PANEL_H * n_rows),
@@ -363,9 +368,9 @@ if comparison_series:
                     )
                     break
 
-        fig.text(0.5, 0.005, "Number of peaks per year   →",
+        fig.text(0.5, 0.005, "peak frequency",
                  ha="center", fontsize=10, style="italic", color="0.35")
-        fig.text(0.005, 0.5, "Peak / mean ratio   →",
+        fig.text(0.005, 0.5, "peak amplitude",
                  va="center", fontsize=10, style="italic", color="0.35",
                  rotation="vertical")
         fig.suptitle(
@@ -386,7 +391,7 @@ if comparison_series:
         import matplotlib.lines as mlines
 
         n_panels  = len(all_n_peaks)
-        LPANEL_W, LPANEL_H = 4.0, 3.0
+        LPANEL_W, LPANEL_H = FIGURE_WIDTH_IN / n_panels, 3.0
         fig_l, axes_l = plt.subplots(
             1, n_panels,
             figsize=(LPANEL_W * n_panels, LPANEL_H),
@@ -447,7 +452,7 @@ if comparison_series:
             )
         fig_l.legend(
             handles=legend_handles,
-            title="Peak / mean ratio",
+            title="peak amplitude",
             title_fontsize=9,
             fontsize=8,
             loc="lower center",
@@ -469,7 +474,7 @@ if comparison_series:
 
     else:
         # ── Standard overlay comparison plot ──────────────────────────────────
-        fig, ax = plt.subplots(figsize=(11, 5))
+        fig, ax = plt.subplots(figsize=(FIGURE_WIDTH_IN, 5))
         for series in comparison_series:
             color = SCENARIO_COLORS.get(series["scenario_number"], None) \
                 if SCENARIO_COLORS else None
@@ -510,9 +515,8 @@ if _hm_data and PLOT_HEATMAPS:
         ci = _hm_n_peaks.index(s["n_peaks"])
         _grid[ri, ci] = s["final_value"]
 
-    fig_hm, ax_hm = plt.subplots(figsize=(max(5, len(_hm_n_peaks) * 1.1),
-                                           max(3, len(_hm_peak_ratios) * 0.9)),
-                                  layout="constrained")
+    fig_hm, ax_hm = plt.subplots(figsize=(FIGURE_WIDTH_IN,
+                                           max(3, len(_hm_peak_ratios) * 0.9)))
 
     im = ax_hm.imshow(_grid, aspect="auto", cmap=cmocean.cm.turbid,
                       vmin=np.nanmin(_grid), vmax=np.nanmax(_grid))
@@ -532,19 +536,23 @@ if _hm_data and PLOT_HEATMAPS:
     ax_hm.set_yticklabels([
         f"{int(r)}" if r == int(r) else f"{r}" for r in _hm_peak_ratios
     ])
-    ax_hm.set_xlabel("Number of peaks per year  ($n_\\mathrm{peaks}$)", fontsize=10)
-    ax_hm.set_ylabel("Peak / mean ratio  ($R_\\mathrm{peak}$)", fontsize=10)
+    #fr'$\text{{p95 (bar) R}}_{{peak}}
+    ax_hm.set_xlabel(r'$n_{\text{peaks}}$')
+    ax_hm.set_ylabel(r'$R_{\text{peak}}$')
     ax_hm.set_title(
         f"Final cumulative sediment transport at km {RIVER_KM}  "
         f"($Q_\\mathrm{{mean}}$ = {DISCHARGE} m³/s)",
-        fontsize=11, fontweight="bold",
+        fontweight="bold",
     )
 
     cbar = fig_hm.colorbar(im, ax=ax_hm, pad=0.02)
     cbar.set_label("cumulative sediment transport [kg]", fontsize=9)
 
-    fig_hm_path = OUTPUT_DIR / f"heatmap_endvalue_km{RIVER_KM}_bedload_Q{DISCHARGE}.png"
-    fig_hm.savefig(fig_hm_path, dpi=200, bbox_inches="tight")
+    fig_hm.tight_layout()
+
+    fig_hm_path = OUTPUT_DIR / f"heatmap_endvalue_km{RIVER_KM}_bedload_Q{DISCHARGE}"
+    fig_hm.savefig(fig_hm_path.with_suffix('.png'), dpi=300, bbox_inches="tight")
+    fig_hm.savefig(fig_hm_path.with_suffix('.pdf'), dpi=300, bbox_inches="tight")
     plt.show()
     print(f"Saved heatmap: {fig_hm_path}")
 
@@ -570,9 +578,8 @@ if _hm_data and PLOT_HEATMAPS:
         # than a diverging red-blue scale.
         _pct_max = np.nanmax(_grid_pct)
 
-        fig_nm, ax_nm = plt.subplots(figsize=(max(5, len(_hm_n_peaks) * 1.1),
-                                               max(3, len(_hm_peak_ratios) * 0.9)),
-                                      layout="constrained")
+        fig_nm, ax_nm = plt.subplots(figsize=(FIGURE_WIDTH_IN,
+                                               max(3, len(_hm_peak_ratios) * 0.9)))
 
         im_nm = ax_nm.imshow(_grid_pct, aspect="auto", cmap=cmocean.cm.turbid,
                              vmin=0, vmax=_pct_max)
@@ -581,7 +588,7 @@ if _hm_data and PLOT_HEATMAPS:
             for ci in range(len(_hm_n_peaks)):
                 val = _grid_pct[ri, ci]
                 if not np.isnan(val):
-                    ax_nm.text(ci, ri, f"{val:+.1f}%", ha="center", va="center",
+                    ax_nm.text(ci, ri, f"{val:+.0f}%", ha="center", va="center",
                                fontsize=7.5,
                                color="black" if val < 0.6 * _pct_max else "white")
 
@@ -591,19 +598,22 @@ if _hm_data and PLOT_HEATMAPS:
         ax_nm.set_yticklabels([
             f"{int(r)}" if r == int(r) else f"{r}" for r in _hm_peak_ratios
         ])
-        ax_nm.set_xlabel("Number of peaks per year  ($n_\\mathrm{peaks}$)", fontsize=10)
-        ax_nm.set_ylabel("Peak / mean ratio  ($R_\\mathrm{peak}$)", fontsize=10)
+        ax_nm.set_xlabel(r'$n_{\text{peaks}}$')
+        ax_nm.set_ylabel(r'$R_{\text{peak}}$')
         ax_nm.set_title(
             f"Change in final cumulative sediment transport vs. constant  (km {RIVER_KM}, "
             f"$Q_\\mathrm{{mean}}$ = {DISCHARGE} m³/s)",
-            fontsize=11, fontweight="bold",
+            fontweight="bold",
         )
 
         cbar_nm = fig_nm.colorbar(im_nm, ax=ax_nm, pad=0.02)
         cbar_nm.set_label("change relative to constant scenario [%]", fontsize=9)
 
-        fig_nm_path = OUTPUT_DIR / f"heatmap_normalised_km{RIVER_KM}_bedload_Q{DISCHARGE}.png"
-        fig_nm.savefig(fig_nm_path, dpi=200, bbox_inches="tight")
+        fig_nm.tight_layout()
+
+        fig_nm_path = OUTPUT_DIR / f"heatmap_normalised_km{RIVER_KM}_bedload_Q{DISCHARGE}"
+        fig_nm.savefig(fig_nm_path.with_suffix('.png'), dpi=300, bbox_inches="tight")
+        fig_nm.savefig(fig_nm_path.with_suffix('.pdf'), dpi=300, bbox_inches="tight")
         plt.show()
         print(f"Saved normalised heatmap: {fig_nm_path}")
 
@@ -646,7 +656,7 @@ if PLOT_SCATTER and _hm_data:
 
     fig_sc, (ax_l, ax_r) = plt.subplots(
         1, 2,
-        figsize=(13, 5),
+        figsize=(FIGURE_WIDTH_IN, 5),
         sharey=True,
         layout="constrained",
     )
@@ -672,8 +682,8 @@ if PLOT_SCATTER and _hm_data:
         ),
     )
     cbar_l = fig_sc.colorbar(sc_l, ax=ax_l, pad=0.03, aspect=30)
-    cbar_l.set_label("Peak amplitude ratio  ($R_\\mathrm{peak}$)", fontsize=10)
-    ax_l.set_xlabel("Number of peaks per year  ($n_\\mathrm{peaks}$)", fontsize=11)
+    cbar_l.set_label("$R_\\mathrm{peak}$")
+    ax_l.set_xlabel("$n_\\mathrm{peaks}$")
     ax_l.set_ylabel(
         f"Final cumulative sediment transport at km {RIVER_KM}  [kg]", fontsize=11
     )
@@ -703,21 +713,21 @@ if PLOT_SCATTER and _hm_data:
         ),
     )
     cbar_r = fig_sc.colorbar(sc_r, ax=ax_r, pad=0.03, aspect=30)
-    cbar_r.set_label("Number of peaks per year  ($n_\\mathrm{peaks}$)", fontsize=10)
-    ax_r.set_xlabel("Peak amplitude ratio  ($R_\\mathrm{peak}$)", fontsize=11)
-    ax_r.set_title("Sediment supply vs. Peak Amplitude", fontsize=12, fontweight="bold")
+    cbar_r.set_label("$n_\\mathrm{peaks}$")
+    ax_r.set_xlabel("$R_\\mathrm{peak}$")
+    ax_r.set_title("Sediment supply vs. Peak Amplitude", fontweight="bold")
     ax_r.set_ylim(_y_lim)
-    ax_r.legend(fontsize=9, loc="upper left", framealpha=0.85, title="Linear fit")
+    ax_r.legend(loc="upper left", framealpha=0.85, title="Linear fit")
     ax_r.grid(True, alpha=0.3, linewidth=0.5)
 
     fig_sc.suptitle(
         f"Sediment supply vs. discharge variability  "
         f"($Q_\\mathrm{{mean}}$ = {DISCHARGE} m³/s)",
-        fontsize=13, fontweight="bold", y=1.02,
+        fontweight="bold", y=1.02,
     )
 
-    fig_sc_path = OUTPUT_DIR / f"scatter_2panel_km{RIVER_KM}_bedload_Q{DISCHARGE}.png"
-    fig_sc.savefig(fig_sc_path, dpi=200, bbox_inches="tight")
+    fig_sc_path = OUTPUT_DIR / f"scatter_2panel_km{RIVER_KM}_bedload_Q{DISCHARGE}"
+    fig_sc.savefig(fig_sc_path.with_suffix('.png'), bbox_inches="tight")
     plt.show()
     print(f"Saved two-panel scatter plot: {fig_sc_path}")
 elif PLOT_SCATTER:

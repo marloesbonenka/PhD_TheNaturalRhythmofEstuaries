@@ -5,7 +5,6 @@ The comparison is made for a specific snapshot in time, and the bed level is bin
 #%% IMPORTS
 from pathlib import Path
 import re
-
 import numpy as np
 import matplotlib.pyplot as plt
 import sys
@@ -31,16 +30,70 @@ X_RANGE = (20000, 44000)
 Y_RANGE = (5000, 10000)
 CHANNEL_INIT_THRESHOLD = 2.2
 
+# --- AGU figure sizing (figures must be 50-170 mm wide) ---
+MM_TO_IN = 1 / 25.4
+FIGURE_WIDTH_MM = 170/2          # AGU full-page width, since we need 2 columns + colorbar
+CBAR_WIDTH_FRACTION = 0.03     # fraction of total width reserved for the shared colorbar
+
+AGU_RC = {
+    'font.size': 10,
+    'font.family': 'sans-serif',
+    'font.sans-serif': ['Calibri', 'Helvetica', 'DejaVu Sans'],
+    'axes.labelsize': 10,
+    'axes.titlesize': 10,
+    'xtick.labelsize': 10,
+    'ytick.labelsize': 10,
+    'legend.fontsize': 10,
+    'figure.titlesize': 10,
+    'mathtext.fontset': 'custom',
+    'mathtext.rm': 'Calibri',
+    'mathtext.it': 'Calibri:italic',
+    'mathtext.bf': 'Calibri:bold',
+
+    # --- Line weights: avoid hairlines (AGU rejects anything under 0.5pt) ---
+    'axes.linewidth': 0.5,
+    'lines.linewidth': 0.75,
+    'grid.linewidth': 0.5,
+    'xtick.major.width': 0.5,
+    'ytick.major.width': 0.5,
+    'xtick.minor.width': 0.35,
+    'ytick.minor.width': 0.35,
+
+    # --- Keep text as editable text in vector exports (not outlined paths) ---
+    'pdf.fonttype': 42,
+    'ps.fonttype': 42,
+    'svg.fonttype': 'none',
+
+    # --- Resolution / export ---
+    'figure.dpi': 150,          # screen preview only
+    'savefig.dpi': 300,         # within AGU's 300-600 ppi raster range
+}
+plt.rcParams.update(plt.rcParamsDefault)
+plt.rcParams.update(AGU_RC)
+
+
+#%%
 # Output
 OUTPUT_DIR = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\output_plots\comparison_amplitude_frequency_same_Vsed")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILENAME   = "comparison_amplitude_frequency_same_Vsed.png"
+OUTPUT_FILENAME   = "comparison_amplitude_frequency_same_Vsed"
 
+all_pm_vals = sorted([0, 2, 3, 4, 5])  # pm values to compare
+# Colormaps: Blues for pm (light→dark)
+_n_pm = max(len(all_pm_vals) - 1, 1)
+PM_COLOR = {pm: plt.cm.Blues(0.35 + 0.55 * i / _n_pm) for i, pm in enumerate(all_pm_vals)}
+    
 # Paths defined by you
 MODEL_PATHS = {
     'pm3_n5': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\03_Qr500_pm3_n5.9600329"),
-    'pm5_n1': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\05_Qr500_pm5_n1.9517572")
+    # 'pm4_n3': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\06_Qr500_pm4_n3.9517578"),
+    'pm5_n1': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\05_Qr500_pm5_n1.9517572"),
+   
 }
+
+all_pm_vals = sorted([0, 2, 3, 4, 5])
+_n_pm = max(len(all_pm_vals) - 1, 1)
+PM_COLOR = {pm: plt.cm.Blues(0.35 + 0.55 * i / _n_pm) for i, pm in enumerate(all_pm_vals)}
 
 # Directories for cache/helpers
 base_path = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500")
@@ -123,23 +176,26 @@ for label, folder_path in MODEL_PATHS.items():
     ds.close()
 
 #%% --- PLOTTING ---
-COLORS = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
-fig, ax = plt.subplots(figsize=(8, 6))
+fig, ax = plt.subplots()
 
-for i, (label, data) in enumerate(results.items()):
-    color = COLORS[i % len(COLORS)]
+for label, data in results.items():
+    match = re.search(r'pm(\d+)', label)
+    pm_value = int(match.group(1)) if match else 0
+
+    color = PM_COLOR[pm_value]
+
     x = data['x']
 
     # Shaded band: p5 (channel) to p95 (bar)
-    ax.fill_between(x, data['p5'], data['p95'], color=color, alpha=0.18, zorder=1)
+    # ax.fill_between(x, data['p5'], data['p95'], color=color, alpha=0.18, zorder=1)
 
     # p5 and p95 dashed lines
-    ax.plot(x, data['p95'], color=color, linewidth=1.2, linestyle='--', zorder=2)
-    ax.plot(x, data['p5'],  color=color, linewidth=1.2, linestyle=':',  zorder=2)
+    ax.plot(x, data['p95'], color=color, linewidth=2, zorder=2)
+    # ax.plot(x, data['p5'],  color=color, linewidth=1.2, linestyle=':',  zorder=2)
 
     # Mean as solid line
-    ax.plot(x, data['mean'], color=color, linewidth=2.0, linestyle='-', zorder=3)
+    # ax.plot(x, data['mean'], color=color, linewidth=2.0, linestyle='-', zorder=3)
 
     # --- Direct annotations at right end of each line ---
     def _right_label(profile, text, color, dy=0):
@@ -151,22 +207,29 @@ for i, (label, data) in enumerate(results.items()):
         ax.annotate(text,
                     xy=(x_end, y_end), xycoords='data',
                     xytext=(4, dy), textcoords='offset points',
-                    va='center', ha='left', fontsize=8, color=color,
+                    va='center', ha='left', color=color,
                     annotation_clip=False)
-
+   
     # Scenario name + line type on every line, for every scenario
-    _right_label(data['mean'], f'{label} (mean)', color)
-    _right_label(data['p95'],  'p95 (bar)',        color)
-    _right_label(data['p5'],   'p5 (channel)',     color)
+    # _right_label(data['mean'], f'{label} (mean)', color)
+    label_text = fr'$\text{{p95 (bar)}}$'  
+    label2_text = fr'$\text{{R}}_{{peak}} = {pm_value}$'
+    _right_label(data['p95'], f'{label_text}\n{label2_text}', color)  
+    # _right_label(data['p5'],   'p5 (channel)',     color)
 
 ax.set_xlabel('Distance along estuary [km]')
 ax.set_ylabel('Bed level [m]')
 ax.set_title(f'Snapshot comparison: {TARGET_DATE},  Q = {DISCHARGE} m³/s')
 ax.spines['top'].set_visible(False)
 ax.spines['right'].set_visible(False)
-ax.grid(True, linestyle='--', alpha=0.4)
-plt.tight_layout()
-plt.savefig(OUTPUT_DIR / OUTPUT_FILENAME, dpi=300, bbox_inches='tight')
-print(f"Plot saved to: {OUTPUT_DIR / OUTPUT_FILENAME}")
+ax.grid(True, linestyle='--')
+# Save as PNG
+OUTPUT_PATH = OUTPUT_DIR / OUTPUT_FILENAME
+plt.savefig(OUTPUT_PATH.with_suffix('.png'), dpi=300, bbox_inches='tight')
+
+# Save as PDF
+plt.savefig(OUTPUT_PATH.with_suffix('.pdf'), bbox_inches='tight')
+
+print(f"Plot saved to: {OUTPUT_PATH.with_suffix('.png')} and {OUTPUT_PATH.with_suffix('.pdf')}")
 plt.show()
 # %%
