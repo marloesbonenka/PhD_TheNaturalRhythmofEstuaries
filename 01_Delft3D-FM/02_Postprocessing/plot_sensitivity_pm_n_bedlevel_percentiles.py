@@ -42,12 +42,21 @@ from FUNCTIONS.F_map_cache import cache_tag_from_bbox, load_or_update_map_cache_
 from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 
 #%% --- CONFIGURATION ---
-DISCHARGE = 500
+DISCHARGE = 1000
+depth_percentile = 95
+
+SHOW_NOISY_ENVELOPE = True
+SHOW_DIFFERENCE = True   # show difference-from-constant plot
+SHOW_DETRENDED  = True   # show detrended plot (change relative to initial bed level)
+COMPUTE_MEAN = False  # True → width-averaged mean; False → p{depth_percentile} within frozen channel mask
+
+SNAPSHOT_TARGET_DATES = None
+SNAPSHOT_DATE_RANGE = (np.datetime64('2025-01-01'), np.datetime64('2031-12-31'))
+SNAPSHOT_COUNT = 6
+#%% --- CONSTANTS ---
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian")
 config = f'Model_Output/Q{DISCHARGE}'
 
-depth_percentile = 5
-COMPUTE_MEAN = True  # True → width-averaged mean; False → p{depth_percentile} within frozen channel mask
 bed_threshold = 6
 CHANNEL_INIT_THRESHOLD = 2.2  # defines the channel footprint from t=0
 channel_masks = {}  # {folder_str: {bin_idx: boolean array}}
@@ -61,17 +70,7 @@ CACHE_TAG = None
 APPEND_TIMESTEPS = True
 APPEND_VARIABLES = True
 
-SNAPSHOT_TARGET_DATES = None
-SNAPSHOT_DATE_RANGE = (np.datetime64('2025-01-01'), np.datetime64('2031-12-31'))
-SNAPSHOT_COUNT = 6
-
-# Natural variability envelope — noisy repeats of the constant scenario
-# from the 1_RiverDischargeVariability_domain45x15 model folder.
-# Set SHOW_NOISY_ENVELOPE = True to overlay the grey band on every panel.
-SHOW_NOISY_ENVELOPE = True
-
 if DISCHARGE == 500:
-        
     NOISY_BASE_PATH = Path(
         r"U:\PhDNaturalRhythmEstuaries\Models"
         r"\1_RiverDischargeVariability_domain45x15"
@@ -82,36 +81,65 @@ if DISCHARGE == 500:
         '1_Q500_noisy1_rst.9160657',
         '1_Q500_noisy2_rst.9160663',
     ]
+    SCENARIO_LABELS = {
+        '1':  'pm1_n0 (constant)',
+        '2':  'pm2_n1',
+        '3':  'pm3_n5',
+        '4':  'pm3_n1',
+        '5':  'pm5_n1',
+        '6':  'pm4_n3',
+        '7':  'pm3_n4',
+        '8':  'pm2_n6',
+        '9':  'pm5_n3',
+        '10': 'pm3_n3',
+        '11': 'pm2_n3',
+        '12': 'pm5_n4',
+        '13': 'pm4_n4',
+        '14': 'pm2_n4',
+    }   
 
 elif DISCHARGE == 1000:
     NOISY_BASE_PATH = Path(r"u:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Output\Q1000\0_Noise_Q1000")
     NOISY_SUBFOLDERS = []
+    SCENARIO_LABELS = {
+        '1':  'pm1_n0 (constant)',
+        # '2':  'pm2_n1',
+        # '3':  'pm3_n5',
+        # '4':  'pm3_n1',
+        # '5':  'pm5_n1',
+        '6':  'pm4_n3',
+        # '7':  'pm3_n4',
+        # '8':  'pm2_n6',
+        '9':  'pm5_n3',
+        '10': 'pm3_n3',
+        '11': 'pm2_n3',
+        # '12': 'pm5_n4',
+        # '13': 'pm4_n4',
+        # '14': 'pm2_n4',
+    }
+
 
 elif DISCHARGE == 250:
     NOISY_BASE_PATH = Path(r"u:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Output\Q250\0_Noise_Q250")
     NOISY_SUBFOLDERS = []
-
-SHOW_DIFFERENCE = True   # show difference-from-constant plot
-SHOW_DETRENDED  = True   # show detrended plot (change relative to initial bed level)
-
-
+    SCENARIO_LABELS = {
+        '1':  'pm1_n0 (constant)',
+        # '2':  'pm2_n1',
+        # '3':  'pm3_n5',
+        # '4':  'pm3_n1',
+        # '5':  'pm5_n1',
+        '6':  'pm4_n3',
+        # '7':  'pm3_n4',
+        # '8':  'pm2_n6',
+        '9':  'pm5_n3',
+        '10': 'pm3_n3',
+        '11': 'pm2_n3',
+        # '12': 'pm5_n4',
+        # '13': 'pm4_n4',
+        # '14': 'pm2_n4',
+    }    
 #%% --- SCENARIO LABELS ---
-SCENARIO_LABELS = {
-    '1':  'pm1_n0 (constant)',
-    '2':  'pm2_n1',
-    '3':  'pm3_n5',
-    '4':  'pm3_n1',
-    '5':  'pm5_n1',
-    '6':  'pm4_n3',
-    '7':  'pm3_n4',
-    '8':  'pm2_n6',
-    '9':  'pm5_n3',
-    '10': 'pm3_n3',
-    '11': 'pm2_n3',
-    '12': 'pm5_n4',
-    '13': 'pm4_n4',
-    '14': 'pm2_n4',
-}
+
 
 # Constant scenario colour
 GREY_CONST = "#7f7f7f"

@@ -82,7 +82,12 @@ all_pm_vals = sorted([0, 2, 3, 4, 5])  # pm values to compare
 # Colormaps: Blues for pm (light→dark)
 _n_pm = max(len(all_pm_vals) - 1, 1)
 PM_COLOR = {pm: plt.cm.Blues(0.35 + 0.55 * i / _n_pm) for i, pm in enumerate(all_pm_vals)}
-    
+
+all_n_vals = sorted([1, 3, 5])  # n values to compare
+# Colormaps: Greens for n (light→dark)
+_n_n = max(len(all_n_vals) - 1, 1)
+N_COLOR = {n: plt.cm.Greens(0.35 + 0.55 * i / _n_n) for i, n in enumerate(all_n_vals)}
+
 # Paths defined by you
 MODEL_PATHS = {
     'pm3_n5': Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\03_Qr500_pm3_n5.9600329"),
@@ -182,6 +187,8 @@ fig, ax = plt.subplots()
 for label, data in results.items():
     match = re.search(r'pm(\d+)', label)
     pm_value = int(match.group(1)) if match else 0
+    n_match = re.search(r'n(\d+)', label)
+    n_value = int(n_match.group(1)) if n_match else 0
 
     color = PM_COLOR[pm_value]
 
@@ -214,12 +221,13 @@ for label, data in results.items():
     # _right_label(data['mean'], f'{label} (mean)', color)
     label_text = fr'$\text{{p95 (bar)}}$'  
     label2_text = fr'$\text{{R}}_{{peak}} = {pm_value}$'
-    _right_label(data['p95'], f'{label_text}\n{label2_text}', color)  
+    label3_text = fr'$\text{{n}}_{{peaks}}= {n_value}$'
+    _right_label(data['p95'], f'{label2_text}\n{label3_text}', color)  
     # _right_label(data['p5'],   'p5 (channel)',     color)
 
-ax.set_xlabel('Distance along estuary [km]')
-ax.set_ylabel('Bed level [m]')
-ax.set_title(f'Snapshot comparison: {TARGET_DATE},  Q = {DISCHARGE} m³/s')
+ax.set_xlabel('along-estuary distance [km]')
+ax.set_ylabel('p95 bed level [m]')
+ax.set_title(rf'$\text{{Q}}_{{mean}} = {DISCHARGE} \text{{ m³/s}}$')
 ax.spines['top'].set_visible(False)
 ax.spines['right'].set_visible(False)
 ax.grid(True, linestyle='--')

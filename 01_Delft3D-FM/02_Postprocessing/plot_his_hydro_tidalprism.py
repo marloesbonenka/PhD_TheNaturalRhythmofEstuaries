@@ -31,7 +31,7 @@ SCENARIOS = {
 MOUTH_CROSS_SECTION_KEYWORDS = ['km20', 'mouth']
 UPSTREAM_CROSS_SECTION_KEYWORDS = ['km44', 'upstream']
 PLOT_WINDOW_DAYS = 1
-VARIABLE_TO_ANALYZE = 'waterlevel'  # Options: 'cross_section_discharge', 'cross_section_velocity', 'cross_section_sand', 'cross_section_bedload_sediment_transport'
+VARIABLE_TO_ANALYZE = 'cross_section_discharge'  # Options: 'cross_section_discharge', 'cross_section_velocity', 'cross_section_sand', 'cross_section_bedload_sediment_transport'
 SOURCE = 'observation_point' #Options: 'cross_section', 'observation_point'
 
 SCENARIO_COLORS = {
@@ -48,7 +48,7 @@ PARAMETER_META = {
         'compute_prism': True,
         'prism_unit':  'Mm³',
         'prism_scale': 1e6,
-        'subtract_river': True,
+        'subtract_river': False,
         'negate': True,  # Negate to get positive flood, negative ebb
     },
     'cross_section_velocity': {
@@ -223,7 +223,10 @@ ax.legend(title='scenario', frameon=True, fontsize=9, bbox_to_anchor=(1.02, 0.7)
 ax.grid(True, lw=0.4, alpha=0.5)
 fig.tight_layout()
 
-save_name = f"{VARIABLE_TO_ANALYZE}_ESTUARY_MOUTH_{folder_name}.png"
+if meta['subtract_river']:
+    save_name = f"{VARIABLE_TO_ANALYZE}_ESTUARY_MOUTH_{folder_name}.png"
+else:
+    save_name = f"{VARIABLE_TO_ANALYZE}_ESTUARY_MOUTH_{folder_name}_total_discharge_ieplusriver.png"
 save_path = output_dir / save_name
 plt.savefig(save_path, dpi=300, bbox_inches='tight', transparent=True)
 plt.show()

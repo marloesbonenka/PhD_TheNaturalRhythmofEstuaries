@@ -31,6 +31,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib.ticker import FuncFormatter
+import cmocean
 
 from FUNCTIONS.F_map_cache import cache_tag_from_bbox, load_or_update_map_cache_multi, select_cache_path
 from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
@@ -103,7 +104,7 @@ APPEND_VARIABLES = True
 # colour scale for net transport (signed, diverging, centered at 0).
 VMAX = 5e-7
 VMIN = -VMAX
-CMAP = plt.cm.RdBu   # red = negative (ebb/seaward), blue = positive (flood/landward)
+CMAP = cmocean.cm.curl #plt.cm.RdBu   # red = negative (ebb/seaward), blue = positive (flood/landward)
 VAR_LABEL = r'net sediment transport [$m^3\,s^{-1}\,m^{-1}$]'
 
 OUTPUT_DIR = BASE_DIR / 'output_plots_combined' / 'net_sed_transport_6panel'
