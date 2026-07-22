@@ -55,15 +55,16 @@ def read_sim_time_from_mdu(mdu_file, ecofac=None):
     
     
     
-dfm_path = Path("C:/Program Files/Deltares/Delft3D FM Suite 2024.03 HMWQ/plugins/DeltaShell.Dimr/kernels/x64")
-mdu_path = Path(r"D:\Camille\run_angelica_30years\FlowFM\input\FlowFM.mdu")
-dimr_xml = Path(r"D:\Camille\run_angelica_30years\dimr.xml")
+dfm_path = Path("C:/Program Files/Deltares/Delft3D FM Suite 2026.01 HM/plugins/DeltaShell.Dimr/kernels/x64") #("C:/Program Files/Deltares/Delft3D FM Suite 2024.03 HMWQ/plugins/DeltaShell.Dimr/kernels/x64")
+mdu_path = Path(r"U:\PhDNaturalRhythmEstuaries\Models\DYCOVE_vegetation\DYCOVE_starterpack_fromCamille_forMarloes\FlowFM\input\FlowFM.mdu") #(r"D:\Camille\run_angelica_30years\FlowFM\input\FlowFM.mdu")
+dimr_xml = Path(r"U:\PhDNaturalRhythmEstuaries\Models\DYCOVE_vegetation\DYCOVE_starterpack_fromCamille_forMarloes\dimr.xml") #(r"D:\Camille\run_angelica_30years\dimr.xml")
+veg_path = Path(r"U:\PhDNaturalRhythmEstuaries\Models\DYCOVE_vegetation\DYCOVE_starterpack_fromCamille_forMarloes\Doc\vege_type\SpartinaAnglica.json")
 
 
 sim_time, time_unit = read_sim_time_from_mdu(mdu_path) 
 print(sim_time, time_unit)
 
-veg = VegetationSpecies("SpartinaAnglica.json")
+veg = VegetationSpecies(veg_path)
 
 os.chdir(mdu_path.parent)
 model = hydro.DFM(
@@ -77,7 +78,9 @@ model = hydro.DFM(
 model.run_simulation(
     sim_time, 
     time_unit,     
-    n_ets=4,
-    veg_interval=43200
+    n_ets=1,
+    veg_interval=10
 )
 
+
+# %%
