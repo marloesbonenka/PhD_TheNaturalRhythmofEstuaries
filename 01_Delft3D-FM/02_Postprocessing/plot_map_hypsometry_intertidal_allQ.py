@@ -26,8 +26,7 @@ Method
 4. Plot one figure per manuscript panel: 1 row x N discharges (Q = 250, 500,
    1000 m3/s left -> right), sharing the y-axis, one hypsometric curve per
    scenario (pm, n) within each Q panel. Colour encodes R_peak (pm) via a
-   colourbar; linestyle encodes n_peaks; the constant (n=0) run is drawn in
-   black as the reference curve.
+   colourbar; linestyle encodes n_peaks; the constant (n=0) run is drawn as the reference curve.
 
 Data source: same MAP cache as compute_hydro_metrics_allQ.py (this script
 adds mesh2d_mor_bl to the same cache entry via append_vars).
@@ -55,6 +54,9 @@ from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 BASE_DIR = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output")
 DISCHARGES = [250, 500, 1000]
 RUN_IDS_TO_INCLUDE = {1, 6, 9, 10, 11}
+
+# Constant scenario colour
+GREY_CONST = "#7f7f7f"
 
 # Matches: dhr_{run_id}_Qr{Q}_pm{pm}_n{n}[_mean].{runid}   (same as compute_hydro_metrics_allQ.py)
 _FOLDER_RE = re.compile(r'^dhr_(\d{2})_Qr(\d+)_pm(\d+)_n(\d+)(?:_mean)?\.\d+$')
@@ -281,8 +283,6 @@ for discharge in DISCHARGES:
 
         ds_window = ds.isel(time=np.where(window_mask)[0])
 
-        # face_x: prefer the coordinate used elsewhere in the pipeline, fall
-        # back to the xugrid grid object
         if IA_FACE_X_VAR in ds.coords:
             face_x = np.asarray(ds.coords[IA_FACE_X_VAR].values)
         elif IA_FACE_X_VAR in ds:
@@ -299,8 +299,6 @@ for discharge in DISCHARGES:
         ba_da = ds['mesh2d_flowelem_ba']
         ba_vals = ba_da.isel(time=0).values if 'time' in ba_da.dims else ba_da.values
 
-        # Bed level at the final timestep -- the same instant the intertidal
-        # footprint above was resolved against (window ends at ds's last step)
         bedlev_final = ds['mesh2d_mor_bl'].isel(time=-1).values
 
         elev_sorted, cum_area_frac, total_area_m2 = compute_intertidal_hypsometry(
@@ -339,8 +337,6 @@ for discharge in DISCHARGES:
 summary_df = pd.DataFrame(summary_rows)
 summary_df.to_csv(OUTPUT_DIR / 'intertidal_hypsometry_area_summary.csv', index=False)
 print(f"\nSaved: {OUTPUT_DIR / 'intertidal_hypsometry_area_summary.csv'}")
-# Cross-check: total_area_km2 here should match intertidal_area_summary.csv
-# from compute_hydro_metrics_allQ.py (same mask/window definition).
 
 long_df = pd.DataFrame(long_rows)
 long_df.to_csv(OUTPUT_DIR / 'intertidal_hypsometry_curves_long.csv', index=False)
@@ -355,20 +351,15 @@ discharges_with_data = [d for d in DISCHARGES if hypso_store.get(d)]
 if not discharges_with_data:
     print('[SKIP PLOT] No hypsometry data available.')
 else:
-    # Colour scale for R_peak (pm), shared across all panels so the same pm
-    # maps to the same colour regardless of Q -- lets you compare shape
-    # across discharges directly.
-    all_pm = sorted({
+    # Color mapping for R_peak (pm) values
+    all_pm_vals = sorted({
         v['pm'] for d in discharges_with_data for v in hypso_store[d].values() if v['n'] != 0
     })
-    if all_pm:
-        cmap = plt.cm.viridis
-        norm = mpl.colors.Normalize(vmin=min(all_pm), vmax=max(all_pm))
-    else:
-        cmap, norm = plt.cm.viridis, mpl.colors.Normalize(vmin=0, vmax=1)
+    
+    _n_pm = max(len(all_pm_vals) - 1, 1)
+    PM_COLOR = {pm: plt.cm.Blues(0.35 + 0.55 * i / _n_pm) for i, pm in enumerate(all_pm_vals)}
 
-    # Linestyle keyed to n_peaks (excluding the constant n=0 reference, which
-    # always gets its own black style below)
+    # Linestyle keyed to n_peaks (excluding constant n=0 reference)
     all_n = sorted({
         v['n'] for d in discharges_with_data for v in hypso_store[d].values() if v['n'] != 0
     })
@@ -387,16 +378,16 @@ else:
 
             for label, v in sorted(scenarios.items(), key=lambda kv: (kv[1]['pm'], kv[1]['n'])):
                 if v['n'] == 0:
-                    color, ls, lw, zorder = 'black', '-', 2.0, 10
-                    plot_label = f"Constant (n=0)"
+                    color, ls, lw, zorder = GREY_CONST, '-', 2.0, 10
+                    plot_label = "Constant (n=0)"
                 else:
-                    color = cmap(norm(v['pm']))
+                    color = PM_COLOR.get(v['pm'], 'blue')
                     ls = n_to_ls.get(v['n'], '-')
                     lw, zorder = 1.3, 4
                     plot_label = f"pm{v['pm']}, n{v['n']}"
 
                 ax.plot(v['frac'], v['elev'], color=color, linestyle=ls,
-                         linewidth=lw, alpha=0.9, zorder=zorder, label=plot_label)
+                        linewidth=lw, alpha=0.9, zorder=zorder, label=plot_label)
 
             ax.set_xlim(0, 1)
             ax.set_title(f'Q = {discharge} m\u00b3/s', fontsize=FONTSIZE_TITLE)
@@ -407,23 +398,33 @@ else:
 
         axes[0].set_ylabel('Bed elevation [m]', fontsize=FONTSIZE_LABELS)
 
-        # Colourbar for R_peak (pm), shared across panels
-        if all_pm:
-            sm = ScalarMappable(cmap=cmap, norm=norm)
-            sm.set_array([])
-            cbar = fig.colorbar(sm, ax=axes, shrink=0.85, pad=0.02)
-            cbar.set_label('$R_{peak}$ [m\u00b3/s]', fontsize=FONTSIZE_LABELS)
-            cbar.ax.tick_params(labelsize=FONTSIZE_TICKS)
+        # --- LEGEND CREATION ---
+        proxy_handles = []
+        proxy_labels = []
 
-        # Separate legend for linestyle -> n_peaks mapping + the constant reference
-        proxy_handles = [Line2D([0], [0], color='black', lw=2.0, ls='-')]
-        proxy_labels = ['Constant (n=0)']
+        # 1. Constant reference
+        proxy_handles.append(Line2D([0], [0], color=GREY_CONST, lw=2.0, ls='-'))
+        proxy_labels.append('Constant (n=0)')
+
+        # 2. R_peak Colors
+        for pm in all_pm_vals:
+            proxy_handles.append(Line2D([0], [0], color=PM_COLOR[pm], lw=2.0, ls='-'))
+            proxy_labels.append(f'$R_{{peak}}$ = {pm}')
+
+        # 3. n_peaks Linestyles
         for n_val, ls in n_to_ls.items():
-            proxy_handles.append(Line2D([0], [0], color='gray', lw=1.3, ls=ls))
-            proxy_labels.append(f'n = {n_val}')
-        fig.legend(proxy_handles, proxy_labels, loc='lower center',
-                   ncol=len(proxy_labels), fontsize=FONTSIZE_TICKS,
-                   bbox_to_anchor=(0.5, -0.08), frameon=False)
+            proxy_handles.append(Line2D([0], [0], color='black', lw=1.3, ls=ls))
+            # proxy_labels.append(f'n = {n_val}')
+
+        # Combined Legend below panels
+        fig.legend(
+            proxy_handles, proxy_labels, 
+            loc='lower center',
+            ncol=min(len(proxy_labels), 6), 
+            fontsize=FONTSIZE_TICKS,
+            bbox_to_anchor=(0.5, -0.12), 
+            frameon=False
+        )
 
         fname = 'intertidal_hypsometry_comparison_allQ'
         fig.savefig(OUTPUT_DIR / f'{fname}.png', dpi=300, bbox_inches='tight')
@@ -434,4 +435,190 @@ else:
 
 print(f'\nAll outputs written to: {OUTPUT_DIR.resolve()}')
 
+# %%
+# =============================================================================
+# %% --- GRANDJEAN ET AL. (2024) STYLE SCATTER PLOT (CUSTOM STYLES) ---
+# =============================================================================
+
+# 1. Process data: compute changes relative to Constant (n=0) baseline
+scatter_rows = []
+
+for discharge, scenarios in hypso_store.items():
+    const_scen = next((v for v in scenarios.values() if v['n'] == 0), None)
+    if not const_scen:
+        continue
+
+    const_area = const_scen['area_km2']
+    idx_const_95 = np.argmin(np.abs(const_scen['frac'] - 0.95))
+    const_elev_95 = const_scen['elev'][idx_const_95]
+
+    for label, v in scenarios.items():
+        if v['n'] == 0:
+            continue  # Skip constant run as reference baseline (0,0)
+
+        delta_area_km2 = v['area_km2'] - const_area
+        pct_area_change = (delta_area_km2 / const_area) * 100
+
+        idx_v_95 = np.argmin(np.abs(v['frac'] - 0.95))
+        delta_elev_m = v['elev'][idx_v_95] - const_elev_95
+
+        scatter_rows.append({
+            'discharge': discharge,
+            'label': label,
+            'pm': v['pm'],
+            'n': v['n'],
+            'delta_area_km2': delta_area_km2,
+            'pct_area_change': abs(pct_area_change),
+            'delta_elev_m': delta_elev_m,
+        })
+
+df_scatter = pd.DataFrame(scatter_rows)
+
+if not df_scatter.empty:
+    # Marker shapes per discharge
+    MARKERS_Q = {250: 'o', 500: 's', 1000: '^'}
+    
+    # Bubble size scaling factor
+    SIZE_SCALE = 12.0
+    df_scatter['marker_size'] = np.maximum(df_scatter['pct_area_change'], 5) * SIZE_SCALE
+
+    with mpl.rc_context(_AGU_RC):
+        fig, ax = plt.subplots(figsize=(6.5, 7.0), dpi=300)
+        
+        # --- YOUR CUSTOM STYLING ---
+        ax.set_facecolor('#ffffff')  # White background
+        ax.grid(True, linestyle='--', color='#cccccc', alpha=0.7, zorder=0)  # Dashed grid lines
+        
+        # Zero-reference axes
+        ax.axhline(0, color='#6c6c6c', linewidth=1.5, zorder=1)
+        ax.axvline(0, color='#6c6c6c', linewidth=1.5, zorder=1)
+
+        # Plot data points grouped by Discharge (Q) & colored by R_peak (pm)
+        for q_val, group in df_scatter.groupby('discharge'):
+            ax.scatter(
+                group['delta_area_km2'],
+                group['delta_elev_m'],
+                s=group['marker_size'],
+                c=[PM_COLOR.get(pm, 'blue') for pm in group['pm']],  # Color by R_peak (pm)
+                marker=MARKERS_Q.get(q_val, 'o'),
+                edgecolor='black',
+                linewidth=0.8,
+                alpha=0.85,
+                zorder=2
+            )
+
+        # Text Annotations
+        for _, row in df_scatter.iterrows():
+            ax.annotate(
+                f"pm{row['pm']} (Q{row['discharge']})",
+                (row['delta_area_km2'], row['delta_elev_m']),
+                xytext=(6, 4), textcoords='offset points',
+                fontsize=7, color='#333333'
+            )
+
+        # Labels & Spines
+        ax.set_xlabel('Lateral change in intertidal area [km$^2$]', fontsize=FONTSIZE_LABELS, labelpad=8)
+        ax.set_ylabel('Upper flat elevation change [m relative to constant]', fontsize=FONTSIZE_LABELS, labelpad=8)
+        
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+
+        # --- LEGEND CREATION ---
+        legend_handles = []
+        legend_labels = []
+
+        # 1. R_peak Colors
+        for pm in sorted(PM_COLOR.keys()):
+            legend_handles.append(Line2D([0], [0], marker='o', color='w', markerfacecolor=PM_COLOR[pm], markeredgecolor='black', markersize=9))
+            legend_labels.append(f'$R_{{peak}}$ = {pm}')
+
+        # 2. Discharge Shapes
+        for q_val, marker in MARKERS_Q.items():
+            legend_handles.append(Line2D([0], [0], marker=marker, color='w', markerfacecolor='grey', markeredgecolor='black', markersize=9))
+            legend_labels.append(f'Q = {q_val} m$^3$/s')
+
+        # Combined Legend below plot
+        ax.legend(
+            legend_handles, legend_labels,
+            loc='upper center',
+            bbox_to_anchor=(0.5, -0.12),
+            ncol=3,
+            frameon=False,
+            fontsize=FONTSIZE_TICKS,
+            columnspacing=1.5
+        )
+
+        fname_grandjean = 'intertidal_lateral_vs_vertical_changes_custom'
+        fig.savefig(OUTPUT_DIR / f'{fname_grandjean}.png', dpi=300, bbox_inches='tight')
+        fig.savefig(OUTPUT_DIR / f'{fname_grandjean}.pdf', bbox_inches='tight')
+        plt.show()
+        plt.close(fig)
+        print(f'Saved: {OUTPUT_DIR / f"{fname_grandjean}.png"}')
+
+# %%
+# %% --- DIFFERENCE-FROM-CONSTANT HYPSOMETRY: use the whole curve, not one percentile ---
+# Interpolate every scenario onto a common Ai/Atot grid and subtract the
+# constant (n=0) curve pointwise. Shows exactly where along the curve the
+# R_peak effect concentrates, instead of assuming it's at the top (p95).
+
+FRAC_GRID = np.linspace(0.0, 1.0, 201)
+
+diff_rows = []
+for discharge, scenarios in hypso_store.items():
+    const_scen = next((v for v in scenarios.values() if v['n'] == 0), None)
+    if not const_scen:
+        continue
+
+    const_elev_grid = np.interp(FRAC_GRID, const_scen['frac'], const_scen['elev'])
+
+    for label, v in scenarios.items():
+        if v['n'] == 0:
+            continue
+        scen_elev_grid = np.interp(FRAC_GRID, v['frac'], v['elev'])
+        delta_elev_grid = scen_elev_grid - const_elev_grid
+
+        for frac, delta in zip(FRAC_GRID, delta_elev_grid):
+            diff_rows.append({
+                'discharge': discharge, 'label': label, 'pm': v['pm'], 'n': v['n'],
+                'frac': frac, 'delta_elev_m': delta,
+            })
+
+df_diff = pd.DataFrame(diff_rows)
+df_diff.to_csv(OUTPUT_DIR / 'intertidal_hypsometry_diff_from_constant.csv', index=False)
+
+# %% --- PLOT: delta elevation vs Ai/Atot, one panel per Q, coloured by R_peak ---
+discharges_with_data = [d for d in DISCHARGES if hypso_store.get(d)]
+cmap = plt.cm.Blues
+with mpl.rc_context(_AGU_RC):
+    fig, axes = plt.subplots(1, len(discharges_with_data), figsize=(7.5, 3.0),
+                              sharey=True, constrained_layout=True)
+    if len(discharges_with_data) == 1:
+        axes = [axes]
+
+    for ax, discharge in zip(axes, discharges_with_data):
+        sub = df_diff[df_diff['discharge'] == discharge]
+        for (pm_val, n_val), grp in sub.groupby(['pm', 'n']):
+            grp = grp.sort_values('frac')
+            ax.plot(grp['frac'], grp['delta_elev_m'],
+                    color=cmap(norm(pm_val)), linewidth=1.3, alpha=0.9)
+
+        ax.axhline(0, color='black', linewidth=1.2, zorder=1)  # constant = 0 by construction
+        ax.set_xlim(0, 1)
+        ax.set_title(f'Q = {discharge} m\u00b3/s', fontsize=FONTSIZE_TITLE)
+        ax.set_xlabel('$A_i / A_{tot}$ [\u2013]', fontsize=FONTSIZE_LABELS)
+        ax.grid(True, alpha=0.3)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+
+    axes[0].set_ylabel('$\\Delta$ bed elevation vs. constant [m]', fontsize=FONTSIZE_LABELS)
+
+    sm = ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    cbar = fig.colorbar(sm, ax=axes, shrink=0.85, pad=0.02)
+    cbar.set_label('$R_{peak}$ [m\u00b3/s]', fontsize=FONTSIZE_LABELS)
+
+    fname = 'intertidal_hypsometry_diff_from_constant_allQ'
+    fig.savefig(OUTPUT_DIR / f'{fname}.png', dpi=300, bbox_inches='tight')
+    fig.savefig(OUTPUT_DIR / f'{fname}.pdf', bbox_inches='tight')
+    plt.show()
 # %%
