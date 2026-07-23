@@ -11,22 +11,14 @@ Created on Tue Jun 16 10:16:38 2026
 #%%
 import os
 from pathlib import Path
-
-# _dfm_root = Path("C:/Program Files/Deltares/Delft3D FM Suite 2026.01 HM/plugins/DeltaShell.Dimr/kernels/x64")
-
-# for _sub in ("bin", "share\\bin", "lib"):
-#     _d = _dfm_root / _sub
-#     if _d.is_dir():
-#         os.add_dll_directory(str(_d))
-#         os.environ["PATH"] = str(_d) + os.pathsep + os.environ["PATH"]
-#         print(f"Added DLL dir: {_d}")
-
 from dycove import VegetationSpecies
 from dycove import DFM_hydro as hydro
 
-
 from datetime import datetime
 
+dfm_path = Path(r"C:\Program Files\Deltares\Delft3D FM Suite 2024.03 HMWQ\plugins\DeltaShell.Dimr\kernels\x64")
+base_path = Path(r"u:\PhDNaturalRhythmEstuaries\Models\DYCOVE")
+#%%
 def read_sim_time_from_mdu(mdu_file, ecofac=None):
     """Extrait sim_time et time_unit depuis un fichier .mdu (format StartDateTime/StopDateTime)"""
     mdu = Path(mdu_file)
@@ -62,18 +54,16 @@ def read_sim_time_from_mdu(mdu_file, ecofac=None):
     else:
         return duration_days, "hydrodynamic days"
 
-    
-    
-    
-dfm_path = Path("C:\Program Files\Deltares\Delft3D FM Suite 2024.03 HMWQ\plugins\DeltaShell.Dimr\kernels\x64")#Path("C:/Program Files/Deltares/Delft3D FM Suite 2026.01 HM/plugins/DeltaShell.Dimr/kernels/x64")
-mdu_path = Path(r"c:\Users\marloesbonenka\DYCOVE\run-dfm-dycove\FlowFM\input_coldstart\FlowFM.mdu")
-dimr_xml = Path(r"c:\Users\marloesbonenka\DYCOVE\run-dfm-dycove\dimr.xml")
+#%%    
 
+mdu_path = base_path / "FlowFM" / "input" / "FlowFM.mdu"
+dimr_xml = base_path / "dimr.xml"
+veg_path = base_path / "FlowFM" / "input" / "SpartinaAnglica.json"
 
 sim_time, time_unit = read_sim_time_from_mdu(mdu_path) 
 print(sim_time, time_unit)
 
-veg = VegetationSpecies(r"c:\Users\marloesbonenka\DYCOVE\run-dfm-dycove\FlowFM\input\SpartinaAnglica.json")
+veg = VegetationSpecies(veg_path)
 
 os.chdir(mdu_path.parent)
 model = hydro.DFM(
