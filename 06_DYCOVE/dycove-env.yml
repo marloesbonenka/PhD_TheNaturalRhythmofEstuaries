@@ -1,0 +1,14 @@
+name: dycove-env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - numpy
+  - scipy
+  - pandas
+  - xarray
+
+  - proj-data
+  - gdal
+
+  - ipykernel
