@@ -16,8 +16,9 @@ from dycove import DFM_hydro as hydro
 
 from datetime import datetime
 
-dfm_path = Path(r"C:\Program Files\Deltares\Delft3D FM Suite 2024.03 HMWQ\plugins\DeltaShell.Dimr\kernels\x64")
+dfm_path = Path(r"C:\Program Files\Deltares\Delft3D FM Suite 2026.01 HM\plugins\DeltaShell.Dimr\kernels\x64")#Path(r"C:\Program Files\Deltares\Delft3D FM Suite 2024.03 HMWQ\plugins\DeltaShell.Dimr\kernels\x64")
 base_path = Path(r"u:\PhDNaturalRhythmEstuaries\Models\DYCOVE")
+
 #%%
 def read_sim_time_from_mdu(mdu_file, ecofac=None):
     """Extrait sim_time et time_unit depuis un fichier .mdu (format StartDateTime/StopDateTime)"""

@@ -70,8 +70,8 @@ LOAD_VARS = ['mesh2d_waterdepth', 'mesh2d_flowelem_ba', 'mesh2d_mor_bl']
 # Intertidal classification -- MUST match compute_hydro_metrics_allQ.py so the
 # hypsometry corresponds to the intertidal area already reported there
 IA_WET_THRESHOLD = 0.0001   # [m] Epshu in Delft3D-FM
-IA_WINDOW_HOURS = 12.0      # [h] ~ 1 tidal cycle, taken from end of run
-IA_X_MIN = 20000.0          # [m] restrict to tidal zone
+IA_WINDOW_HOURS = 12.0      # [h] 1 tidal cycle, taken from end of run
+IA_X_MIN = 20000.0          # [m] 
 IA_X_MAX = 45000.0          # [m]
 IA_FACE_X_VAR = 'mesh2d_face_x'
 
@@ -191,7 +191,7 @@ def compute_intertidal_hypsometry(bedlev_vals, ba_vals, intertidal_mask):
     -------
     elev_sorted    : bed level, ascending [m]
     cum_area_frac  : Ai/Atot, cumulative area up to elev_sorted[i], divided by
-                     the TOTAL intertidal area of this scenario -> runs 0->1
+                     the total intertidal area of this scenario -> runs 0->1
     total_area_m2  : Atot for this scenario [m2] (for cross-checking against
                      intertidal_area_summary.csv from compute_hydro_metrics_allQ.py)
     """
@@ -589,6 +589,7 @@ df_diff.to_csv(OUTPUT_DIR / 'intertidal_hypsometry_diff_from_constant.csv', inde
 # %% --- PLOT: delta elevation vs Ai/Atot, one panel per Q, coloured by R_peak ---
 discharges_with_data = [d for d in DISCHARGES if hypso_store.get(d)]
 cmap = plt.cm.Blues
+norm = mpl.colors.Normalize(vmin=min(all_pm_vals), vmax=max(all_pm_vals))
 with mpl.rc_context(_AGU_RC):
     fig, axes = plt.subplots(1, len(discharges_with_data), figsize=(7.5, 3.0),
                               sharey=True, constrained_layout=True)

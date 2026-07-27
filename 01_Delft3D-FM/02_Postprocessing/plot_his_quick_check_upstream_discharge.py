@@ -16,7 +16,7 @@ HIS_FILE = Path(
     r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Output\Q500\detailed-hydro-run\dhr_12_Qr500_pm5_n4_peakflow\output\FlowFM_0000_his.nc"
 )
 # List of river kms to plot
-RIVER_KMS = [30, 32, 33, 35, 40, 42, 44, 45]
+RIVER_KMS = [20, 25, 30, 32, 33, 35, 40, 42, 44, 45]
 DISCHARGE_VAR = "cross_section_discharge"
 #%%
 if not HIS_FILE.exists():
