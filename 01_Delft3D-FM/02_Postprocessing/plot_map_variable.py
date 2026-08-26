@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.ticker import FuncFormatter
 import cmocean
 
 from FUNCTIONS.F_general import create_bedlevel_colormap, create_terrain_colormap, create_water_colormap, create_shear_stress_colormap
@@ -14,9 +15,9 @@ from FUNCTIONS.F_loaddata import get_stitched_map_run_paths
 #%% --- 1. SETTINGS ---
 # Which scenarios to process (set to None or empty list for all)
 SCENARIOS_TO_PROCESS = None #['1', '2', '3', '4']  # Use all scenarios
-DISCHARGE = 1000
-apply_detrending = True
-ZOOM = True          # True → crop axes to ZOOM_XLIM / ZOOM_YLIM
+DISCHARGE = 500
+apply_detrending = False
+ZOOM = False          # True → crop axes to ZOOM_XLIM / ZOOM_YLIM
 
 # --- Figure style ---
 STYLE = 'AGU'   # 'default'  →  white background, black text/ticks/labels
@@ -25,7 +26,7 @@ STYLE = 'AGU'   # 'default'  →  white background, black text/ticks/labels
 
 # --- AGU figure sizing (figures must be 50–170 mm wide) ---
 MM_TO_IN = 1 / 25.4
-FIGURE_WIDTH_MM = 0.5*170   # full-width figure; use ~84 for a single-column figure
+FIGURE_WIDTH_MM = 170   # full-width figure; use ~84 for a single-column figure
 CBAR_WIDTH_FRACTION = 0.85  # fraction of total width reserved for the map itself (rest = colorbar + label)
 
 STYLES = {
@@ -87,7 +88,7 @@ _tc = plt.rcParams['text.color']
 
 # --- Variable selection ---
 var_names = ['mesh2d_mor_bl']#, 'mesh2d_s1', 'mesh2d_taus']  # e.g. ['mesh2d_mor_bl'] or all three
-target_hydrodynamic_date = '2031-01-01' #'2055-12-31' # e.g. '2055-12-31'; when set, nearest timestep is used per run
+target_hydrodynamic_date = '2025-01-01' #'2055-12-31' # e.g. '2055-12-31'; when set, nearest timestep is used per run
 
 # Detrending settings (applies to bed level variable only)
 reference_time_idx = 0
@@ -137,8 +138,8 @@ model_folders = find_variability_model_folders(
 configs = {
     'mesh2d_mor_bl': {
         'cmap': cmocean.cm.delta, #create_terrain_colormap(),
-        'vmin': -5,
-        'vmax': 5,
+        'vmin': -10,
+        'vmax': 10,
         'label': 'bed level [m]',
         'file_tag': 'bedlevel_map'
     },
@@ -370,8 +371,11 @@ for folder in model_folders:
                     vmax=vmax_to_use
                 )
                 ax.set_aspect('equal')
-                ax.set_xlabel('x [m]')
-                ax.set_ylabel('y [m]')
+                _km_formatter = FuncFormatter(lambda val, pos: f'{val / 1000:.0f}')
+                ax.xaxis.set_major_formatter(_km_formatter)
+                ax.yaxis.set_major_formatter(_km_formatter)
+                ax.set_xlabel('x [km]')
+                ax.set_ylabel('y [km]')
                 if ZOOM:
                     ax.set_xlim(ZOOM_XLIM)
                     ax.set_ylim(ZOOM_YLIM)

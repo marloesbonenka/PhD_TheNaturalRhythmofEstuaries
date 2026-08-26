@@ -24,3 +24,5 @@ dependencies:
   - openpyxl
   - pip:
       - dfm_tools
+      - bmi-python
+      - dycove-model

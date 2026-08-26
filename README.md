@@ -8,7 +8,7 @@ one-off without also adding it here, or the environment becomes undocumented
 and unreproducible.
 
 ## Setup (for reference)
-- Installer: **Miniforge** (not Anaconda Navigator, keeps things minimal)
+- Installer: **Miniforge** (not Anaconda Navigator!!) 
 - Channel: **conda-forge only** (no `defaults`)
 - Environment file location: keep a backup copy in Nextcloud/GitHub, but
   run the actual `mamba` commands from a local (non-synced) folder if
