@@ -68,14 +68,16 @@ X_MAX       = 45000        # upstream limit
 WET_FRACTION_THRESHOLD = 0.1   # cell must be wet in ≥10 % of timesteps
 
 # Colours for the four scenarios — order matches SCENARIOS dict
-cmap = cmocean.cm.amp
+# cmap = cmocean.cm.amp
+cmap = mcolors.LinearSegmentedColormap.from_list(
+    'light_to_dark_blue', ['#AED9E0', '#3E91C4', '#114B90']
+)
 
 # Flow categories ordered from low (light) to peak (dark)
 flow_scenarios = ['low flow', 'mean flow', 'peak flow']
 
 # Sample 3 evenly spaced points along the colormap
-# Tip: Using range 0.2 to 0.9 stops 'low flow' from being completely white/invisible on white backgrounds
-samples = np.linspace(0.15, 1, len(flow_scenarios))
+samples = np.linspace(0, 1, len(flow_scenarios))
 
 # Map to hex colors
 SCENARIO_COLORS = {

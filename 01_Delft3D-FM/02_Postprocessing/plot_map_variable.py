@@ -114,12 +114,12 @@ APPEND_VARIABLES = True
 
 #%%
 base_directory = Path(r"U:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian")
-config = f"Model_Output/Q{DISCHARGE}"
+config = f"Model_Output/Q{DISCHARGE}_MORFAC"
 base_path = base_directory / config #Path(r"U:\PhDNaturalRhythmEstuaries\Models\1_RiverDischargeVariability_domain45x15\Model_Output\Q500\0_Noise_Q500") 
 
 assessment_dir = base_path / 'cached_data'
 
-timed_out_dir = base_path / "timed-out"
+timed_out_dir = base_path / "timed_out"
 if not base_path.exists():
     raise FileNotFoundError(f"Base path not found: {base_path}")
 if not timed_out_dir.exists():

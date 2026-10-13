@@ -26,8 +26,8 @@ from FUNCTIONS.FUNCS_plot_discharge_scenarios import (
 )
 
  #%% Configuration settings
-total_discharge = 1000                   # Total river discharge in m³/s
-nyears = 52
+total_discharge = 500                   # Total river discharge in m³/s
+nyears = 101
 duration_min    = 365.25 * 24 * 60 * nyears               # Total simulation duration in minutes;  525600 = 1 year;     2629440 = 5 years
 time_step_rcel  = 1440                                  # Time step for variations over consecutive river cells in minutes, to force bar formation      
 
@@ -46,7 +46,7 @@ grid_info = {
 }
 
 # Specify the directory of model runs
-output_dir = rf"u:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Input\Camille\Q{total_discharge}_2months"
+output_dir = rf"u:\PhDNaturalRhythmEstuaries\Models\2_RiverDischargeVariability_domain45x15_Gaussian\Model_Input\MORFAC\Q{total_discharge}"
 
 os.makedirs(output_dir, exist_ok=True)
 
@@ -56,7 +56,7 @@ _shared = {
     "total_discharge": total_discharge,
     "duration_min":    duration_min,
     "time_step":       time_step_rcel,
-    "cycle_days":      61,   # length of repeating Gaussian pattern in days (e.g. 365=1yr, 61≈2mo)
+    "cycle_days":      365,   # length of repeating Gaussian pattern in days (e.g. 365=1yr, 61≈2mo)
 }
 
 # --- Old scenarios (RCEM 2025, NCK 2026) – pattern_type based ---
@@ -72,10 +72,10 @@ scenarios_old = [
 #CAMILLE
 scenarios_new = [
     {"name": f"01_Qr{total_discharge}_pm1_n0",  "peak_ratio": 1.0, "n_peaks": 0},
-    {"name": f"02_Qr{total_discharge}_pm2_n1",  "peak_ratio": 2,   "n_peaks": 1},
-    {"name": f"03_Qr{total_discharge}_pm3_n1",  "peak_ratio": 3,   "n_peaks": 1},
-    {"name": f"04_Qr{total_discharge}_pm4_n1",  "peak_ratio": 4,   "n_peaks": 1},
-    {"name": f"05_Qr{total_discharge}_pm5_n1",  "peak_ratio": 5,   "n_peaks": 1},
+    {"name": f"02_Qr{total_discharge}_pm5_n4",  "peak_ratio": 5.0,   "n_peaks": 4},
+    # {"name": f"03_Qr{total_discharge}_pm3_n1",  "peak_ratio": 3,   "n_peaks": 1},
+    # {"name": f"04_Qr{total_discharge}_pm4_n1",  "peak_ratio": 4,   "n_peaks": 1},
+    # {"name": f"05_Qr{total_discharge}_pm5_n1",  "peak_ratio": 5,   "n_peaks": 1},
 ]
 # scenarios_new = [
 #     {"name": f"01_Qr{total_discharge}_pm1_n0",  "peak_ratio": 1.0, "n_peaks": 0},
